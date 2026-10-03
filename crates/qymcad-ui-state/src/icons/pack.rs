@@ -52,6 +52,9 @@ pub struct IconPack {
 impl IconPack {
     /// The provenance and format of this icon pack.
     pub fn format(&self) -> BundleFormat {
+        if self.manifest.id == "default" || self.manifest.id == "freecad-classic" {
+            return BundleFormat::Embedded;
+        }
         match &self.source {
             PackSource::Directory(_) => BundleFormat::Directory,
             PackSource::Archive(_) => {
@@ -62,9 +65,7 @@ impl IconPack {
                 }
             }
             PackSource::Memory(_) => {
-                if self.manifest.id == "default" {
-                    BundleFormat::Embedded
-                } else if self.manifest.verified {
+                if self.manifest.verified {
                     BundleFormat::VerifiedArchive
                 } else {
                     BundleFormat::Archive
@@ -75,7 +76,7 @@ impl IconPack {
 
     /// Whether this pack is a folder on disk that supports live file editing.
     pub fn is_directory(&self) -> bool {
-        matches!(self.source, PackSource::Directory(_))
+        self.format() == BundleFormat::Directory
     }
 
     /// Whether this pack is an archive (.qicons).

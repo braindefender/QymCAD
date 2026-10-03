@@ -355,6 +355,8 @@ fn freecad_theme_is_complete_and_valid() {
     let pack = IconPack::from_directory(&freecad_dir).expect("FreeCAD theme must load from directory");
     assert_eq!(pack.manifest.id, "freecad-classic");
     assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
+    assert_eq!(pack.format(), BundleFormat::Embedded);
+    assert!(!pack.is_directory());
 
     let (cov, total) = pack.coverage();
     assert_eq!(cov, total, "FreeCAD theme must cover 100% of icons (got {}/{})", cov, total);
