@@ -36,6 +36,8 @@ pub(crate) const PANELS: &str = concat!(
     include_str!("export_menu.rs"),
     "\n",
     include_str!("panels_windows.rs"),
+    "\n",
+    include_str!("icon_themes.rs"),
 );
 
 /// THE WINDOWS AND DIALOGUES OF THE APPLICATION, as one text.

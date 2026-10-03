@@ -19,18 +19,30 @@ mod tests {
 
     /// The icons of the tool buttons within a slice of source.
     fn tool_icons(block: &str) -> Vec<String> {
-        // THE OFFSET COMES FROM THE NEEDLE, not from a number typed beside it. It used to be a literal
-        // 24, tuned by hand to `Self::icon_tool(ui, ph::`; the call was later written out in full and the
-        // 24 silently pointed into the middle of the name, so every icon came out as the empty string and
-        // all of them looked like duplicates of one another.
-        const NEEDLE: &str = "icon_tool(ui, ph::";
+        // The needle matches `icon_tool(ui, `, followed either by `IconId::` / `qymcad_ui_state::IconId::`
+        // or raw fallback glyphs `ph::`.
+        const NEEDLE: &str = "icon_tool(ui, ";
         let mut out = Vec::new();
         let mut rest = block;
         while let Some(i) = rest.find(NEEDLE) {
-            let after = &rest[i + NEEDLE.len()..];
-            let end = after.find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')).unwrap_or(after.len());
-            out.push(after[..end].to_string());
-            rest = &after[end..];
+            let after = rest[i + NEEDLE.len()..].trim_start();
+            let icon_expr = if let Some(stripped) = after.strip_prefix("qymcad_ui_state::IconId::") {
+                stripped
+            } else if let Some(stripped) = after.strip_prefix("IconId::") {
+                stripped
+            } else if let Some(stripped) = after.strip_prefix("ph::") {
+                stripped
+            } else {
+                after
+            };
+            let end = icon_expr
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(icon_expr.len());
+            let name = &icon_expr[..end];
+            if !name.is_empty() {
+                out.push(name.to_string());
+            }
+            rest = &icon_expr[end..];
         }
         out
     }

@@ -902,6 +902,7 @@ pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
 /// switched nothing: inches were left to a separate piece of work later. An interface pretending to do what it
 /// cannot is worse than a missing item.
 pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
+    crate::gui::icon_themes::draw_icon_manager_window(ctx, wc);
     if !wc.win.is(WinKind::Settings) {
         return;
     }
@@ -1173,6 +1174,10 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             if show("settings-scheme") {
                 ui.label(crate::i18n::tr("settings-scheme"));
                 scheme_section(wc, ui, ctx);
+            }
+            if show("settings-icon-themes") {
+                ui.separator();
+                icon_theme_section(wc, ui, ctx);
             }
         }
         Sec::Viewport => {
@@ -1781,3 +1786,7 @@ pub(crate) fn scheme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
         crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
     }
 }
+pub(crate) fn icon_theme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context) {
+    crate::gui::icon_themes::icon_theme_section(wc, ui, ctx);
+}
+

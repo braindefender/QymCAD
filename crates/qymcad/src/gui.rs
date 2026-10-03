@@ -611,6 +611,8 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(egui::FontFamily::Name(BOLD_FONT.into()), vec![BOLD_FONT.to_string()]);
     mac_key_symbols(&mut fonts);
     ctx.set_fonts(fonts);
+    // SVG and image loaders for custom icon themes.
+    egui_extras::install_image_loaders(ctx);
     // THE HINT SIZE, set here because this is the one place that already decides how text is drawn - and
     // because a size set in two places drifts.
     //
@@ -3809,6 +3811,7 @@ pub(crate) fn adopt_settings(regen: &mut Rebuilding, scheme: &mut SchemeUi, set:
     apply_theme(scheme, set, ctx);
     apply_language(set);
     apply_ui_scale(set, ctx);
+    icon_themes::apply_icon_themes(set);
     invalidate(regen); // the colours and the scale are part of the picture caches' keys
 }
 
@@ -4127,6 +4130,7 @@ mod viewport_3d;
 mod panels_props;
 mod panels_tree;
 mod panels_windows;
+pub(crate) mod icon_themes;
 
 /// The single expression field and its list of drivers. One for the whole project, so that a dimension's
 /// field, a feature's field and a table cell all behave the same way.
