@@ -68,7 +68,7 @@ impl SettingsSection {
                 "settings-recent-limit",
                 "settings-profile",
             ],
-            Appearance => &["settings-scheme", "settings-ui-scale"],
+            Appearance => &["settings-scheme", "settings-ui-scale", "settings-icon-themes"],
             Viewport => &[
                 "settings-engine",
                 "settings-projection",
@@ -140,6 +140,9 @@ impl SettingsSection {
             Appearance => {
                 s.scheme = d.scheme;
                 s.ui_scale = d.ui_scale;
+                s.active_icon_packs = d.active_icon_packs;
+                s.inactive_icon_packs = d.inactive_icon_packs;
+                s.icon_dev_watch = d.icon_dev_watch;
             }
             Viewport => {
                 s.gpu_viewport = d.gpu_viewport;

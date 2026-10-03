@@ -25,6 +25,12 @@ qymcad-kernel = { path = "../qymcad-kernel" }
 qymcad-shell = { path = "../qymcad-shell" }
 qymcad-scheme = { path = "../qymcad-scheme" }
 qymcad-i18n = { path = "../qymcad-i18n" }
+ron = { workspace = true }
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+ron = { workspace = true }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

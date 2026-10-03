@@ -11,6 +11,8 @@
 //!
 //! THIS FILE NAMES `App` NOWHERE. That is the whole point, and it is guarded rather than promised.
 
+pub mod icons;
+pub use icons::*;
 pub mod grab;
 pub mod platform_keys;
 /// Clipping a triangle by a plane for the SECTION view: a pure module with no `self`, so it can be unit-tested.
@@ -1532,6 +1534,15 @@ pub struct Settings {
     /// THE UNIT LAST CHOSEN FOR A FORMAT WITHOUT UNITS, by the format's name: the next file of it comes in the same.
     #[serde(default)]
     pub import_units: std::collections::BTreeMap<String, String>,
+    /// Active icon theme packs in descending order of priority.
+    #[serde(default)]
+    pub active_icon_packs: Vec<String>,
+    /// Installed but disabled icon theme packs.
+    #[serde(default)]
+    pub inactive_icon_packs: Vec<String>,
+    /// Whether dev watch mode (live auto-reload) is enabled for unpacked icon packs.
+    #[serde(default)]
+    pub icon_dev_watch: bool,
 }
 
 fn default_orbit_about() -> OrbitAbout {
@@ -1627,6 +1638,9 @@ impl Default for Settings {
             orbit_about: default_orbit_about(),
             import_ask_always: false,
             import_units: Default::default(),
+            active_icon_packs: Vec::new(),
+            inactive_icon_packs: Vec::new(),
+            icon_dev_watch: false,
         }
     }
 }
@@ -13400,8 +13414,17 @@ pub fn take_or_drop(held: bool, ask: BarAsk) -> BarAsk {
     }
 }
 
-pub fn icon_tool(ui: &mut egui::Ui, icon: &str, tip: &str, active: bool) -> bool {
-    let btn = egui::Button::new(egui::RichText::new(icon).size(19.0)).selected(active);
+pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bool {
+    let resolved = icons::resolve_global_icon(icon);
+    let uri = format!("bytes://qicons/{}/{}.svg", resolved.pack_id, icon.relative_path());
+    let mut img = egui::Image::from_bytes(uri, resolved.data)
+        .fit_to_exact_size(egui::vec2(22.0, 22.0));
+    if resolved.color_mode == icons::ColorMode::Monochrome {
+        let text_color = ui.visuals().text_color();
+        img = img.tint(text_color);
+    }
+    let btn = egui::Button::image(img).selected(active);
+
     ui.add_sized(egui::vec2(40.0, 34.0), btn).on_hover_text(tip).clicked()
 }
 

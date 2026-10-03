@@ -1,0 +1,10 @@
+(
+    package_type: IconTheme,
+    id: "default",
+    name: "QymCAD Default",
+    version: "1.0.0",
+    author: "Phosphor Icons & QymCAD Team",
+    license: "MIT",
+    description: "Built-in default monochrome SVG vector icons based on Phosphor",
+    color_mode: Monochrome,
+)

@@ -44,3 +44,19 @@ fn the_command_names_itself_from_the_hand() {
     assert!(!extrude.is_empty() && !fillet.is_empty(), "a command in hand must have a name to show");
     assert_ne!(extrude, fillet, "the name must follow the hand: same `feat`, different command, same name means it does not");
 }
+
+/// TOOLBAR BUTTONS WITH STRONGLY-TYPED ICON IDS RENDER PROPERLY.
+#[test]
+fn icon_tool_with_typed_ids_renders_in_toolbar() {
+    let ctx = egui::Context::default();
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        // Line tool
+        let _ = qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchLine, "Line", false);
+        // Circle 3pt (migrated from procedural Gly::Circle3)
+        let _ = qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchCircle3Pt, "Circle 3pt", false);
+        // Ellipse (migrated from procedural Gly::Ellipse)
+        let _ = qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchEllipse, "Ellipse", false);
+        // Part Extrude
+        let _ = qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartExtrude, "Extrude", true);
+    });
+}
