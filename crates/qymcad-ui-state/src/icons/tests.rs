@@ -36,6 +36,7 @@ fn manifest_ron_roundtrip() {
         license: "LGPL-2.1-or-later".to_string(),
         description: "Classic colored tool icons".to_string(),
         color_mode: ColorMode::Universal,
+        verified: false,
     };
 
     let ron_str = manifest.to_ron().expect("serialization succeeds");
@@ -63,6 +64,7 @@ fn cascade_fallback_chain() {
             license: "MIT".to_string(),
             description: "".to_string(),
             color_mode: ColorMode::Monochrome,
+            verified: false,
         },
         source: PackSource::Memory(map_a),
     };
@@ -80,6 +82,7 @@ fn cascade_fallback_chain() {
             license: "MIT".to_string(),
             description: "".to_string(),
             color_mode: ColorMode::Universal,
+            verified: false,
         },
         source: PackSource::Memory(map_b),
     };
@@ -134,6 +137,7 @@ fn package_bundle_and_load_from_archive() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        verified: false,
     };
 
     let archive_path = temp_dir.join("test-pack.qicons");
@@ -210,6 +214,7 @@ fn inspect_and_package_excludes_problematic_files() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        verified: false,
     };
 
     // Test inspect_pack_directory first
@@ -285,6 +290,7 @@ fn global_icon_manager_cascade() {
             license: "MIT".to_string(),
             description: "Test".to_string(),
             color_mode: ColorMode::Universal,
+            verified: false,
         },
         source: PackSource::Memory(map),
     };
@@ -321,6 +327,7 @@ fn discover_packs_in_directory() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        verified: false,
     };
     std::fs::write(theme_a.join("manifest.ron"), manifest_a.to_ron().unwrap()).unwrap();
     std::fs::write(theme_a.join("icons").join("sketch").join("line.svg"), br#"<svg viewBox="0 0 64 64"><line x1="0" y1="0" x2="64" y2="64"/></svg>"#).unwrap();
@@ -371,4 +378,103 @@ fn user_shapr_alike_pack_if_present_loads_and_has_icons() {
         let (cov, _total) = pack.coverage();
         assert!(cov >= 105, "shapr-alike should cover almost all icons, got {cov}");
     }
+}
+
+#[test]
+fn bundle_format_and_provenance_detection() {
+    let default_pack = load_default_pack().expect("embedded default pack");
+    assert_eq!(default_pack.format(), BundleFormat::Embedded);
+    assert!(default_pack.is_verified());
+    assert!(!default_pack.is_directory());
+
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_format_test_{}", std::process::id()));
+    let folder_pack_dir = temp_dir.join("folder_theme");
+    std::fs::create_dir_all(folder_pack_dir.join("icons").join("sketch")).unwrap();
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "folder-theme".to_string(),
+        name: "Folder Theme".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Dev".to_string(),
+        license: "MIT".to_string(),
+        description: "Test".to_string(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(folder_pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+    std::fs::write(folder_pack_dir.join("icons").join("sketch").join("line.svg"), br#"<svg viewBox="0 0 24 24"><line x1="0" y1="0" x2="24" y2="24"/></svg>"#).unwrap();
+
+    let folder_pack = IconPack::from_directory(&folder_pack_dir).expect("folder pack must load");
+    assert_eq!(folder_pack.format(), BundleFormat::Directory);
+    assert!(folder_pack.is_directory());
+    assert!(!folder_pack.is_archive());
+
+    // Package into .qicons via CAD packager
+    let archive_path = temp_dir.join("packaged.qicons");
+    package_bundle(&folder_pack_dir, &manifest, &archive_path).expect("packaging must succeed");
+
+    let loaded_archive = IconPack::from_archive(&archive_path).expect("packaged archive must load");
+    assert_eq!(loaded_archive.format(), BundleFormat::VerifiedArchive);
+    assert!(loaded_archive.is_verified());
+    assert!(loaded_archive.is_archive());
+    assert!(!loaded_archive.is_directory());
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn live_watch_folder_auto_reload_on_svg_change() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_watch_test_{}", std::process::id()));
+    let pack_dir = temp_dir.join("watch_theme");
+    std::fs::create_dir_all(pack_dir.join("icons").join("sketch")).unwrap();
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "watch-theme".to_string(),
+        name: "Watch Theme".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Dev".to_string(),
+        license: "MIT".to_string(),
+        description: "Test".to_string(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+    let initial_svg = br#"<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>"#;
+    let svg_path = pack_dir.join("icons").join("sketch").join("line.svg");
+    std::fs::write(&svg_path, initial_svg).unwrap();
+
+    let folder_pack = IconPack::from_directory(&pack_dir).expect("pack must load");
+    let mut mgr = IconManager::new();
+    mgr.push_top_pack(folder_pack);
+    mgr.set_pack_watching("watch-theme", true);
+    assert!(mgr.is_pack_watched("watch-theme"));
+
+    // First resolve: gets initial SVG
+    let res1 = mgr.resolve(IconId::SketchLine);
+    assert_eq!(res1.data, initial_svg);
+    let rev1 = res1.revision;
+
+    // Polling without changes returns false
+    assert!(!mgr.check_watched_directories());
+
+    // Sleep briefly so file modification timestamp differs
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // Now edit the SVG in the folder
+    let updated_svg = br#"<svg viewBox="0 0 24 24"><rect width="24" height="24"/></svg>"#;
+    std::fs::write(&svg_path, updated_svg).unwrap();
+
+    // Reset poll timer throttle so test runs immediately
+    std::thread::sleep(std::time::Duration::from_millis(260));
+
+    // Polling detects the change
+    let changed = mgr.check_watched_directories();
+    assert!(changed, "check_watched_directories should detect edited file in watched directory");
+
+    // Second resolve: gets updated SVG and updated revision
+    let res2 = mgr.resolve(IconId::SketchLine);
+    assert_eq!(res2.data, updated_svg, "resolved icon should have the updated SVG content");
+    assert!(res2.revision > rev1, "revision counter should have incremented");
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
 }

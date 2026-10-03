@@ -244,10 +244,16 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
-    // 1. Write manifest.ron
+    // 1. Write manifest.ron (marked verified)
+    let mut manifest = manifest.clone();
+    manifest.verified = true;
     let ron_text = manifest.to_ron().map_err(|e| format!("manifest serialization error: {e}"))?;
     zip.start_file("manifest.ron", options).map_err(|e| e.to_string())?;
     std::io::Write::write_all(&mut zip, ron_text.as_bytes()).map_err(|e| e.to_string())?;
+
+    // Mark as verified CAD package
+    let _ = zip.start_file(".verified", options);
+    let _ = std::io::Write::write_all(&mut zip, b"QymCAD Verified Bundle\n");
 
     // 2. Write optional LICENSE, README, and preview files from root if present
     for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "preview.svg", "preview.png", "preview.webp"] {

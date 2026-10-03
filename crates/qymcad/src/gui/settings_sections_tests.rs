@@ -108,6 +108,7 @@ mod tests {
             active_icon_packs: vec!["custom-theme".into()],
             inactive_icon_packs: vec!["old-theme".into()],
             icon_dev_watch: true,
+            watched_icon_packs: vec!["custom-theme".into()],
         }
     }
 

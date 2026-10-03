@@ -1543,6 +1543,9 @@ pub struct Settings {
     /// Whether dev watch mode (live auto-reload) is enabled for unpacked icon packs.
     #[serde(default)]
     pub icon_dev_watch: bool,
+    /// Packs with live file watching enabled (specifically for directory packs).
+    #[serde(default)]
+    pub watched_icon_packs: Vec<String>,
 }
 
 fn default_orbit_about() -> OrbitAbout {
@@ -1641,6 +1644,7 @@ impl Default for Settings {
             active_icon_packs: Vec::new(),
             inactive_icon_packs: Vec::new(),
             icon_dev_watch: false,
+            watched_icon_packs: Vec::new(),
         }
     }
 }
@@ -13416,7 +13420,7 @@ pub fn take_or_drop(held: bool, ask: BarAsk) -> BarAsk {
 
 pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bool {
     let resolved = icons::resolve_global_icon(icon);
-    let uri = format!("bytes://qicons/{}/{}.svg", resolved.pack_id, icon.relative_path());
+    let uri = format!("bytes://qicons/{}/r{}/{}.svg", resolved.pack_id, resolved.revision, icon.relative_path());
     let mut img = egui::Image::from_bytes(uri, resolved.data)
         .fit_to_exact_size(egui::vec2(22.0, 22.0));
     if resolved.color_mode == icons::ColorMode::Monochrome {

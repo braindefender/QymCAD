@@ -22,9 +22,10 @@ pub use bundle::{
 };
 pub use id::{IconId, IconSource, ALL_ICONS};
 pub use manager::{
-    clear_global_icon_cache, load_default_pack, reload_active_icon_themes, resolve_global_icon,
-    set_global_icon_manager, with_global_icon_manager, with_global_icon_manager_mut, IconManager,
-    ResolvedIcon, DEFAULT_QICONS,
+    clear_global_icon_cache, get_global_icon_revision, has_watched_icon_packs, is_global_pack_watched,
+    load_default_pack, poll_watched_icon_packs, reload_active_icon_themes, resolve_global_icon,
+    set_global_dev_watch, set_global_icon_manager, set_global_pack_watching, sync_global_watched_packs,
+    with_global_icon_manager, with_global_icon_manager_mut, IconManager, ResolvedIcon, DEFAULT_QICONS,
 };
 pub use manifest::{ColorMode, IconManifest, PackageType};
-pub use pack::{IconPack, PackSource};
+pub use pack::{BundleFormat, IconPack, PackSource};

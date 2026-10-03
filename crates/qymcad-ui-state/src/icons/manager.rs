@@ -16,6 +16,8 @@ pub struct ResolvedIcon {
     pub color_mode: ColorMode,
     /// Identifier of the pack supplying the icon.
     pub pack_id: String,
+    /// Monotonically increasing revision counter (invalidates texture cache on edits).
+    pub revision: u64,
 }
 
 /// Central manager for icon themes and priority cascade.
@@ -25,8 +27,16 @@ pub struct IconManager {
     active_stack: Vec<IconPack>,
     /// Cache of resolved icons by `IconId`.
     cache: HashMap<IconId, ResolvedIcon>,
-    /// Whether file watch mode is toggled for development.
+    /// Whether file watch mode is toggled globally.
     pub dev_watch_enabled: bool,
+    /// Specific pack IDs that have live folder watching enabled.
+    pub watched_pack_ids: Vec<String>,
+    /// Last seen modification timestamp for watched folder packs: pack_id -> SystemTime.
+    last_seen_mtimes: HashMap<String, std::time::SystemTime>,
+    /// Last time the filesystem was polled.
+    last_poll_time: Option<std::time::Instant>,
+    /// Monotonically increasing revision counter for cache busting.
+    pub revision: u64,
 }
 
 pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/default.qicons"));
@@ -70,9 +80,74 @@ impl IconManager {
         self.clear_cache();
     }
 
-    /// Clear cached resolutions. Call when themes or pack files change.
+    /// Clear cached resolutions and bump revision counter.
     pub fn clear_cache(&mut self) {
+        self.revision += 1;
         self.cache.clear();
+    }
+
+    /// Explicitly bump revision counter and clear cache.
+    pub fn bump_revision(&mut self) {
+        self.clear_cache();
+    }
+
+    /// Synchronize watched pack IDs.
+    pub fn sync_watched_packs(&mut self, watched: &[String]) {
+        self.watched_pack_ids = watched.to_vec();
+    }
+
+    /// Whether a specific pack ID is being watched.
+    pub fn is_pack_watched(&self, pack_id: &str) -> bool {
+        self.dev_watch_enabled || self.watched_pack_ids.iter().any(|id| id == pack_id)
+    }
+
+    /// Set watching status for a pack.
+    pub fn set_pack_watching(&mut self, pack_id: &str, watch: bool) {
+        if watch {
+            if !self.watched_pack_ids.iter().any(|id| id == pack_id) {
+                self.watched_pack_ids.push(pack_id.to_string());
+            }
+        } else {
+            self.watched_pack_ids.retain(|id| id != pack_id);
+            self.last_seen_mtimes.remove(pack_id);
+        }
+    }
+
+    /// Check watched folder packs for file changes.
+    /// If an SVG or manifest was edited, bumps revision, clears cache, and returns true.
+    pub fn check_watched_directories(&mut self) -> bool {
+        if !self.dev_watch_enabled && self.watched_pack_ids.is_empty() {
+            return false;
+        }
+
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_poll_time {
+            if now.duration_since(last) < std::time::Duration::from_millis(250) {
+                return false;
+            }
+        }
+        self.last_poll_time = Some(now);
+
+        let mut any_changed = false;
+        for pack in &self.active_stack {
+            if pack.is_directory() && (self.dev_watch_enabled || self.watched_pack_ids.iter().any(|id| id == &pack.manifest.id)) {
+                if let Some(mtime) = pack.latest_mtime() {
+                    if let Some(prev) = self.last_seen_mtimes.get(&pack.manifest.id) {
+                        if mtime > *prev {
+                            any_changed = true;
+                            self.last_seen_mtimes.insert(pack.manifest.id.clone(), mtime);
+                        }
+                    } else {
+                        self.last_seen_mtimes.insert(pack.manifest.id.clone(), mtime);
+                    }
+                }
+            }
+        }
+
+        if any_changed {
+            self.clear_cache();
+        }
+        any_changed
     }
 
     /// Resolve an icon through the cascade stack:
@@ -108,6 +183,7 @@ impl IconManager {
                     data,
                     color_mode: pack.manifest.color_mode.clone(),
                     pack_id: pack.manifest.id.clone(),
+                    revision: self.revision,
                 };
                 self.cache.insert(id, res.clone());
                 return res;
@@ -120,6 +196,7 @@ impl IconManager {
             data: b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>".to_vec(),
             color_mode: ColorMode::Monochrome,
             pack_id: "builtin-fallback".to_string(),
+            revision: self.revision,
         };
         self.cache.insert(id, fallback.clone());
         fallback
@@ -158,6 +235,7 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
                 data,
                 color_mode: ColorMode::Monochrome,
                 pack_id: "default".to_string(),
+                revision: 0,
             };
         }
     }
@@ -165,6 +243,7 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
         data: b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>".to_vec(),
         color_mode: ColorMode::Monochrome,
         pack_id: "builtin-fallback".to_string(),
+        revision: 0,
     }
 }
 
@@ -204,4 +283,75 @@ pub fn reload_active_icon_themes(active_ids: &[String], search_dirs: &[std::path
             *g = Some(mgr);
         }
     }
+}
+
+/// Poll watched folder icon packs for filesystem changes.
+/// Returns true if any files changed and icon cache was invalidated.
+pub fn poll_watched_icon_packs() -> bool {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        if let Some(mgr) = g.as_mut() {
+            return mgr.check_watched_directories();
+        }
+    }
+    false
+}
+
+/// Check if any folder packs currently have watching enabled.
+pub fn has_watched_icon_packs() -> bool {
+    if let Ok(g) = GLOBAL_ICON_MANAGER.read() {
+        if let Some(mgr) = g.as_ref() {
+            return mgr.dev_watch_enabled || !mgr.watched_pack_ids.is_empty();
+        }
+    }
+    false
+}
+
+/// Synchronize watched pack IDs to the global icon manager.
+pub fn sync_global_watched_packs(watched: &[String]) {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        if let Some(mgr) = g.as_mut() {
+            mgr.sync_watched_packs(watched);
+        }
+    }
+}
+
+/// Set watch state for a specific pack in the global icon manager.
+pub fn set_global_pack_watching(pack_id: &str, watch: bool) {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        if let Some(mgr) = g.as_mut() {
+            mgr.set_pack_watching(pack_id, watch);
+        }
+    }
+}
+
+/// Check if a specific pack is watched in the global icon manager.
+pub fn is_global_pack_watched(pack_id: &str) -> bool {
+    if let Ok(g) = GLOBAL_ICON_MANAGER.read() {
+        if let Some(mgr) = g.as_ref() {
+            return mgr.is_pack_watched(pack_id);
+        }
+    }
+    false
+}
+
+/// Set global dev watch mode.
+pub fn set_global_dev_watch(enabled: bool) {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        if let Some(mgr) = g.as_mut() {
+            mgr.dev_watch_enabled = enabled;
+            if enabled {
+                mgr.clear_cache();
+            }
+        }
+    }
+}
+
+/// Current global icon revision number.
+pub fn get_global_icon_revision() -> u64 {
+    if let Ok(g) = GLOBAL_ICON_MANAGER.read() {
+        if let Some(mgr) = g.as_ref() {
+            return mgr.revision;
+        }
+    }
+    0
 }

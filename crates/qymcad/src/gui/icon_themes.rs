@@ -6,7 +6,7 @@ use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
     clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack,
-    package_bundle, reload_active_icon_themes, ColorMode, IconManifest, PackageType,
+    package_bundle, reload_active_icon_themes, BundleFormat, ColorMode, IconManifest, PackageType,
     ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
@@ -68,6 +68,49 @@ pub(crate) fn all_theme_dirs() -> Vec<PathBuf> {
 pub(crate) fn apply_icon_themes(set: &Settings) {
     let dirs = all_theme_dirs();
     reload_active_icon_themes(&set.active_icon_packs, &dirs);
+}
+
+/// Render a compact, colored visual badge indicating the format and provenance of an icon bundle.
+pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat) {
+    let visuals = ui.visuals();
+    let (icon, label_key, bg, fg) = match format {
+        BundleFormat::Directory => (
+            ph::FOLDER_OPEN,
+            "bundle-format-folder",
+            visuals.warn_fg_color.linear_multiply(0.18),
+            visuals.warn_fg_color,
+        ),
+        BundleFormat::Archive => (
+            ph::PACKAGE,
+            "bundle-format-archive",
+            visuals.hyperlink_color.linear_multiply(0.18),
+            visuals.hyperlink_color,
+        ),
+        BundleFormat::VerifiedArchive => (
+            ph::CHECK,
+            "bundle-format-verified",
+            visuals.selection.bg_fill.linear_multiply(0.22),
+            visuals.selection.bg_fill,
+        ),
+        BundleFormat::Embedded => (
+            ph::GEAR,
+            "bundle-format-embedded",
+            visuals.faint_bg_color,
+            visuals.weak_text_color(),
+        ),
+    };
+
+    egui::Frame::NONE
+        .fill(bg)
+        .corner_radius(3.0)
+        .inner_margin(egui::Margin::symmetric(5, 2))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                ui.label(egui::RichText::new(icon).color(fg).small());
+                ui.label(egui::RichText::new(crate::i18n::tr(label_key)).color(fg).small().strong());
+            });
+        });
 }
 
 /// Developer Packager modal state kept in UI context.
@@ -195,7 +238,10 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
                     if let Some(pack) = pack_opt {
                         let (cov, total) = pack.coverage();
                         ui.vertical(|ui| {
-                            ui.label(egui::RichText::new(&pack.manifest.name).strong());
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(&pack.manifest.name).strong());
+                                draw_bundle_format_badge(ui, pack.format());
+                            });
                             ui.label(
                                 egui::RichText::new(format!("v{} ({}%)", pack.manifest.version, (cov * 100) / total.max(1)))
                                     .small()
@@ -256,7 +302,12 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
             open_icon_manager(ctx);
         }
 
-        ui.checkbox(&mut wc.set.icon_dev_watch, crate::i18n::tr("settings-icon-dev-watch"));
+        let has_folder_pack = all_packs.iter().any(|p| p.is_directory() && wc.set.active_icon_packs.contains(&p.manifest.id));
+        if has_folder_pack {
+            if ui.checkbox(&mut wc.set.icon_dev_watch, crate::i18n::tr("settings-icon-dev-watch")).changed() {
+                qymcad_ui_state::icons::set_global_dev_watch(wc.set.icon_dev_watch);
+            }
+        }
 
         let mut packager_state = ctx.data_mut(|d| {
             d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"))
@@ -396,6 +447,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             } else {
                                 ColorMode::Universal
                             },
+                            verified: true,
                         };
 
                         match package_bundle(&source_path, &manifest, &output_path) {
@@ -628,6 +680,9 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                 if ui.selectable_label(is_selected, label).clicked() {
                                     state.selected_pack_id = id.clone();
                                 }
+                                if let Some(p) = pack_opt {
+                                    draw_bundle_format_badge(ui, p.format());
+                                }
                             });
                         }
 
@@ -638,6 +693,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                             if ui.selectable_label(is_selected, crate::i18n::tr("settings-icon-themes-base")).clicked() {
                                 state.selected_pack_id = "default".into();
                             }
+                            draw_bundle_format_badge(ui, BundleFormat::Embedded);
                         });
                     });
 
@@ -678,6 +734,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                 if ui.selectable_label(is_selected, label).clicked() {
                                     state.selected_pack_id = p.manifest.id.clone();
                                 }
+                                draw_bundle_format_badge(ui, p.format());
                             });
                         }
                     });
@@ -728,6 +785,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
                             ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).weak());
+                            draw_bundle_format_badge(ui, pack.format());
                         });
 
                         ui.horizontal_wrapped(|ui| {
@@ -757,6 +815,36 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(cov_msg).small().strong());
                         });
+
+                        ui.add_space(4.0);
+                        ui.separator();
+                        if pack.is_directory() {
+                            ui.horizontal(|ui| {
+                                let mut is_watched = wc.set.watched_icon_packs.contains(&pack.manifest.id) || wc.set.icon_dev_watch;
+                                if ui.checkbox(&mut is_watched, crate::i18n::tr("settings-icon-watch-folder")).changed() {
+                                    if is_watched {
+                                        if !wc.set.watched_icon_packs.contains(&pack.manifest.id) {
+                                            wc.set.watched_icon_packs.push(pack.manifest.id.clone());
+                                        }
+                                    } else {
+                                        wc.set.watched_icon_packs.retain(|id| id != &pack.manifest.id);
+                                        wc.set.icon_dev_watch = false;
+                                    }
+                                    qymcad_ui_state::icons::sync_global_watched_packs(&wc.set.watched_icon_packs);
+                                    qymcad_ui_state::icons::set_global_dev_watch(wc.set.icon_dev_watch);
+                                    changed = true;
+                                }
+
+                                if ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-reload-now"))).clicked() {
+                                    clear_global_icon_cache();
+                                    apply_icon_themes(wc.set);
+                                    ctx.request_repaint();
+                                    *wc.status = crate::i18n::tr("settings-icon-cache-cleared");
+                                }
+                            });
+                        } else {
+                            ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-watch-folder-only")).small().weak());
+                        }
                     });
 
                     ui.add_space(4.0);
@@ -839,7 +927,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                             .show(ui, |ui| {
                                                 ui.vertical_centered(|ui| {
                                                     if let Some(svg_data) = icon_svg {
-                                                        let uri = format!("bytes://mgr/{}/{}.svg", pack.manifest.id, rel_path);
+                                                        let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), rel_path);
                                                         let mut img = egui::Image::from_bytes(uri, svg_data)
                                                             .fit_to_exact_size(egui::vec2(28.0, 28.0));
                                                         if pack.manifest.color_mode == ColorMode::Monochrome {
@@ -848,7 +936,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                                         ui.add(img).on_hover_text(format!("{rel_path}\n(in pack)"));
                                                     } else {
                                                         let resolved = qymcad_ui_state::icons::resolve_global_icon(id);
-                                                        let uri = format!("bytes://mgr/fallback/{}.svg", rel_path);
+                                                        let uri = format!("bytes://mgr/fallback/r{}/{}.svg", resolved.revision, rel_path);
                                                         let mut img = egui::Image::from_bytes(uri, resolved.data)
                                                             .fit_to_exact_size(egui::vec2(28.0, 28.0));
                                                         img = img.tint(ui.visuals().weak_text_color());

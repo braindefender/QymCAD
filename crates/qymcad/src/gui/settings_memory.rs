@@ -62,6 +62,7 @@ mod tests {
             active_icon_packs: vec!["custom-theme".into()],
             inactive_icon_packs: vec!["old-theme".into()],
             icon_dev_watch: true,
+            watched_icon_packs: vec!["custom-theme".into()],
         }
     }
 
@@ -99,6 +100,7 @@ mod tests {
         assert_eq!(a.active_icon_packs, b.active_icon_packs, "active icon packs");
         assert_eq!(a.inactive_icon_packs, b.inactive_icon_packs, "inactive icon packs");
         assert_eq!(a.icon_dev_watch, b.icon_dev_watch, "icon dev watch mode");
+        assert_eq!(a.watched_icon_packs, b.watched_icon_packs, "watched icon packs");
     }
 
     /// THE MAIN THING: EVERY setting survives the save-and-load round trip.

@@ -18,6 +18,30 @@ pub enum PackSource {
     Memory(HashMap<String, Vec<u8>>),
 }
 
+/// The underlying format and provenance of an icon bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BundleFormat {
+    /// Folder containing unpacked SVG files. Live editing and live watch supported.
+    Directory,
+    /// Standard zip archive (.qicons).
+    Archive,
+    /// Verified package created or certified by QymCAD packager.
+    VerifiedArchive,
+    /// Embedded in the application executable binary.
+    Embedded,
+}
+
+impl BundleFormat {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Directory => "Folder",
+            Self::Archive => "Archive",
+            Self::VerifiedArchive => "Verified Archive",
+            Self::Embedded => "Built-in",
+        }
+    }
+}
+
 /// A loaded icon pack ready for icon retrieval.
 #[derive(Debug, Clone)]
 pub struct IconPack {
@@ -26,6 +50,44 @@ pub struct IconPack {
 }
 
 impl IconPack {
+    /// The provenance and format of this icon pack.
+    pub fn format(&self) -> BundleFormat {
+        match &self.source {
+            PackSource::Directory(_) => BundleFormat::Directory,
+            PackSource::Archive(_) => {
+                if self.manifest.verified {
+                    BundleFormat::VerifiedArchive
+                } else {
+                    BundleFormat::Archive
+                }
+            }
+            PackSource::Memory(_) => {
+                if self.manifest.id == "default" {
+                    BundleFormat::Embedded
+                } else if self.manifest.verified {
+                    BundleFormat::VerifiedArchive
+                } else {
+                    BundleFormat::Archive
+                }
+            }
+        }
+    }
+
+    /// Whether this pack is a folder on disk that supports live file editing.
+    pub fn is_directory(&self) -> bool {
+        matches!(self.source, PackSource::Directory(_))
+    }
+
+    /// Whether this pack is an archive (.qicons).
+    pub fn is_archive(&self) -> bool {
+        matches!(self.source, PackSource::Archive(_))
+    }
+
+    /// Whether this pack is verified.
+    pub fn is_verified(&self) -> bool {
+        self.manifest.verified || self.format() == BundleFormat::VerifiedArchive
+    }
+
     /// Load an icon pack from a directory on disk.
     pub fn from_directory(dir: impl AsRef<Path>) -> Result<Self, String> {
         let dir = dir.as_ref();
@@ -45,12 +107,16 @@ impl IconPack {
         let file = std::fs::File::open(file_path).map_err(|e| e.to_string())?;
         let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
 
+        let is_verified = zip.by_name(".verified").is_ok();
         let mut manifest_file = zip
             .by_name("manifest.ron")
             .map_err(|_| "missing manifest.ron in archive".to_string())?;
         let mut content = String::new();
         manifest_file.read_to_string(&mut content).map_err(|e| e.to_string())?;
-        let manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+        let mut manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+        if is_verified {
+            manifest.verified = true;
+        }
 
         Ok(Self { manifest, source: PackSource::Archive(file_path.to_path_buf()) })
     }
@@ -60,7 +126,8 @@ impl IconPack {
         let cursor = std::io::Cursor::new(bytes);
         let mut zip = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
 
-        let manifest = {
+        let is_verified = zip.by_name(".verified").is_ok();
+        let mut manifest = {
             let mut manifest_file = zip
                 .by_name("manifest.ron")
                 .map_err(|_| "missing manifest.ron in archive".to_string())?;
@@ -68,6 +135,9 @@ impl IconPack {
             manifest_file.read_to_string(&mut content).map_err(|e| e.to_string())?;
             IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?
         };
+        if is_verified || manifest.id == "default" {
+            manifest.verified = true;
+        }
 
         let mut map = HashMap::new();
         for i in 0..zip.len() {
@@ -205,5 +275,41 @@ impl IconPack {
             }
         }
         None
+    }
+
+    /// Returns the maximum modification timestamp among files in this directory pack,
+    /// or None if this is not a directory.
+    pub fn latest_mtime(&self) -> Option<std::time::SystemTime> {
+        let PackSource::Directory(base) = &self.source else {
+            return None;
+        };
+
+        let mut max_time = std::fs::metadata(base.join("manifest.ron"))
+            .and_then(|m| m.modified())
+            .ok();
+
+        let icons_dir = base.join("icons");
+        if let Ok(entries) = std::fs::read_dir(&icons_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Ok(sub) = std::fs::read_dir(&path) {
+                        for sub_entry in sub.flatten() {
+                            if let Ok(m) = sub_entry.metadata() {
+                                if let Ok(t) = m.modified() {
+                                    max_time = Some(max_time.map_or(t, |p| p.max(t)));
+                                }
+                            }
+                        }
+                    }
+                } else if let Ok(m) = entry.metadata() {
+                    if let Ok(t) = m.modified() {
+                        max_time = Some(max_time.map_or(t, |p| p.max(t)));
+                    }
+                }
+            }
+        }
+
+        max_time
     }
 }

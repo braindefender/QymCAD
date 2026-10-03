@@ -46,6 +46,9 @@ pub struct IconManifest {
     pub description: String,
     #[serde(default)]
     pub color_mode: ColorMode,
+    /// Whether the package is verified by QymCAD packager.
+    #[serde(default)]
+    pub verified: bool,
 }
 
 impl IconManifest {
