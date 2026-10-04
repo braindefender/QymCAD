@@ -45,39 +45,6 @@
     <ns1:guide position="22,67.121528" orientation="-1,0" id="guide2" ns2:locked="false" ns2:label="" ns2:color="rgb(0,134,229)" />
     <ns1:guide position="42,66.289121" orientation="-1,0" id="guide3" ns2:locked="false" ns2:label="" ns2:color="rgb(0,134,229)" />
   </ns1:namedview>
-  <metadata id="metadata2826">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>Part_Cylinder</dc:title>
-        <dc:date>2011-10-10</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Part/Gui/Resources/icons/Part_Cylinder.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <g id="g2" ns2:label="Main" transform="matrix(1.0416665,0,0,1.0416665,-1.3333273,-2.3320947)">
       <g id="g1" ns2:label="Part" transform="translate(3.6192085e-6,-0.89630564)">

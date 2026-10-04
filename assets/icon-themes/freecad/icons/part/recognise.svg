@@ -28,39 +28,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="3.4052734" ns2:cx="-7.4791701" ns2:cy="-52.789184" ns2:current-layer="layer1" showgrid="false" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="3840" ns2:window-height="2063" ns2:window-x="0" ns2:window-y="0" ns2:snap-bbox="true" ns2:snap-nodes="false" ns2:window-maximized="1">
     <ns2:grid type="xygrid" id="grid2991" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2985">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[triplus]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title />
-        <dc:date>2016-02-26</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Part/Gui/Resources/icons/PartWorkbench.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer" style="display:inline;opacity:0.7">
     <ellipse style="fill:url(#radialGradient3800);fill-opacity:1;stroke:none" id="path3024" transform="matrix(0.73170732,0,0,0.80769231,31.268293,15.153846)" cx="1" cy="45" rx="41" ry="13" />
     <path style="fill:#729fcf;stroke:#0b1521;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 3,13 37,19 61,11 31,7 Z" id="path2993" ns2:connector-curvature="0" ns1:nodetypes="ccccc" />

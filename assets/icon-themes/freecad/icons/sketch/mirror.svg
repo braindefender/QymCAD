@@ -17,38 +17,6 @@
       <stop style="stop-color:#ef2929;stop-opacity:1" offset="1" id="stop3772-8" />
     </linearGradient>
   </defs>
-  <metadata id="metadata5826">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[Abdullah Tahiri]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:date>2015-08-19</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Sketcher_MirrorSketch.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license>https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <g id="g3360" transform="matrix(0.1367863,0,0,0.1367863,-119.15519,-134.86962)">
       <rect style="color:#000000;fill:none;stroke:#a40000;stroke-width:43.86404037;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" id="rect3860-36" width="204.69887" height="116.97069" x="951.52222" y="1051.7839" />

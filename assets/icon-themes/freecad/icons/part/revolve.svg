@@ -79,40 +79,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="11" ns2:cx="24.008028" ns2:cy="31.29057" ns2:current-layer="layer1" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="834" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1" ns2:snap-global="true" ns2:snap-nodes="true" ns2:object-paths="true" ns2:object-nodes="true" ns2:snap-intersection-paths="true">
     <ns2:grid type="xygrid" id="grid3039" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2906">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Revolution</dc:title>
-        <dc:date>2011-10-10</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Revolution.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <path style="color:#000000;fill:none;stroke:#a40000;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" d="M 59,12 5,51" id="path4129" ns2:connector-curvature="0" ns1:nodetypes="cc" />
     <path style="color:#000000;fill:none;stroke:#ef2929;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" d="M 59,12 5,51" id="path4129-3" ns2:connector-curvature="0" ns1:nodetypes="cc" />

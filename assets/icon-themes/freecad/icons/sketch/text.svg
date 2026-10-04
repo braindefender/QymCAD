@@ -14,44 +14,4 @@
       <path style="font-size:40px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;fill:none;stroke:#302b00;stroke-width:12.1270628;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;font-family:Copperplate Gothic Bold;-inkscape-font-specification:'Copperplate Gothic Bold, Bold'" d="m 4151.8039,1655.4317 -109.1436,0 -33.4751,40.7475 c -3.5156,5.2084 -2.3852,4.766 -2.9061,7.7608 0,6.0635 3.9239,9.9135 12.1271,12.127 l 0,12.1271 -97.0165,0 0,-12.1271 c 5.4688,-1.0416 14.9354,-3.4593 18.1906,-6.0635 3.2552,-2.6042 6.0635,-6.0635 12.1271,-12.1271 l 139.4611,-200.0965 c 4.4269,-6.5102 5.2821,-8.2206 6.0636,-12.1271 1.3019,-5.9893 0.9676,-9.5226 -6.0636,-12.127 l 0,-12.1271 97.0165,0 0,12.1271 c -12.127,0 -17.1492,0.595 -18.1906,6.0635 -0.7814,3.7763 -0.6531,6.3037 0.9097,11.1211 l 60.3514,205.4688 c 2.6039,8.724 2.8333,10.5692 5.4378,13.8243 2.6038,3.1251 6.9183,5.0219 12.1271,6.0635 l 0,12.1271 -97.0165,0 0,-12.1271 c 8.984,-1.4322 10.8247,-5.4864 12.127,-12.127 0.5207,-2.7344 1.5623,-6.7885 0,-12.1271 l -12.127,-36.3812 m 0,-36.3812 -24.2542,-97.0165 -72.7623,97.0165 97.0165,0" id="text2714-7" />
     </g>
   </g>
-  <metadata id="metadata5750">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <ns3:license rdf:resource="" />
-        <dc:date>Mon Oct 10 13:44:52 2011 +0000</dc:date>
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Draft/Resources/icons/Draft_Text.svg</dc:identifier>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-        <dc:description>The capital letter A, slightly italicized</dc:description>
-        <dc:subject>
-          <rdf:Bag>
-            <rdf:li>A</rdf:li>
-            <rdf:li>letter</rdf:li>
-          </rdf:Bag>
-        </dc:subject>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
 </svg>

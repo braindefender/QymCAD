@@ -37,38 +37,6 @@
     </linearGradient>
     <linearGradient ns3:href="#linearGradient3172" id="linearGradient3880" gradientUnits="userSpaceOnUse" x1="2802.9631" y1="626.0874" x2="2849.4058" y2="822.17853" />
   </defs>
-  <metadata id="metadata2821">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:date>2011-10-10</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Constraint_Radius.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="g1" transform="rotate(4.5967092,69.655284,33.590803)">
     <g id="g2" transform="matrix(0.92173529,-0.12729608,0.12729608,0.92173529,-2.8594058,11.809667)" style="stroke-width:1.07471">
       <path style="fill:none;stroke:#280000;stroke-width:4.29884;stroke-linecap:square;stroke-linejoin:round;stroke-miterlimit:100;stroke-dasharray:none;stroke-dashoffset:8.71;stroke-opacity:1" id="path3" ns1:type="arc" ns1:cx="45.452168" ns1:cy="28.826765" ns1:rx="17.5" ns1:ry="17.5" ns1:start="5.3462224" ns1:end="0.51990659" ns1:arc-type="arc" d="m 55.816331,14.72591 a 17.5,17.5 0 0 1 4.823484,22.794839" ns1:open="true" transform="rotate(16.045608)" />

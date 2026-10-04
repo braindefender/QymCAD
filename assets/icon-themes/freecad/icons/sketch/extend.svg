@@ -47,32 +47,6 @@
       <stop stop-color="#EF2929" offset="100%" id="stop8" />
     </linearGradient>
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Sketcher_CreateArc.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:date>2023-12-19</dc:date>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer3" style="display:inline">
     <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" transform="translate(6.8776975,3.9744314)">
       <g id="g10" transform="translate(-12.771378,12.942971)">

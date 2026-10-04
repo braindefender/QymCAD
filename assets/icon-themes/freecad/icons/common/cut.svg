@@ -20,32 +20,6 @@
       <stop style="stop-color:#ef2929;stop-opacity:1" offset="1" id="stop3840-1" />
     </linearGradient>
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns2:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns2:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns2:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns2:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns2:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/</dc:identifier>
-        <dc:rights>
-          <ns2:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns2:Agent>
-        </dc:rights>
-        <dc:date>2024</dc:date>
-      </ns2:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer3" style="display:inline">
     <path id="path47" style="clip-rule:evenodd;fill:#d3d7cf;fill-rule:evenodd;stroke:#2e3436;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none" d="M 19.408078,3.0034919 C 15.716885,6.4801206 13.45503,11.815291 15.781863,15.196867 l 19.019742,27.641307 5.801626,-4.909367 z" />
     <path id="path56" style="clip-rule:evenodd;fill:#babdb6;fill-rule:evenodd;stroke:#d3d7cf;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none" d="M 19.091797,6.3378906 38.007812,37.505859 35.195312,39.884766 17.429687,14.064453 C 16.18341,12.253244 16.988508,9.1161188 19.091797,6.3378906 Z" />

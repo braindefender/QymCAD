@@ -81,32 +81,6 @@
     <linearGradient ns1:href="#linearGradient3836-9-3" id="linearGradient3922" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-0.20770928,-0.18465137,0.17787713,-0.21561979,-45.700119,137.6269)" x1="11.390151" y1="453.55045" x2="54.509644" y2="485.54004" />
     <linearGradient ns1:href="#linearGradient3836-9-3" id="linearGradient3922-6" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1.1733561,0.02175327,0.02175328,1.1801291,55.592501,-17.013229)" x1="11.390151" y1="453.55045" x2="54.509644" y2="485.54004" />
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Sketcher_CreateArc.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:date>2023-12-19</dc:date>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer3" style="display:inline">
     <g id="g40" transform="matrix(0.86962493,0,0,0.86962474,4.1720044,4.1720253)" style="stroke-width:1.14992">
       <path style="fill:#2e0000;fill-opacity:1;stroke:#2e0000;stroke-width:2.29984;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1" id="path4250" d="M 23.263097,24.518251 A 11.502815,11.502299 0.0048887 1 1 40.736898,39.48171 11.502815,11.502299 0.0048887 1 1 23.263097,24.518251 Z" />

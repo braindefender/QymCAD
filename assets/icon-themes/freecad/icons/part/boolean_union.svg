@@ -30,40 +30,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="9.4464321" ns2:cx="21.07899" ns2:cy="17.178277" ns2:current-layer="layer1" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="837" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1">
     <ns2:grid type="xygrid" id="grid2996" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2573">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>Part_Fuse</dc:title>
-        <dc:date>2011-10-10</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Part/Gui/Resources/icons/Part_</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <path style="fill:url(#radialGradient3023);fill-opacity:1;fill-rule:evenodd;stroke:#0b1521;stroke-width:1.99782872000000000;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" d="M 40 7 C 31.223986 7 23.839523 12.945441 21.65625 21.03125 C 11.323305 21.217406 3 29.622594 3 40 C 3 50.49401 11.50599 59 22 59 C 30.776014 59 38.160477 53.054559 40.34375 44.96875 C 50.676695 44.782594 59 36.377406 59 26 C 59 15.50599 50.49401 7 40 7 z " id="path3550-3" />
     <path style="fill:none;stroke:url(#radialGradient3811);stroke-width:10;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1" d="m 21,25 c 5.79937,2.615469 10.296259,7.638903 16,20" id="path3027" ns2:connector-curvature="0" ns1:nodetypes="cc" />

@@ -34,40 +34,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="6.522097" ns2:cx="8.5765871" ns2:cy="40.116319" ns2:current-layer="g3560" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1920" ns2:window-height="1001" ns2:window-x="-9" ns2:window-y="-9" ns2:window-maximized="1">
     <ns2:grid type="xygrid" id="grid2996" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2573">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[DeepSOIC]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>Part_Slice</dc:title>
-        <dc:date>2016-07-29</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Part/Gui/Resources/icons/Part_Slice.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <g id="g3560" transform="matrix(0.91273618,0,0,0.90349515,105.85374,2.800363)">
       <path transform="matrix(1.1209541,0,0,1.1324194,-151.52151,2.0236756)" d="m 71.785715,34.571426 c 0,10.256717 -8.314712,18.571429 -18.571428,18.571429 -10.256717,0 -18.571428,-8.314712 -18.571428,-18.571429 0,-10.256716 8.314711,-18.571428 18.571428,-18.571428 10.256716,0 18.571428,8.314712 18.571428,18.571428 z" ns1:ry="18.571428" ns1:rx="18.571428" ns1:cy="34.571426" ns1:cx="53.214287" id="path3550-3-3" style="fill:url(#radialGradient3165);fill-opacity:1;fill-rule:evenodd;stroke:#0b1521;stroke-width:1.95265329;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" ns1:type="arc" />

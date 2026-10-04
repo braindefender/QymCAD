@@ -117,6 +117,26 @@ fn svg_validation_rules() {
 
     let with_embedded_raster = br#"<svg viewBox="0 0 64 64"><image href="data:image/png;base64,123"/></svg>"#;
     assert!(validate_svg(with_embedded_raster).is_err());
+
+    // Prohibited script and foreignObject
+    let with_script = br#"<svg viewBox="0 0 64 64"><script>alert(1)</script></svg>"#;
+    assert!(validate_svg(with_script).is_err());
+    let with_foreign = br#"<svg viewBox="0 0 64 64"><foreignObject><div>test</div></foreignObject></svg>"#;
+    assert!(validate_svg(with_foreign).is_err());
+
+    // Inline event handlers
+    let with_handler = br#"<svg viewBox="0 0 64 64" onload="run()"><circle cx="32" cy="32" r="10"/></svg>"#;
+    assert!(validate_svg(with_handler).is_err());
+
+    // Editor metadata and namespaces
+    let with_sodipodi = br#"<svg viewBox="0 0 64 64"><sodipodi:namedview id="base"/></svg>"#;
+    assert!(validate_svg(with_sodipodi).is_err());
+    let with_inkscape = br#"<svg viewBox="0 0 64 64"><inkscape:grid id="grid1"/></svg>"#;
+    assert!(validate_svg(with_inkscape).is_err());
+    let with_metadata = br#"<svg viewBox="0 0 64 64"><metadata id="meta"><rdf:RDF/></metadata></svg>"#;
+    assert!(validate_svg(with_metadata).is_err());
+    let with_illustrator = br#"<svg viewBox="0 0 64 64"><i:pgf id="adobe_pgf"/></svg>"#;
+    assert!(validate_svg(with_illustrator).is_err());
 }
 
 #[test]
@@ -477,6 +497,65 @@ fn live_watch_folder_auto_reload_on_svg_change() {
     let res2 = mgr.resolve(IconId::SketchLine);
     assert_eq!(res2.data, updated_svg, "resolved icon should have the updated SVG content");
     assert!(res2.revision > rev1, "revision counter should have incremented");
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_successive_folder_live_reloads_do_not_stop_after_3_times() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_successive_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let pack_dir = temp_dir.join("continuous-theme");
+    std::fs::create_dir_all(pack_dir.join("icons").join("sketch")).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "continuous-theme".to_string(),
+        name: "Continuous Theme".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Tester".to_string(),
+        license: "MIT".to_string(),
+        description: "Testing continuous updates".to_string(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+    let svg_line = pack_dir.join("icons").join("sketch").join("line.svg");
+    let svg_circle = pack_dir.join("icons").join("sketch").join("circle.svg");
+    std::fs::write(&svg_line, br#"<svg viewBox="0 0 24 24"><path d="M0 0 L10 10"/></svg>"#).unwrap();
+    std::fs::write(&svg_circle, br#"<svg viewBox="0 0 24 24"><circle cx="1" cy="1" r="1"/></svg>"#).unwrap();
+
+    let folder_pack = IconPack::from_directory(&pack_dir).expect("pack must load");
+    let mut mgr = IconManager::new();
+    mgr.push_top_pack(folder_pack);
+    mgr.set_pack_watching("continuous-theme", true);
+
+    // Initial check
+    let _ = mgr.resolve(IconId::SketchLine);
+    let _ = mgr.resolve(IconId::SketchCircle);
+
+    // Perform 6 consecutive edits with polling checks
+    for edit_num in 1..=6 {
+        // Sleep past the 250ms throttle
+        std::thread::sleep(std::time::Duration::from_millis(260));
+
+        let new_content = format!(r#"<svg viewBox="0 0 24 24"><path d="M0 0 L{} {}"/></svg>"#, edit_num * 10, edit_num * 10);
+        if edit_num % 2 == 1 {
+            std::fs::write(&svg_line, new_content.as_bytes()).unwrap();
+        } else {
+            std::fs::write(&svg_circle, new_content.as_bytes()).unwrap();
+        }
+
+        let detected = mgr.check_watched_directories();
+        assert!(detected, "Edit {} MUST be detected by check_watched_directories", edit_num);
+
+        if edit_num % 2 == 1 {
+            let res = mgr.resolve(IconId::SketchLine);
+            assert_eq!(res.data, new_content.as_bytes(), "Edit {} data mismatch", edit_num);
+        } else {
+            let res = mgr.resolve(IconId::SketchCircle);
+            assert_eq!(res.data, new_content.as_bytes(), "Edit {} data mismatch", edit_num);
+        }
+    }
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

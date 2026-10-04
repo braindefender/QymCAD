@@ -25,46 +25,6 @@
   <ns1:namedview ns2:guide-bbox="true" showguides="true" id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="5.6568542" ns2:cx="92.058539" ns2:cy="48.278344" ns2:current-layer="layer1" showgrid="true" ns2:grid-bbox="true" ns2:document-units="px" ns2:window-width="1600" ns2:window-height="837" ns2:window-x="0" ns2:window-y="27" ns2:showpageshadow="true" fill="#deb887" stroke="#204a87" borderlayer="true" ns2:window-maximized="1">
     <ns2:grid id="GridFromPre046Settings" type="xygrid" originx="0px" originy="0px" spacingx="1px" spacingy="1px" color="#7171cd" empcolor="#7b7bc3" opacity="0.12156863" empopacity="0.5372549" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata4">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title>Help Browser</dc:title>
-        <dc:date>2005-11-06</dc:date>
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>Tuomas Kuosmanen</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:subject>
-          <rdf:Bag>
-            <rdf:li>help</rdf:li>
-            <rdf:li>browser</rdf:li>
-            <rdf:li>documentation</rdf:li>
-            <rdf:li>docs</rdf:li>
-            <rdf:li>man</rdf:li>
-            <rdf:li>info</rdf:li>
-          </rdf:Bag>
-        </dc:subject>
-        <ns5:license rdf:resource="http://creativecommons.org/licenses/by-sa/2.0/" />
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>Jakub Steiner, Andreas Nilsson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-        <dc:source>http://tigert.com</dc:source>
-      </ns5:Work>
-      <ns5:License rdf:about="http://creativecommons.org/licenses/by-sa/2.0/">
-        <ns5:permits rdf:resource="http://web.resource.org/cc/Reproduction" />
-        <ns5:permits rdf:resource="http://web.resource.org/cc/Distribution" />
-        <ns5:requires rdf:resource="http://web.resource.org/cc/Notice" />
-        <ns5:requires rdf:resource="http://web.resource.org/cc/Attribution" />
-        <ns5:permits rdf:resource="http://web.resource.org/cc/DerivativeWorks" />
-        <ns5:requires rdf:resource="http://web.resource.org/cc/ShareAlike" />
-      </ns5:License>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer" transform="translate(0,16)">
     <path ns1:type="arc" style="fill:#729fcf;stroke:#0b1521;stroke-width:2.06896544;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none" id="path2992" ns1:cx="32" ns1:cy="32" ns1:rx="30" ns1:ry="30" d="M 62,32 A 30,30 0 1 1 2,32 30,30 0 1 1 62,32 z" transform="matrix(0.96666667,0,0,0.96666667,1.0666666,-14.933333)" />
     <path ns1:type="arc" style="fill:url(#linearGradient3786);fill-opacity:1;stroke:#729fcf;stroke-width:2.22222233;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none" id="path2992-3" ns1:cx="32" ns1:cy="32" ns1:rx="30" ns1:ry="30" d="M 62,32 A 30,30 0 1 1 2,32 30,30 0 1 1 62,32 z" transform="matrix(0.9,0,0,0.9,3.1999996,-12.8)" />

@@ -34,32 +34,6 @@
     <linearGradient ns1:href="#linearGradient3836-9-3" id="linearGradient32" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.82607043,0,0,0.82533448,-4.0098079,1.346708)" x1="-18" y1="18" x2="-22" y2="5" />
     <linearGradient ns1:href="#linearGradient3836-9-3" id="linearGradient34" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.82607043,0,0,0.82533448,-4.0098079,1.346708)" x1="-18" y1="18" x2="-22" y2="5" />
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Sketcher_CreateArc.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:date>2023-12-19</dc:date>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer3" style="display:inline">
     <path style="fill:none;stroke:#151819;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.9;stroke-dasharray:none;stroke-opacity:1" id="path3064" d="M 58,34.901222 46.82741,51.43625 26.969124,56 10.057857,45.919089 5.9999995,27.098778 17.172589,10.563751 37.030875,6.0000008 53.942142,16.080912 Z" />
     <path style="fill:none;stroke:#d3d7cf;stroke-width:3.99998;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.9;stroke-dasharray:none;stroke-opacity:1" id="path3064-3" d="M 58,34.901222 46.82741,51.43625 26.969124,56 10.057857,45.919089 5.9999995,27.098778 17.172589,10.563751 37.030875,6.0000008 53.942142,16.080912 Z" />

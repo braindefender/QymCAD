@@ -302,40 +302,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="8.0000002" ns2:cx="-0.45465131" ns2:cy="25.670582" ns2:current-layer="g4956" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="834" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1" ns2:object-nodes="true">
     <ns2:grid type="xygrid" id="grid3297" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata5826">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[jrheinlaender]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_PolarPattern</dc:title>
-        <dc:date>2012-09-07</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_PolarPattern.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <g id="g4956" transform="matrix(0.94662955,0.0096906,-0.0096906,0.94662955,5.4214273,2.3107504)">
       <g transform="matrix(2.3585018,-0.02414387,0.02414387,2.3585018,-78.816137,-24.547478)" style="stroke-width:0.8957116;stroke-miterlimit:4;stroke-dasharray:none" id="g4065">

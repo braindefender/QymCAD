@@ -40,40 +40,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="6.041568" ns2:cx="17.779517" ns2:cy="24.315674" ns2:current-layer="g3629" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="873" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1" ns2:snap-bbox="true" ns2:snap-nodes="false">
     <ns2:grid type="xygrid" id="grid3157" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2948">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[Stefan Tröger]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Additive_Cone</dc:title>
-        <dc:date>2015-05-20</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Additive_Cone.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <g id="g3629" transform="matrix(1.0339262,0,0,1.0355685,-267.4823,-69.637801)">
       <path style="fill:url(#radialGradient3268);fill-opacity:1;stroke:#302b00;stroke-width:1.93283963;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="m 291.6273,70.142923 -20.31092,50.213957 c 0,7.72523 40.62185,7.72523 40.62185,0 z" id="path3039" ns2:connector-curvature="0" ns1:nodetypes="cccc" />

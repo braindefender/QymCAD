@@ -44,40 +44,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="2.1962384" ns2:cx="115.74793" ns2:cy="12.955613" ns2:current-layer="layer1" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="873" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1" showguides="false" ns2:snap-bbox="true" ns2:snap-nodes="false">
     <ns2:grid type="xygrid" id="grid3170" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata3369">
-    <rdf:RDF>
-      <ns6:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns6:Agent>
-            <dc:title>[Stefan Tröger]</dc:title>
-          </ns6:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Additive_Pipe</dc:title>
-        <dc:date>2015-05-27</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns6:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns6:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Additive_Pipe.svg</dc:identifier>
-        <dc:rights>
-          <ns6:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns6:Agent>
-        </dc:rights>
-        <ns6:license>https://www.gnu.org/copyleft/lesser.html</ns6:license>
-        <dc:contributor>
-          <ns6:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns6:Agent>
-        </dc:contributor>
-      </ns6:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <path style="fill:#fce94f;stroke:#302b00;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 59,39 C 52,49 34,57 21,57 L 5,51 c 13,0 23,-8 30,-18 z" id="path3881-2" ns2:connector-curvature="0" ns1:nodetypes="ccccc" />
     <path style="fill:#c4a000;stroke:#302b00;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 21,57 21,41 C 33,40 43,25 47,13 L 59,39 C 52,49 34,57 21,57 z" id="path3861-56" ns2:connector-curvature="0" ns1:nodetypes="ccccc" />

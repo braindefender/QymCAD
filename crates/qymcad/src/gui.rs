@@ -3818,9 +3818,9 @@ pub(crate) fn adopt_settings(regen: &mut Rebuilding, scheme: &mut SchemeUi, set:
     apply_theme(scheme, set, ctx);
     apply_language(set);
     apply_ui_scale(set, ctx);
+    icon_themes::apply_icon_themes(set);
     qymcad_ui_state::icons::sync_global_watched_packs(&set.watched_icon_packs);
     qymcad_ui_state::icons::set_global_dev_watch(set.icon_dev_watch);
-    icon_themes::apply_icon_themes(set);
     invalidate(regen); // the colours and the scale are part of the picture caches' keys
 }
 

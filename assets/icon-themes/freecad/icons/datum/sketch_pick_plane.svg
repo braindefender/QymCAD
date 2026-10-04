@@ -33,38 +33,6 @@
     </linearGradient>
     <linearGradient gradientTransform="matrix(0,7.3106737,7.3106737,0,900.34735,985.98777)" y2="20.000008" x2="6.000001" y1="38.000008" x1="58" gradientUnits="userSpaceOnUse" id="linearGradient3127" ns1:href="#linearGradient3866" />
   </defs>
-  <metadata id="metadata5826">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:date>2011-10-10</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Sketcher_NewSketch.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license>https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <g id="g3360" transform="matrix(0.1367863,0,0,0.1367863,-119.15519,-134.86962)">
       <path d="m 922.27941,1007.9198 365.53359,0 0,350.9123 -73.1067,73.1069 -292.42689,0 z" id="rect3005" style="color:#000000;fill:url(#linearGradient3127);fill-opacity:1;fill-rule:evenodd;stroke:#3f3f3f;stroke-width:14.62134743;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" />

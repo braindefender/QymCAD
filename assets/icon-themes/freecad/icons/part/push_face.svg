@@ -25,39 +25,6 @@
       <stop style="stop-color:#204a87;stop-opacity:1" offset="1" id="stop3899" />
     </linearGradient>
   </defs>
-  <metadata id="metadata2687">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[wmayer]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:title />
-        <dc:date>2012-11-25</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Part/Gui/Resources/icons/Part_Offset.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license>https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <g id="g3381">
       <path style="fill:#729fcf;stroke:#0b1521;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 5,39 25,29 57,31 37,41 z" id="path3027" />

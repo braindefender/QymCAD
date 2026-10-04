@@ -20,32 +20,6 @@
       <path style="fill:none;stroke:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;-inkscape-stroke:none" d="m 1128.2358,1230.7769 47.3569,-44.8156 90.1392,-7.1378 98.3518,-93.074 -122.4881,-129.43385 -196.8251,186.26295 z" id="path2" />
     </clipPath>
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:date>2024</dc:date>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <path style="fill:#204a87;fill-opacity:1;stroke:#0c1522;stroke-width:2;stroke-linecap:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:normal" id="path4" d="M 29.921921,12.073012 26.993293,8.1977395 C 26.21651,7.1698698 25.163057,6.5924975 24.064598,6.5924975 H 7.0714589 c -1.1437425,0 -2.0708717,1.2268134 -2.0708717,2.740257 V 58.484215 c 0,0.504481 0.309043,0.913419 0.6902905,0.913419 H 58.294706 c 0.381247,0 0.690291,-0.408938 0.690291,-0.913419 V 14.813269 c 0,-1.513445 -0.927129,-2.740257 -2.070872,-2.740257 z" />
   <path style="fill:#204a87;fill-opacity:1;stroke:#3465a4;stroke-width:2;stroke-linecap:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:normal" id="path7" d="M 7.2089844,8.5917969 H 24.064453 c 0.375444,0 0.874561,0.2026195 1.333984,0.8105468 l 3.527344,4.6699223 h 27.84961 c 0.0082,0.01044 0.01784,0.02289 0.02734,0.03711 0.01056,0.0158 0.02193,0.03237 0.0332,0.05273 0.08049,0.145363 0.148438,0.361331 0.148438,0.650391 v 42.58594 H 7 V 9.3320312 C 7,9.0436394 7.0678061,8.828994 7.1484375,8.6835937 c 0.011294,-0.020366 0.022609,-0.038859 0.033203,-0.054687 0.00953,-0.014245 0.019073,-0.026632 0.027344,-0.03711 z" />
   <g id="layer3-3" style="display:inline">

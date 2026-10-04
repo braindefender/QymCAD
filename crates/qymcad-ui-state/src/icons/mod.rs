@@ -17,8 +17,8 @@ pub mod pack;
 mod tests;
 
 pub use bundle::{
-    discover_packs_in, inspect_pack_directory, package_bundle, package_bundle_to_bytes,
-    package_bundle_to_writer, validate_svg, ValidationReport,
+    discover_packs_in, find_svg_junk_issues, inspect_pack_directory, package_bundle,
+    package_bundle_to_bytes, package_bundle_to_writer, validate_svg, ValidationReport,
 };
 pub use id::{IconId, IconSource, ALL_ICONS};
 pub use manager::{

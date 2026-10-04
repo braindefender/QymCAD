@@ -26,32 +26,6 @@
     </linearGradient>
     <linearGradient ns1:href="#linearGradient3765" id="linearGradient1" gradientUnits="userSpaceOnUse" gradientTransform="translate(-60,-988.36218)" x1="98" y1="1047.3622" x2="81" y2="993.36218" />
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:date>2024</dc:date>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer3" style="display:inline">
     <g id="layer3-8" style="display:inline">
       <g id="g5" transform="matrix(0.90454728,0,0,0.89670116,11.058994,0.30989652)" style="opacity:0.75;stroke-width:1.11036">

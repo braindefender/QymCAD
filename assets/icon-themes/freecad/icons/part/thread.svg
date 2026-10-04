@@ -80,40 +80,6 @@
     <linearGradient ns1:href="#linearGradient1930" id="linearGradient1932" x1="21.766993" y1="36.503899" x2="16.343052" y2="24.589472" gradientUnits="userSpaceOnUse" />
     <linearGradient ns1:href="#linearGradient1942" id="linearGradient1944" x1="38.137226" y1="16.171356" x2="33.022259" y2="10.52606" gradientUnits="userSpaceOnUse" />
   </defs>
-  <metadata id="metadata2906">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title>PartDesign_Additive_Helix</dc:title>
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>bitacovir, davidosterberg</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Revolution</dc:title>
-        <dc:date>2020/12/30</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier />
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license>https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title />
-          </ns3:Agent>
-        </dc:contributor>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <path id="path4129-2" d="M 58.926505,11.748661 30.994834,35.247684" style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:none;stroke:#a40000;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;marker:none;enable-background:accumulate" />
     <path style="fill:#d5c035;fill-opacity:1;stroke-width:0.0188065" d="m 24.796663,32.902359 c -2.49904,1.557545 -3.811883,4.546599 -3.864437,7.426823 -0.0012,0.445552 -0.06934,0.965067 0.0039,1.371378 1.059971,-0.840102 2.07592,-1.734317 3.112698,-2.602685 0.02511,-1.951889 -0.09937,-3.973426 0.65898,-5.820185 0.02305,-0.112323 0.110254,-0.278728 0.08891,-0.375331 z" id="path1148" />

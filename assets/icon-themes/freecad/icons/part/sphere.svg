@@ -40,40 +40,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="6.2475305" ns2:cx="84.074719" ns2:cy="22.19112" ns2:current-layer="g3564" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="873" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1" ns2:snap-bbox="true" ns2:snap-nodes="false">
     <ns2:grid type="xygrid" id="grid3209" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2789">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[Stefan Tröger]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Additive_Sphere</dc:title>
-        <dc:date>2015-05-18</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Additive_Sphere.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <g id="g3564" transform="translate(-0.8153068,-67.540042)">
       <path ns1:type="arc" style="color:#000000;fill:url(#radialGradient3287);fill-opacity:1;fill-rule:evenodd;stroke:#0b1521;stroke-width:1.80564272;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" id="path2826" ns1:cx="31.636364" ns1:cy="30.363636" ns1:rx="26.181818" ns1:ry="26.181818" d="m 57.818182,30.363636 a 26.181818,26.181818 0 1 1 -52.363636,0 26.181818,26.181818 0 1 1 52.363636,0 z" transform="matrix(1.1076389,0,0,1.1076389,-2.2263603,65.908098)" />

@@ -94,10 +94,76 @@ fn parse_viewbox_dimensions(text: &str) -> Option<(f32, f32)> {
     }
 }
 
+/// Inspect SVG text for extraneous editor metadata, dangerous executable elements, or junk tags.
+/// Returns a list of human-readable issues detected.
+pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
+    let lower = text.to_lowercase();
+    let mut issues = Vec::new();
+
+    // Dangerous / executable tags
+    if lower.contains("<script") {
+        issues.push("prohibited <script> tag".to_string());
+    }
+    if lower.contains("<foreignobject") {
+        issues.push("prohibited <foreignObject> tag".to_string());
+    }
+    for tag in ["<applet", "<object", "<embed", "<iframe", "<audio", "<video"] {
+        if lower.contains(tag) {
+            issues.push(format!("prohibited {tag}> tag"));
+        }
+    }
+
+    // Inline event handlers (onload=, onclick=, onerror=, etc.)
+    if let Some(idx) = lower.find(" on") {
+        let rest = &lower[idx..];
+        for word in rest.split_whitespace() {
+            if word.starts_with("on") && word.contains('=') {
+                let attr = word.split('=').next().unwrap_or(word);
+                if attr.chars().skip(2).all(|c| c.is_alphabetic()) {
+                    issues.push(format!("prohibited event handler attribute ({attr})"));
+                    break;
+                }
+            }
+        }
+    }
+
+    // Editor metadata & proprietary elements
+    if lower.contains("<sodipodi:") {
+        issues.push("editor metadata (<sodipodi:*>)".to_string());
+    }
+    if lower.contains("<inkscape:") {
+        issues.push("editor metadata (<inkscape:*>)".to_string());
+    }
+    if lower.contains("<metadata") {
+        issues.push("extraneous <metadata> block".to_string());
+    }
+    if lower.contains("<rdf:rdf") {
+        issues.push("extraneous <rdf:RDF> block".to_string());
+    }
+    if lower.contains("<i:pgf") {
+        issues.push("proprietary Illustrator metadata (<i:pgf>)".to_string());
+    }
+    if lower.contains("<adobe:") || lower.contains("<x:xmpmeta") {
+        issues.push("proprietary Adobe/XMP metadata".to_string());
+    }
+    if lower.contains("<sketch:") {
+        issues.push("proprietary Sketch metadata".to_string());
+    }
+    if lower.contains("<figma:") {
+        issues.push("proprietary Figma metadata".to_string());
+    }
+    if lower.contains("<!entity") {
+        issues.push("prohibited <!ENTITY> declaration".to_string());
+    }
+
+    issues
+}
+
 /// Validate SVG data according to the theme specification:
 /// - Must contain a valid root `<svg>` element.
 /// - Must contain a valid square `viewBox` attribute (1:1 aspect ratio, e.g. `viewBox="0 0 64 64"`).
 /// - Must NOT contain embedded raster images (`<image>` or `data:image/`).
+/// - Must NOT contain junk tags, editor metadata, or executable elements.
 pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(data).map_err(|_| "SVG data is not valid UTF-8".to_string())?;
 
@@ -121,6 +187,11 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
 
     if text.contains("<image") || text.contains("data:image/") {
         return Err("embedded raster images (<image>) are prohibited".to_string());
+    }
+
+    let junk = find_svg_junk_issues(text);
+    if !junk.is_empty() {
+        return Err(format!("extraneous/junk tags detected: {}", junk.join(", ")));
     }
 
     Ok(())

@@ -41,40 +41,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="6.041568" ns2:cx="96.904637" ns2:cy="44.776714" ns2:current-layer="layer1" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="873" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1" ns2:snap-global="true" ns2:snap-bbox="true" ns2:snap-nodes="false">
     <ns2:grid type="xygrid" id="grid3058" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2826">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-        <dc:creator>
-          <ns5:Agent>
-            <dc:title>[Stefan Tröger]</dc:title>
-          </ns5:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Additive_Cylinder</dc:title>
-        <dc:date>2015-05-18</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Additive_Cylinder.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <path style="fill:#fce94f;stroke:#302b00;stroke-width:1.99999988;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4.5;stroke-opacity:1;stroke-dashoffset:20.4" d="M 55,53 C 55,57.418278 44.254834,61 31,61 17.745167,61 7.0000007,57.418278 7.0000007,53 l -2e-6,-42 47.9999993,0 z" id="path2994-3" ns2:connector-curvature="0" ns1:nodetypes="sscccs" />
     <path style="fill:url(#linearGradient3807);fill-opacity:1;stroke:#fce94f;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4.5;stroke-opacity:1;stroke-dashoffset:20.4" d="m 52.999999,51.727273 c 0,4.016616 -9.84973,7.272727 -22,7.272727 C 18.849735,59 8.9999997,55.743889 8.9999997,51.727273 l -2e-6,-38 44.0000013,0 z" id="path2994-3-6" ns2:connector-curvature="0" ns1:nodetypes="sscccs" />

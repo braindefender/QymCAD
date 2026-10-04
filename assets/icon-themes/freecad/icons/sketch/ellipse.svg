@@ -81,32 +81,6 @@
     <linearGradient ns1:href="#linearGradient34" id="linearGradient3903" gradientUnits="userSpaceOnUse" x1="29.993565" y1="54.846851" x2="36.094769" y2="20.854424" gradientTransform="matrix(0.57365718,-0.57365723,0.57365712,0.57365719,-8.6693108,28.742734)" />
     <linearGradient y2="5" x2="-22" y1="18" x1="-18" gradientUnits="userSpaceOnUse" id="linearGradient3922" ns1:href="#linearGradient3836-9-3" gradientTransform="matrix(0.85221122,0,0,0.85228409,-2.8500258,1.6945624)" />
   </defs>
-  <metadata id="metadata2874">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[maxwxyz]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Sketcher/Gui/Resources/icons/Sketcher_CreateArc.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <dc:date>2023-12-19</dc:date>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer3" style="display:inline" transform="translate(0.25)">
     <g id="layer1" transform="matrix(0.97281291,0,0,0.95327622,0.83703092,1.7122066)" style="stroke-width:1.03843">
       <path d="M 53.461548,10.538449 C 59.387982,16.464891 54.583663,30.877887 42.730765,42.730775 30.877881,54.583663 16.464894,59.387996 10.538445,53.461552 4.6120104,47.535109 9.4163442,33.122113 21.269228,21.269225 33.122112,9.4163384 47.535099,4.6120059 53.461548,10.538449 Z" id="path3074" style="fill:none;stroke:#151819;stroke-width:8.30741;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:1.9;stroke-dasharray:none;stroke-opacity:1" />

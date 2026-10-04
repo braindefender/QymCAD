@@ -703,6 +703,40 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                             ui.label(egui::RichText::new(cov_msg).small().strong());
                         });
 
+                        // Scan for SVG hygiene / validation issues
+                        let mut invalid_icons = Vec::new();
+                        for &id in ALL_ICONS {
+                            if let Some(svg_bytes) = pack.get_svg_for_id(id) {
+                                if let Err(e) = qymcad_ui_state::icons::validate_svg(&svg_bytes) {
+                                    invalid_icons.push((id, e));
+                                }
+                            }
+                        }
+
+                        ui.add_space(2.0);
+                        if !invalid_icons.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        ph::WARNING,
+                                        crate::i18n::trn("icon-mgr-hygiene-warning", &[("count", &invalid_icons.len().to_string())])
+                                    ))
+                                    .color(ui.visuals().warn_fg_color)
+                                    .small()
+                                    .strong(),
+                                );
+                            });
+                        } else {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean")))
+                                        .color(ui.visuals().selection.bg_fill)
+                                        .small(),
+                                );
+                            });
+                        }
+
                         ui.add_space(4.0);
                         ui.separator();
                         if pack.is_directory() {
@@ -811,6 +845,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                             .inner_margin(4.0)
                                             .show(ui, |ui| {
                                                 ui.vertical_centered(|ui| {
+                                                    let val_err = icon_svg.as_ref().and_then(|data| qymcad_ui_state::icons::validate_svg(data).err());
                                                     if let Some(svg_data) = icon_svg {
                                                         let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), rel_path);
                                                         let mut img = egui::Image::from_bytes(uri, svg_data)
@@ -818,7 +853,12 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                                         if pack.manifest.color_mode == ColorMode::Monochrome {
                                                             img = img.tint(ui.visuals().text_color());
                                                         }
-                                                        ui.add(img).on_hover_text(format!("{rel_path}\n(in pack)"));
+                                                        let tip = if let Some(ref e) = val_err {
+                                                            format!("{rel_path}\n(in pack)\n⚠️ Validation / Hygiene Issue:\n{e}")
+                                                        } else {
+                                                            format!("{rel_path}\n(in pack)")
+                                                        };
+                                                        ui.add(img).on_hover_text(tip);
                                                     } else {
                                                         let resolved = qymcad_ui_state::icons::resolve_global_icon(id);
                                                         let uri = format!("bytes://mgr/fallback/r{}/{}.svg", resolved.revision, rel_path);
@@ -829,11 +869,12 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                                             .on_hover_text(format!("{rel_path}\n(missing: falls back to default)"));
                                                     }
 
-                                                    ui.label(
-                                                        egui::RichText::new(short_name)
-                                                            .small()
-                                                            .weak(),
-                                                    );
+                                                    let label_text = if val_err.is_some() {
+                                                        egui::RichText::new(format!("⚠️ {short_name}")).small().color(ui.visuals().warn_fg_color)
+                                                    } else {
+                                                        egui::RichText::new(short_name).small().weak()
+                                                    };
+                                                    ui.label(label_text);
                                                 });
                                             });
                                     }

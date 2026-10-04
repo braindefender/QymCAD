@@ -32,33 +32,6 @@
     <linearGradient ns3:href="#linearGradient4399" id="linearGradient4" gradientUnits="userSpaceOnUse" gradientTransform="translate(1.2856,1.4142)" x1="48.714" y1="45.586" x2="44.714" y2="34.586" />
     <linearGradient ns3:href="#linearGradient1" id="linearGradient5" x1="8.000092" y1="31.5" x2="55.999914" y2="31.5" gradientUnits="userSpaceOnUse" />
   </defs>
-  <metadata id="metadata28">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:date>2015-07-04</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns5:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns5:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Path/Gui/Resources/icons/Path-Stock.svg</dc:identifier>
-        <dc:rights>
-          <ns5:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns5:Agent>
-        </dc:rights>
-        <ns5:license>https://www.gnu.org/copyleft/lesser.html</ns5:license>
-        <dc:contributor>
-          <ns5:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns5:Agent>
-        </dc:contributor>
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="g1929" transform="matrix(0.08200228,0,0,0.08200228,31.499923,25.306657)">
     <g id="#fafbf9ff" transform="matrix(1.3333333,0,0,1.3333333,-413.84954,-311.52459)">
       <path fill="#fafbf9" opacity="1" d="m 315.82,0 h 1.41 c 0.31,1.91 0.49,3.85 0.65,5.78 -1.82,0.52 -3.67,0.92 -5.54,1.21 -0.48,-1.53 -0.95,-3.06 -1.38,-4.61 1.61,-0.81 3.25,-1.56 4.86,-2.38 z" id="path2" />

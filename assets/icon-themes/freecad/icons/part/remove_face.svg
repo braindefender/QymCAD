@@ -1,38 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" width="64px" height="64px" id="svg2816" version="1.1" viewBox="0 0 64 64">
   <defs id="defs2818" />
-  <metadata id="metadata2821">
-    <rdf:RDF>
-      <ns2:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns2:Agent>
-            <dc:title>[jmaustpc]</dc:title>
-          </ns2:Agent>
-        </dc:creator>
-        <dc:date>2013-03-17</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns2:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns2:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Hole.svg</dc:identifier>
-        <dc:rights>
-          <ns2:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns2:Agent>
-        </dc:rights>
-        <ns2:license>https://www.gnu.org/copyleft/lesser.html</ns2:license>
-        <dc:contributor>
-          <ns2:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns2:Agent>
-        </dc:contributor>
-      </ns2:Work>
-    </rdf:RDF>
-  </metadata>
   <path d="M 55.874048,36.921842 38.39683,54.28592 v 5.726641 L 55.874048,42.648447 Z" style="fill:#3465a4;fill-rule:evenodd;stroke:#081221;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" id="path102" />
   <path d="M 31.657724,5.9926846 14.180501,23.356785 C 27.554699,27.786345 38.39683,41.633792 38.39683,54.28592 L 55.874046,36.921842 c 0,-12.652129 -10.842131,-26.499597 -24.216322,-30.9291574 z" style="fill:#729fcf;fill-rule:evenodd;stroke:#081221;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" id="path101" />
   <path d="M 25.603172,3.9874633 8.1259518,21.351561 14.180511,23.356785 31.657724,5.9926846 Z" style="fill:#729fcf;fill-rule:evenodd;stroke:#081221;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" id="path100" />

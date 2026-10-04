@@ -91,55 +91,6 @@
       <stop id="stop3998-5" offset="1" style="stop-color:#ef2929;stop-opacity:1" />
     </linearGradient>
   </defs>
-  <metadata id="metadata3369">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title>Part_Thickness</dc:title>
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[vocx]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:date>2020-10-13</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/Part_Thickness.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license rdf:resource="http://creativecommons.org/licenses/by-sa/4.0/">https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson, Stefan Tröger</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-        <dc:subject>
-          <rdf:Bag>
-            <rdf:li>Cube</rdf:li>
-            <rdf:li>hollow</rdf:li>
-            <rdf:li>skin</rdf:li>
-          </rdf:Bag>
-        </dc:subject>
-        <dc:description>A parallelepiped with a hollowed center. It is based on the 'PartDesign_Thickness' icon. The internal faces are blue instead of red.</dc:description>
-      </ns3:Work>
-      <ns3:License rdf:about="http://creativecommons.org/licenses/by-sa/4.0/">
-        <ns3:permits rdf:resource="http://creativecommons.org/ns#Reproduction" />
-        <ns3:permits rdf:resource="http://creativecommons.org/ns#Distribution" />
-        <ns3:requires rdf:resource="http://creativecommons.org/ns#Notice" />
-        <ns3:requires rdf:resource="http://creativecommons.org/ns#Attribution" />
-        <ns3:permits rdf:resource="http://creativecommons.org/ns#DerivativeWorks" />
-        <ns3:requires rdf:resource="http://creativecommons.org/ns#ShareAlike" />
-      </ns3:License>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <g id="g3780" transform="matrix(0.82780005,0,0,0.83717425,-0.2499405,9.0601524)">
       <path style="fill:#729fcf;stroke:#0b1521;stroke-width:2.4024775;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 13.590163,-0.07185242 52.246847,11.873093 73.99123,2.3171365 37.750592,-7.2388191 z" id="path2993" />

@@ -79,6 +79,18 @@ impl IconPack {
         self.format() == BundleFormat::Directory
     }
 
+    /// Whether an icon file exists on disk in a directory pack (even if temporarily locked).
+    pub fn has_icon_on_disk(&self, id: IconId) -> bool {
+        match &self.source {
+            PackSource::Directory(base) => {
+                let rel = id.relative_path();
+                let sub = if rel.ends_with(".svg") { rel.to_string() } else { format!("{rel}.svg") };
+                base.join("icons").join(sub).exists()
+            }
+            _ => false,
+        }
+    }
+
     /// Whether this pack is an archive (.qicons).
     pub fn is_archive(&self) -> bool {
         matches!(self.source, PackSource::Archive(_))
@@ -166,7 +178,7 @@ impl IconPack {
         match &self.source {
             PackSource::Directory(base) => {
                 let p = base.join("icons").join(&file_subpath);
-                std::fs::read(p).ok()
+                read_svg_with_retry(&p)
             }
             PackSource::Archive(archive_path) => {
                 let file = std::fs::File::open(archive_path).ok()?;
@@ -278,39 +290,89 @@ impl IconPack {
         None
     }
 
-    /// Returns the maximum modification timestamp among files in this directory pack,
-    /// or None if this is not a directory.
-    pub fn latest_mtime(&self) -> Option<std::time::SystemTime> {
+    /// Take a full snapshot of all SVG files and manifest.ron in this directory pack,
+    /// mapping relative path -> (modification time, file size).
+    pub fn directory_snapshot(&self) -> Option<HashMap<PathBuf, (std::time::SystemTime, u64)>> {
         let PackSource::Directory(base) = &self.source else {
             return None;
         };
 
-        let mut max_time = std::fs::metadata(base.join("manifest.ron"))
-            .and_then(|m| m.modified())
-            .ok();
+        let mut snapshot = HashMap::new();
+        let manifest_path = base.join("manifest.ron");
+        if let Ok(m) = std::fs::metadata(&manifest_path) {
+            let mtime = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+            snapshot.insert(PathBuf::from("manifest.ron"), (mtime, m.len()));
+        }
 
         let icons_dir = base.join("icons");
-        if let Ok(entries) = std::fs::read_dir(&icons_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Ok(sub) = std::fs::read_dir(&path) {
-                        for sub_entry in sub.flatten() {
-                            if let Ok(m) = sub_entry.metadata() {
-                                if let Ok(t) = m.modified() {
-                                    max_time = Some(max_time.map_or(t, |p| p.max(t)));
-                                }
-                            }
-                        }
-                    }
-                } else if let Ok(m) = entry.metadata() {
-                    if let Ok(t) = m.modified() {
-                        max_time = Some(max_time.map_or(t, |p| p.max(t)));
+        collect_svgs_recursively(&icons_dir, base, &mut snapshot);
+
+        Some(snapshot)
+    }
+
+    /// Returns the maximum modification timestamp among files in this directory pack,
+    /// or None if this is not a directory.
+    pub fn latest_mtime(&self) -> Option<std::time::SystemTime> {
+        let snap = self.directory_snapshot()?;
+        snap.values().map(|(t, _)| *t).max()
+    }
+}
+
+/// Helper to read SVG file with retry backoff.
+/// On Windows, graphic editors (Inkscape, Illustrator, VS Code) lock files exclusively
+/// during save or perform atomic rename (delete + rename), and may temporarily truncate to 0 bytes.
+/// Retrying with short delays (~75ms total) avoids ERROR_SHARING_VIOLATION and empty reads.
+fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
+    for attempt in 0..6 {
+        if let Ok(data) = std::fs::read(path) {
+            if !data.is_empty() {
+                return Some(data);
+            }
+        } else if attempt >= 2 && !path.exists() {
+            return None;
+        }
+        if attempt < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+    }
+    let data = std::fs::read(path).ok()?;
+    if !data.is_empty() {
+        Some(data)
+    } else {
+        None
+    }
+}
+
+/// Recursively collect all .svg files in a directory, ignoring temporary and editor swap files.
+fn collect_svgs_recursively(
+    dir: &Path,
+    base: &Path,
+    map: &mut HashMap<PathBuf, (std::time::SystemTime, u64)>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_svgs_recursively(&path, base, map);
+        } else if let Ok(name) = entry.file_name().into_string() {
+            let name_lower = name.to_lowercase();
+            // Only track valid SVG files, ignoring temporary/editor swap files and OS artifacts
+            if name_lower.ends_with(".svg")
+                && !name.starts_with('.')
+                && !name.starts_with('~')
+                && !name.ends_with(".tmp")
+                && !name.ends_with(".bak")
+                && !name.ends_with('~')
+            {
+                if let Ok(m) = entry.metadata() {
+                    let mtime = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    if let Ok(rel) = path.strip_prefix(base) {
+                        map.insert(rel.to_path_buf(), (mtime, m.len()));
                     }
                 }
             }
         }
-
-        max_time
     }
 }

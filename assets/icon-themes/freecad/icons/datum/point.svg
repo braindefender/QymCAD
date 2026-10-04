@@ -37,39 +37,6 @@
     </linearGradient>
     <linearGradient ns1:href="#linearGradient3" id="linearGradient2" x1="28.29739" y1="23.934666" x2="32.660656" y2="38.115273" gradientUnits="userSpaceOnUse" gradientTransform="translate(0.43016052,0.42962074)" />
   </defs>
-  <metadata id="metadata3057">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[jrheinlaender]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Point</dc:title>
-        <dc:date>2013-05-22</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Point.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license>https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <ellipse style="fill:none;stroke:#0c1522;stroke-width:6.61059;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4.5;stroke-dasharray:none;stroke-dashoffset:20.4;stroke-opacity:1" id="path3024" cx="32" cy="32" rx="7.6357098" ry="7.6357083" />
     <ellipse style="fill:url(#linearGradient2);stroke:url(#linearGradient3818);stroke-width:2.51326;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4.5;stroke-dasharray:none;stroke-dashoffset:20.4;stroke-opacity:1" id="path3024-3" cx="31.999998" cy="31.999998" rx="7.6357117" ry="7.6357102" />

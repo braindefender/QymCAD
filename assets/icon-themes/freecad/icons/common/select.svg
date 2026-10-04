@@ -18,15 +18,6 @@
   <ns1:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" ns2:pageopacity="0.0" ns2:pageshadow="2" ns2:zoom="3.8890873" ns2:cx="-34.734747" ns2:cy="45.640893" ns2:current-layer="layer1" showgrid="true" ns2:document-units="px" ns2:grid-bbox="true" ns2:window-width="1600" ns2:window-height="837" ns2:window-x="0" ns2:window-y="27" ns2:window-maximized="1">
     <ns2:grid type="xygrid" id="grid2991" empspacing="2" visible="true" enabled="true" snapvisiblegridlinesonly="true" />
   </ns1:namedview>
-  <metadata id="metadata2985">
-    <rdf:RDF>
-      <ns5:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-      </ns5:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1" ns2:label="Layer 1" ns2:groupmode="layer">
     <path style="fill:url(#linearGradient3771);stroke:#2e3436;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;fill-opacity:1" d="M 7,49 15,57 35,37 41,49 57,7 15,23 27,29 z" id="path3761" ns2:connector-curvature="0" ns1:nodetypes="cccccccc" />
     <path style="fill:none;stroke:#ffffff;stroke-width:2;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none" d="M 9.8181818,49 30.363636,28.363636 20,23.272727 53.545455,10.454545 40.727273,44 35.636364,33.636364 15,54.181818 z" id="path3763" ns2:connector-curvature="0" ns1:nodetypes="cccccccc" />

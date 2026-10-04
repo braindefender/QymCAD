@@ -31,8 +31,8 @@ pub struct IconManager {
     pub dev_watch_enabled: bool,
     /// Specific pack IDs that have live folder watching enabled.
     pub watched_pack_ids: Vec<String>,
-    /// Last seen modification timestamp for watched folder packs: pack_id -> SystemTime.
-    last_seen_mtimes: HashMap<String, std::time::SystemTime>,
+    /// Last seen snapshot of files for watched folder packs: pack_id -> (path -> (mtime, len)).
+    last_seen_snapshots: HashMap<String, HashMap<std::path::PathBuf, (std::time::SystemTime, u64)>>,
     /// Last time the filesystem was polled.
     last_poll_time: Option<std::time::Instant>,
     /// Monotonically increasing revision counter for cache busting.
@@ -70,12 +70,25 @@ impl IconManager {
             }
         }
         self.active_stack = packs;
+        for id in &self.watched_pack_ids {
+            if let Some(pack) = self.active_stack.iter().find(|p| &p.manifest.id == id) {
+                if let Some(snap) = pack.directory_snapshot() {
+                    self.last_seen_snapshots.insert(id.clone(), snap);
+                }
+            }
+        }
         self.clear_cache();
     }
 
     /// Add an icon pack to the top of the priority stack (highest priority).
     pub fn push_top_pack(&mut self, pack: IconPack) {
-        self.active_stack.retain(|p| p.manifest.id != pack.manifest.id);
+        let pack_id = pack.manifest.id.clone();
+        if self.watched_pack_ids.iter().any(|id| id == &pack_id) || self.dev_watch_enabled {
+            if let Some(snap) = pack.directory_snapshot() {
+                self.last_seen_snapshots.insert(pack_id.clone(), snap);
+            }
+        }
+        self.active_stack.retain(|p| p.manifest.id != pack_id);
         self.active_stack.insert(0, pack);
         self.clear_cache();
     }
@@ -94,6 +107,15 @@ impl IconManager {
     /// Synchronize watched pack IDs.
     pub fn sync_watched_packs(&mut self, watched: &[String]) {
         self.watched_pack_ids = watched.to_vec();
+        for id in watched {
+            if !self.last_seen_snapshots.contains_key(id) {
+                if let Some(pack) = self.active_stack.iter().find(|p| &p.manifest.id == id) {
+                    if let Some(snap) = pack.directory_snapshot() {
+                        self.last_seen_snapshots.insert(id.clone(), snap);
+                    }
+                }
+            }
+        }
     }
 
     /// Whether a specific pack ID is being watched.
@@ -107,9 +129,14 @@ impl IconManager {
             if !self.watched_pack_ids.iter().any(|id| id == pack_id) {
                 self.watched_pack_ids.push(pack_id.to_string());
             }
+            if let Some(pack) = self.active_stack.iter().find(|p| p.manifest.id == pack_id) {
+                if let Some(snap) = pack.directory_snapshot() {
+                    self.last_seen_snapshots.insert(pack_id.to_string(), snap);
+                }
+            }
         } else {
             self.watched_pack_ids.retain(|id| id != pack_id);
-            self.last_seen_mtimes.remove(pack_id);
+            self.last_seen_snapshots.remove(pack_id);
         }
     }
 
@@ -131,14 +158,15 @@ impl IconManager {
         let mut any_changed = false;
         for pack in &self.active_stack {
             if pack.is_directory() && (self.dev_watch_enabled || self.watched_pack_ids.iter().any(|id| id == &pack.manifest.id)) {
-                if let Some(mtime) = pack.latest_mtime() {
-                    if let Some(prev) = self.last_seen_mtimes.get(&pack.manifest.id) {
-                        if mtime > *prev {
+                if let Some(snap) = pack.directory_snapshot() {
+                    if let Some(prev) = self.last_seen_snapshots.get(&pack.manifest.id) {
+                        if prev != &snap {
                             any_changed = true;
-                            self.last_seen_mtimes.insert(pack.manifest.id.clone(), mtime);
+                            self.last_seen_snapshots.insert(pack.manifest.id.clone(), snap);
                         }
                     } else {
-                        self.last_seen_mtimes.insert(pack.manifest.id.clone(), mtime);
+                        // First observation of this pack's directory
+                        self.last_seen_snapshots.insert(pack.manifest.id.clone(), snap);
                     }
                 }
             }
@@ -158,6 +186,8 @@ impl IconManager {
         if let Some(cached) = self.cache.get(&id) {
             return cached.clone();
         }
+
+        let mut had_transient_read_failure = false;
 
         for pack in &self.active_stack {
             if let Some(mut data) = pack.get_svg_for_id(id) {
@@ -187,6 +217,10 @@ impl IconManager {
                 };
                 self.cache.insert(id, res.clone());
                 return res;
+            } else if pack.has_icon_on_disk(id) {
+                // The icon file exists on disk in this custom folder pack, but reading it failed
+                // (e.g. transient Windows file sharing violation while an editor was saving).
+                had_transient_read_failure = true;
             }
         }
 
@@ -198,7 +232,10 @@ impl IconManager {
             pack_id: "builtin-fallback".to_string(),
             revision: self.revision,
         };
-        self.cache.insert(id, fallback.clone());
+        // Avoid permanently poisoning cache if custom pack file on disk failed to read transiently
+        if !had_transient_read_failure {
+            self.cache.insert(id, fallback.clone());
+        }
         fallback
     }
 }
@@ -311,6 +348,10 @@ pub fn sync_global_watched_packs(watched: &[String]) {
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
         if let Some(mgr) = g.as_mut() {
             mgr.sync_watched_packs(watched);
+        } else {
+            let mut mgr = IconManager::new();
+            mgr.sync_watched_packs(watched);
+            *g = Some(mgr);
         }
     }
 }
@@ -320,6 +361,10 @@ pub fn set_global_pack_watching(pack_id: &str, watch: bool) {
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
         if let Some(mgr) = g.as_mut() {
             mgr.set_pack_watching(pack_id, watch);
+        } else {
+            let mut mgr = IconManager::new();
+            mgr.set_pack_watching(pack_id, watch);
+            *g = Some(mgr);
         }
     }
 }
@@ -342,6 +387,13 @@ pub fn set_global_dev_watch(enabled: bool) {
             if enabled {
                 mgr.clear_cache();
             }
+        } else {
+            let mut mgr = IconManager::new();
+            mgr.dev_watch_enabled = enabled;
+            if enabled {
+                mgr.clear_cache();
+            }
+            *g = Some(mgr);
         }
     }
 }

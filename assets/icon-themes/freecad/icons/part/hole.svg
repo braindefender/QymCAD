@@ -109,39 +109,6 @@
     </linearGradient>
     <linearGradient ns1:href="#linearGradient4006" id="linearGradient4012" x1="21" y1="18" x2="28" y2="47" gradientUnits="userSpaceOnUse" />
   </defs>
-  <metadata id="metadata2821">
-    <rdf:RDF>
-      <ns3:Work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:creator>
-          <ns3:Agent>
-            <dc:title>[jmaustpc]</dc:title>
-          </ns3:Agent>
-        </dc:creator>
-        <dc:title>PartDesign_Hole</dc:title>
-        <dc:date>2013-03-17</dc:date>
-        <dc:relation>https://www.freecad.org/wiki/index.php?title=Artwork</dc:relation>
-        <dc:publisher>
-          <ns3:Agent>
-            <dc:title>FreeCAD</dc:title>
-          </ns3:Agent>
-        </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/PartDesign/Gui/Resources/icons/PartDesign_Hole.svg</dc:identifier>
-        <dc:rights>
-          <ns3:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
-          </ns3:Agent>
-        </dc:rights>
-        <ns3:license>https://www.gnu.org/copyleft/lesser.html</ns3:license>
-        <dc:contributor>
-          <ns3:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
-          </ns3:Agent>
-        </dc:contributor>
-      </ns3:Work>
-    </rdf:RDF>
-  </metadata>
   <g id="layer1">
     <g transform="scale(0.73872768,1.3536788)" style="font-size:54.21519089000000236px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#ff2600;fill-opacity:1;stroke:#731200;font-family:Arial;-inkscape-font-specification:Arial;color:#000000;fill-rule:nonzero;stroke-width:2.19132471;stroke-linecap:square;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" id="text3796">
       <g id="g3130" transform="translate(-100.1722,-4.4161524)" style="stroke-linejoin:round;stroke-linecap:round">
