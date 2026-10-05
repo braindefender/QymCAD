@@ -5908,7 +5908,7 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // "Finish" lives in the breadcrumbs (one place for it); here there are only sketch tools
                     // --- Creation ---
                     cat(ui, &qymcad_i18n::tr("tb-group-create"));
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchSelect, &qymcad_i18n::tr("tb-select-hint"), qymcad_ui_state::in_select_mode(&bc.armed)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchSelect, &qymcad_i18n::tr("tb-select-hint"), qymcad_ui_state::in_select_mode(bc.armed)) {
                         bc.ask.push(qymcad_ui_state::BarAsk::SketchSelectMode);
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchPoint, &qymcad_i18n::tr("tb-point-hint"), bc.armed.draw_kind() == 5) {
@@ -6080,18 +6080,18 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     create_panel_common(bc, ui);
                     // --- From a sketch ---
                     cat(ui, &qymcad_i18n::tr("tb-group-sketch3d"));
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartExtrude, &qymcad_i18n::tr("tb-extrude-hint"), tool_is_taken(&bc, 1)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartExtrude, &qymcad_i18n::tr("tb-extrude-hint"), tool_is_taken(bc, 1)) {
                         bc.feat.op = 0;
-                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(&bc, 1), qymcad_ui_state::BarAsk::FeatCmd(1)));
+                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 1), qymcad_ui_state::BarAsk::FeatCmd(1)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartRevolve, &qymcad_i18n::tr("tb-revolve-hint"), tool_is_taken(&bc, 3)) {
-                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(&bc, 3), qymcad_ui_state::BarAsk::FeatCmd(3)));
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartRevolve, &qymcad_i18n::tr("tb-revolve-hint"), tool_is_taken(bc, 3)) {
+                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 3), qymcad_ui_state::BarAsk::FeatCmd(3)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSweep, &qymcad_i18n::tr("tb-sweep-hint"), tool_is_taken(&bc, 8)) {
-                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(&bc, 8), qymcad_ui_state::BarAsk::FeatCmd(8)));
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSweep, &qymcad_i18n::tr("tb-sweep-hint"), tool_is_taken(bc, 8)) {
+                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 8), qymcad_ui_state::BarAsk::FeatCmd(8)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartLoft, &qymcad_i18n::tr("tb-loft-hint"), tool_is_taken(&bc, 9)) {
-                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(&bc, 9), qymcad_ui_state::BarAsk::FeatCmd(9)));
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartLoft, &qymcad_i18n::tr("tb-loft-hint"), tool_is_taken(bc, 9)) {
+                        bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 9), qymcad_ui_state::BarAsk::FeatCmd(9)));
                     }
                     // --- The 3D primitives (a command: sizes at the geometry + a preview + Enter/Esc) ---
                     cat(ui, &qymcad_i18n::tr("tb-group-prim"));

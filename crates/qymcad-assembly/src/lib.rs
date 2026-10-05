@@ -108,11 +108,9 @@ pub fn joint_slot_drag(ui: &mut egui::Ui, jj: &mut qymcad_core::feature::Joint, 
         jj.drive[slot] = Some(v);
         exprs.push((slot, typed.into_inner()));
     }
-    let (icon, tip) = match driven {
-        Some(_) => (ph::LOCK, &qymcad_i18n::tr("j-value-set")),
-        None => (ph::LOCK_OPEN, &qymcad_i18n::tr("j-value-free")),
-    };
-    if ui.small_button(icon).on_hover_text(tip).clicked() {
+    let is_driven = driven.is_some();
+    let tip = if is_driven { qymcad_i18n::tr("j-value-set") } else { qymcad_i18n::tr("j-value-free") };
+    if qymcad_ui_state::icon_small_button(ui, qymcad_ui_state::IconId::AssemblyDrive, is_driven).on_hover_text(tip).clicked() {
         jj.drive[slot] = driven.is_none().then_some(measured);
         changed = true;
     }
@@ -195,7 +193,7 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
                 // THE TURN: a +90 deg button for the common case and a field for anything else. The
                 // angle used to be stored in QUARTER TURNS, and there was nothing to set a slot at
                 // 30 deg to the axis of a part with.
-                if ui.button(format!("{} 90{}", ph::ARROW_CLOCKWISE, qymcad_i18n::tr("unit-deg-suffix"))).on_hover_text(qymcad_i18n::tr("j-roll-hint")).clicked() {
+                if ui.button(format!("+90{}", qymcad_i18n::tr("unit-deg-suffix"))).on_hover_text(qymcad_i18n::tr("j-roll-hint")).clicked() {
                     rot = (rot + 90.0).rem_euclid(360.0);
                     changed = true;
                 }
@@ -207,7 +205,7 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
             ui.horizontal(|ui| {
                 let armed = joint.axis_pick == Some(cid);
                 let has = project.connector(cid).is_some_and(|c| c.axis_ref.is_some());
-                if ui.selectable_label(armed, format!("{} {}", ph::CROSSHAIR, qymcad_i18n::tr("j-axis-pick"))).on_hover_text(qymcad_i18n::tr("j-axis-pick-hint")).clicked() {
+                if ui.selectable_label(armed, qymcad_i18n::tr("j-axis-pick")).on_hover_text(qymcad_i18n::tr("j-axis-pick-hint")).clicked() {
                     joint.axis_pick = if armed { None } else { Some(cid) };
                 }
                 if has && ui.button(qymcad_i18n::tr("j-axis-auto")).on_hover_text(qymcad_i18n::tr("j-axis-auto-hint")).clicked() {
@@ -1038,7 +1036,7 @@ pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let ui = &mut *ui;
         use qymcad_core::feature::JointKind;
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(format!("{} {}", ph::LINK, qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)))).strong());
+            qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyJoint, 16.0, egui::RichText::new(qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name))).strong());
             // A JOINT WITHOUT AN ANCHOR SAYS SO OUT LOUD. The solver silently drops such joints from
             // the problem: the assembly looks assembled, the parts do not move, and there is no
             // explanation. That was reported as parts not moving with the direction being wrong no
@@ -1065,7 +1063,7 @@ pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
             ui.label(qymcad_i18n::tr("j-anchor"));
             ui.label(egui::RichText::new(qymcad_i18n::tr("j-anchor-inferred")).weak()).on_hover_text(qymcad_i18n::tr("j-anchor-inferred-hint"));
             ui.separator();
-            ui.menu_button(format!("{} {}", ph::MAGNET, qymcad_i18n::tr("jt-swap-anchor")), |ui| {
+            ui.menu_button(qymcad_i18n::tr("jt-swap-anchor"), |ui| {
                 if ui.button(format!("A: {desc_a}")).clicked() {
                     set_repick = Some(Some((jid, false)));
                     ui.close();
@@ -1081,10 +1079,10 @@ pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
             // correctable only by recreating the joint - along with its drivers, its limits and its
             // name.
             ui.separator();
-            if ui.button(format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("jt-flip-axis"))).on_hover_text(qymcad_i18n::tr("jt-flip-axis-hint")).clicked() {
+            if ui.button(qymcad_i18n::tr("jt-flip-axis")).on_hover_text(qymcad_i18n::tr("jt-flip-axis-hint")).clicked() {
                 flip_axis = true;
             }
-            if ui.button(format!("{} {}", ph::SWAP, qymcad_i18n::tr("jt-swap-roles"))).on_hover_text(qymcad_i18n::tr("jt-swap-roles-hint")).clicked() {
+            if ui.button(qymcad_i18n::tr("jt-swap-roles")).on_hover_text(qymcad_i18n::tr("jt-swap-roles-hint")).clicked() {
                 swap_roles = true;
             }
             if let Some((_, is_b)) = repick {
@@ -1173,7 +1171,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let (mut cancel, mut apply) = (false, false);
         egui::Panel::top("tangent_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::CIRCLE_HALF_TILT, qymcad_i18n::tr("j-tangent-made"))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyTangent, 16.0, egui::RichText::new(qymcad_i18n::tr("j-tangent-made")).strong());
                 ui.separator();
                 let hint = if made {
                     qymcad_i18n::tr("j-tangent-made-ok")
@@ -1219,7 +1217,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let (mut make, mut cancel) = (false, false);
         egui::Panel::top("width_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::ARROWS_OUT_LINE_HORIZONTAL, qymcad_i18n::tr("j-width-made"))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyWidth, 16.0, egui::RichText::new(qymcad_i18n::tr("j-width-made")).strong());
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr1("j-width-picked", "n", &sel.len().to_string())).color(jc.scheme.pal.hint()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1252,7 +1250,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let (mut make, mut cancel) = (false, false);
         egui::Panel::top("group_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::SELECTION_ALL, qymcad_i18n::tr("j-group-made"))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyGroup, 16.0, egui::RichText::new(qymcad_i18n::tr("j-group-made")).strong());
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr1("j-group-picked", "n", &sel.len().to_string())).color(jc.scheme.pal.hint()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1284,7 +1282,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let mut cancel = false;
         egui::Panel::top("ground_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::ANCHOR, qymcad_i18n::tr("jt-ground-btn"))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyGround, 16.0, egui::RichText::new(qymcad_i18n::tr("jt-ground-btn")).strong());
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr("j-ground-click")).color(jc.scheme.pal.hint()));
                 // what the clicks have grounded, named in the bar and not only in the status line
@@ -1313,7 +1311,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let mut cancel = false;
         egui::Panel::top("conn_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::CROSSHAIR, qymcad_i18n::tr("j-conn-new"))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyJoint, 16.0, egui::RichText::new(qymcad_i18n::tr("j-conn-new")).strong());
                 ui.separator();
                 ui.label(qymcad_i18n::tr("j-anchor"));
                 ui.label(egui::RichText::new(qymcad_i18n::tr("j-anchor-inferred")).weak()).on_hover_text(qymcad_i18n::tr("j-anchor-inferred-hint"));
@@ -1343,7 +1341,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let have = if need == 1 { pick.picks.len() / 2 } else { pick.picks.len() };
         egui::Panel::top("relation_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::GEAR_SIX, qymcad_i18n::tr("j-relation-btn"))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyRelation, 16.0, egui::RichText::new(qymcad_i18n::tr("j-relation-btn")).strong());
                 ui.separator();
                 ui.label(qymcad_i18n::tr("j-kind"));
                 let mut k = pick.kind;
@@ -1413,7 +1411,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     {
         let ui = &mut *ui;
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(format!("{} {}", ph::MAGNET, qymcad_i18n::tr("jt-joint-btn"))).strong());
+            qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyJoint, 16.0, egui::RichText::new(qymcad_i18n::tr("jt-joint-btn")).strong());
             ui.separator();
             ui.label(qymcad_i18n::tr("j-kind"));
             let mut k = jc.joint.new_kind;
@@ -1734,7 +1732,7 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
                 // catalogue key with a number (`name-joint-kind-rigid-n#3`), and printed as it is it
                 // shows a service code. That is exactly what an earlier screenshot about the list of
                 // kinds was about.
-                ui.label(egui::RichText::new(format!("{} {}", ph::LINK, qymcad_i18n::name(&j.name))).strong());
+                qymcad_ui_state::icon_label(ui, qymcad_ui_state::IconId::AssemblyJoint, 14.0, egui::RichText::new(qymcad_i18n::name(&j.name)).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.small_button(ph::X).on_hover_text(qymcad_i18n::tr("j-done-esc")).clicked() {
                         close = true;
@@ -1778,7 +1776,7 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
             let anim_on = jc.joint_anim.as_ref().is_some_and(|a| a.joint == jid);
             ui.horizontal(|ui| {
                 if anim_on {
-                    if ui.button(format!("{} {}", ph::STOP, qymcad_i18n::tr("j-anim-stop"))).clicked() {
+                    if ui.button(qymcad_i18n::tr("j-anim-stop")).clicked() {
                         stop_joint_anim(jc);
                     }
                 } else {
@@ -1791,7 +1789,7 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
                             1 => "j-anim-offset",
                             _ => "j-anim-offset2",
                         });
-                        if ui.button(format!("{} {label}", ph::PLAY)).on_hover_text(qymcad_i18n::tr("j-anim-hint")).clicked() {
+                        if ui.button(label).on_hover_text(qymcad_i18n::tr("j-anim-hint")).clicked() {
                             qymcad_ui_state::start_joint_anim(jc.joint_anim, jc.project, jid, slot);
                         }
                     }

@@ -178,10 +178,8 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         Err(reason) => {
                             let error = format!("{}: {reason}", crate::i18n::tr("icon-mgr-gallery-invalid"));
                             ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
-                            if cleanable && !reason.starts_with("monochrome ") {
-                                if ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-icon"))).clicked() {
-                                    clean_clicked = true;
-                                }
+                            if cleanable && !reason.starts_with("monochrome ") && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-icon"))).clicked() {
+                                clean_clicked = true;
                             }
                         }
                     }
@@ -982,7 +980,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     });
 
                     let (cov, total) = pack_preview.as_ref().map_or_else(|| pack.coverage(), |preview| (preview.coverage, ALL_ICONS.len()));
-                    let pct = if total == 0 { 0 } else { (cov * 100) / total };
+                    let pct = (cov * 100).checked_div(total).unwrap_or(0);
                     let cov_msg = crate::i18n::trn("icon-mgr-total-icons", &[("count", &cov.to_string()), ("total", &total.to_string()), ("percent", &pct.to_string())]);
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {

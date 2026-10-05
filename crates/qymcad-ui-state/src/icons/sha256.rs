@@ -27,7 +27,7 @@ pub fn compute_sha256(data: &[u8]) -> [u8; 32] {
     padded.extend_from_slice(&bit_len.to_be_bytes());
 
     // Process each 64-byte chunk
-    for chunk in padded.chunks_exact(64) {
+    for chunk in padded.as_chunks::<64>().0 {
         let mut w = [0u32; 64];
         for (i, slot) in w.iter_mut().take(16).enumerate() {
             *slot = u32::from_be_bytes(chunk[i * 4..i * 4 + 4].try_into().unwrap());

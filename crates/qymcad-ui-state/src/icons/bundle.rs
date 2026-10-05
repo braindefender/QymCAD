@@ -34,11 +34,7 @@ impl ValidationReport {
     /// Total percentage coverage (0 to 100).
     pub fn coverage_percent(&self) -> usize {
         let (cov, total) = self.coverage();
-        if total == 0 {
-            0
-        } else {
-            (cov * 100) / total
-        }
+        (cov * 100).checked_div(total).unwrap_or(0)
     }
 
     /// Whether there are any issues (rejected or extraneous files).

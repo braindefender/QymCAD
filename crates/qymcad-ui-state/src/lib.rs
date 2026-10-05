@@ -13419,16 +13419,40 @@ pub fn take_or_drop(held: bool, ask: BarAsk) -> BarAsk {
 }
 
 pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bool {
+    let img = icon_image(ui, icon, 22.0);
+    let btn = egui::Button::image(img).selected(active);
+
+    ui.add_sized(egui::vec2(40.0, 34.0), btn).on_hover_text(tip).clicked()
+}
+
+pub fn icon_image(ui: &egui::Ui, icon: IconId, size: f32) -> egui::Image<'static> {
     let resolved = icons::resolve_global_icon(icon);
     let uri = format!("bytes://qicons/{}/r{}/{}.svg", resolved.pack_id, resolved.revision, icon.relative_path());
-    let mut img = egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(22.0, 22.0));
+    let mut img = egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(size, size));
     if resolved.color_mode == icons::ColorMode::Monochrome {
         let text_color = ui.visuals().text_color();
         img = img.tint(text_color);
     }
-    let btn = egui::Button::image(img).selected(active);
+    img
+}
 
-    ui.add_sized(egui::vec2(40.0, 34.0), btn).on_hover_text(tip).clicked()
+pub fn icon_button(ui: &mut egui::Ui, icon: IconId, size: f32, selected: bool) -> egui::Response {
+    let img = icon_image(ui, icon, size);
+    ui.add(egui::Button::image(img).selected(selected))
+}
+
+pub fn icon_small_button(ui: &mut egui::Ui, icon: IconId, selected: bool) -> egui::Response {
+    let img = icon_image(ui, icon, 14.0);
+    ui.add(egui::Button::image(img).small().selected(selected))
+}
+
+pub fn icon_label(ui: &mut egui::Ui, icon: IconId, size: f32, text: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.add(icon_image(ui, icon, size));
+        ui.label(text)
+    })
+    .response
 }
 
 /// The direction of an offset vector, as (dir 0/1/2, a signed step) — for reopening a linear pattern.

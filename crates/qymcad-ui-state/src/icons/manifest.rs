@@ -26,30 +26,20 @@ pub(crate) fn locale_fallbacks(locale: &str) -> Vec<String> {
 }
 
 /// The package type tag for future plugin system compatibility.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum PackageType {
+    #[default]
     IconTheme,
 }
 
-impl Default for PackageType {
-    fn default() -> Self {
-        Self::IconTheme
-    }
-}
-
 /// Colour rendering mode of the theme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ColorMode {
     /// Full-colour icons rendered as-is across all UI themes.
+    #[default]
     Universal,
     /// Single-colour icons dynamically tinted by the active theme foreground.
     Monochrome,
-}
-
-impl Default for ColorMode {
-    fn default() -> Self {
-        Self::Universal
-    }
 }
 
 /// Metadata describing an icon pack bundle.
