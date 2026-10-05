@@ -67,6 +67,7 @@ fn cascade_fallback_chain() {
             verified: false,
         },
         source: PackSource::Memory(map_a),
+        is_tampered: false,
     };
 
     // Pack B has sketch/rect
@@ -85,6 +86,7 @@ fn cascade_fallback_chain() {
             verified: false,
         },
         source: PackSource::Memory(map_b),
+        is_tampered: false,
     };
 
     let mut mgr = IconManager::new();
@@ -147,6 +149,8 @@ fn package_bundle_and_load_from_archive() {
 
     let svg_content = br#"<svg viewBox="0 0 64 64"><line x1="0" y1="0" x2="64" y2="64"/></svg>"#;
     std::fs::write(icons_dir.join("line.svg"), svg_content).expect("writes svg");
+    let pack_icon = br#"<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="20"/></svg>"#;
+    std::fs::write(temp_dir.join("icon.svg"), pack_icon).expect("writes pack icon");
 
     let manifest = IconManifest {
         package_type: PackageType::IconTheme,
@@ -159,6 +163,7 @@ fn package_bundle_and_load_from_archive() {
         color_mode: ColorMode::Universal,
         verified: false,
     };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().expect("manifest serializes")).expect("writes manifest");
 
     let archive_path = temp_dir.join("test-pack.qicons");
     let report = package_bundle(&temp_dir, &manifest, &archive_path).expect("packaging succeeds");
@@ -166,10 +171,15 @@ fn package_bundle_and_load_from_archive() {
     assert_eq!(report.rejected.len(), 0);
     assert_eq!(report.extraneous.len(), 0);
     assert_eq!(report.missing.len(), ALL_ICONS.len() - 1);
+    assert_eq!(IconPack::from_directory(&temp_dir).expect("folder loads").get_pack_icon_svg(), pack_icon);
 
     let pack = IconPack::from_archive(&archive_path).expect("loading archive succeeds");
     assert_eq!(pack.manifest.id, "test-pack");
     assert_eq!(pack.coverage().0, 1);
+    assert_eq!(pack.get_pack_icon_svg(), pack_icon, "packaging must retain the icon beside manifest.ron");
+
+    let embedded = IconPack::from_zip_bytes(&std::fs::read(&archive_path).expect("archive reads")).expect("embedded archive loads");
+    assert_eq!(embedded.get_pack_icon_svg(), pack_icon);
 
     let data = pack.get_svg_for_id(IconId::SketchLine).expect("line icon exists in archive");
     assert_eq!(data, svg_content);
@@ -178,6 +188,31 @@ fn package_bundle_and_load_from_archive() {
     assert!(missing.is_none());
 
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn missing_or_invalid_pack_icon_uses_default() {
+    let dir = std::env::temp_dir().join(format!("qymcad_pack_icon_fallback_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("creates pack directory");
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "icon-fallback".into(),
+        name: "Icon fallback".into(),
+        version: "1.0.0".into(),
+        author: String::new(),
+        license: "MIT".into(),
+        description: String::new(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(dir.join("manifest.ron"), manifest.to_ron().expect("manifest serializes")).expect("writes manifest");
+    let pack = IconPack::from_directory(&dir).expect("folder loads");
+    let default_icon = load_default_pack().expect("default loads").get_pack_icon_svg();
+    assert_eq!(pack.get_pack_icon_svg(), default_icon);
+
+    std::fs::write(dir.join("icon.svg"), b"<svg><script/></svg>").expect("writes invalid icon");
+    assert_eq!(pack.get_pack_icon_svg(), default_icon, "unsafe icons must not reach the UI");
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -269,6 +304,9 @@ fn default_embedded_pack_is_valid_and_complete() {
     let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
     assert_eq!(pack.manifest.id, "default");
     assert_eq!(pack.manifest.color_mode, ColorMode::Monochrome);
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
+    assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
+    validate_svg(&pack.get_pack_icon_svg()).expect("default pack icon is a valid SVG");
     
     // Check coverage of all known IconIds
     let (cov, total) = pack.coverage();
@@ -313,6 +351,7 @@ fn global_icon_manager_cascade() {
             verified: false,
         },
         source: PackSource::Memory(map),
+        is_tampered: false,
     };
 
     with_global_icon_manager_mut(|m| {
@@ -377,6 +416,8 @@ fn freecad_theme_is_complete_and_valid() {
     assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
     assert_eq!(pack.format(), BundleFormat::Embedded);
     assert!(!pack.is_directory());
+    validate_svg(&pack.get_pack_icon_svg()).expect("FreeCAD pack icon is a valid SVG");
+    assert_ne!(pack.get_pack_icon_svg(), load_default_pack().expect("default loads").get_pack_icon_svg());
 
     let (cov, total) = pack.coverage();
     assert_eq!(cov, total, "FreeCAD theme must cover 100% of icons (got {}/{})", cov, total);
@@ -556,6 +597,151 @@ fn test_successive_folder_live_reloads_do_not_stop_after_3_times() {
             assert_eq!(res.data, new_content.as_bytes(), "Edit {} data mismatch", edit_num);
         }
     }
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn qicons_valid_trailer_and_tampered_downgrade() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_tamper_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let pack_dir = temp_dir.join("tamper_src");
+    std::fs::create_dir_all(pack_dir.join("icons").join("sketch")).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "tamper-test".to_string(),
+        name: "Tamper Test".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Dev".to_string(),
+        license: "MIT".to_string(),
+        description: "Test".to_string(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+    let valid_svg = br#"<svg viewBox="0 0 24 24"><line x1="0" y1="0" x2="24" y2="24"/></svg>"#;
+    std::fs::write(pack_dir.join("icons").join("sketch").join("line.svg"), valid_svg).unwrap();
+
+    // 1. Package legitimate .qicons bundle with trailing verification record
+    let bundle_path = temp_dir.join("official.qicons");
+    let report = package_bundle(&pack_dir, &manifest, &bundle_path).expect("bundle packaging succeeds");
+    assert_eq!(report.included.len(), 1);
+
+    // 2. Load genuine bundle: should be VerifiedArchive with is_tampered == false
+    let pack = IconPack::from_archive(&bundle_path).expect("genuine bundle loads cleanly");
+    assert_eq!(pack.format(), BundleFormat::VerifiedArchive);
+    assert!(!pack.is_tampered);
+    assert!(pack.manifest.verified);
+    assert_eq!(pack.get_svg_for_id(IconId::SketchLine).unwrap(), valid_svg);
+
+    // 3. Tamper with the bundle bytes (e.g. external archiver or binary patch modification)
+    let mut tampered_bytes = std::fs::read(&bundle_path).unwrap();
+    assert!(tampered_bytes.len() > 40);
+    // Alter a byte inside the zip payload (before the 40-byte trailer)
+    tampered_bytes[10] ^= 0xFF;
+    let tampered_path = temp_dir.join("tampered.qicons");
+    std::fs::write(&tampered_path, &tampered_bytes).unwrap();
+
+    // 4. Load tampered file: zip archive itself is broken or hash fails
+    // Even if it parses as zip or if trailer hash doesn't match:
+    // When SHA-256 doesn't match, verify_qicons_trailer returns Tampered
+    let check = crate::icons::sha256::verify_qicons_trailer(&tampered_bytes);
+    assert_eq!(check, crate::icons::sha256::TrailerCheck::Tampered);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn generic_zip_without_manifest_loads_as_archive_with_crash_guard() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_zip_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    // Create a generic .zip archive with NO manifest.ron (community zip)
+    let zip_path = temp_dir.join("my-cool-pack.zip");
+    let zip_file = std::fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    let valid_svg = br#"<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="10"/></svg>"#;
+    zip.start_file("icons/sketch/circle.svg", options).unwrap();
+    std::io::Write::write_all(&mut zip, valid_svg).unwrap();
+
+    // Malicious XML entity bomb
+    let entity_bomb = br#"<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ELEMENT lolz (#PCDATA)>]><svg viewBox="0 0 10 10">&lol;</svg>"#;
+    zip.start_file("icons/sketch/line.svg", options).unwrap();
+    std::io::Write::write_all(&mut zip, entity_bomb).unwrap();
+
+    zip.finish().unwrap();
+
+    // Load generic .zip
+    let pack = IconPack::from_archive(&zip_path).expect("generic zip must load");
+    // Format must be Archive (NOT VerifiedArchive)
+    assert_eq!(pack.format(), BundleFormat::Archive);
+    assert!(!pack.manifest.verified);
+    assert!(!pack.is_tampered);
+    // Manifest synthesized from filename stem
+    assert_eq!(pack.manifest.name, "my-cool-pack");
+
+    // Valid SVG should be retrieved
+    let circle_data = pack.get_svg_for_id(IconId::SketchCircle);
+    assert_eq!(circle_data.unwrap(), valid_svg);
+
+    // Dangerous XML entity bomb must be rejected by crash-guard (returns None instead of crashing)
+    let line_data = pack.get_svg_for_id(IconId::SketchLine);
+    assert!(line_data.is_none(), "Entity bomb should be filtered out by crash-guard");
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn zip_bomb_excessive_compression_ratio_is_rejected() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_bomb_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    // Create a zip bomb: 500 KB of zeroes compresses to ~500 bytes (ratio ~1000:1)
+    let bomb_path = temp_dir.join("bomb.zip");
+    let file = std::fs::File::create(&bomb_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    zip.start_file("icons/sketch/line.svg", options).unwrap();
+    let zero_payload = vec![0u8; 500 * 1024];
+    std::io::Write::write_all(&mut zip, &zero_payload).unwrap();
+    zip.finish().unwrap();
+
+    let res = IconPack::from_archive(&bomb_path);
+    assert!(res.is_err(), "Zip bomb archive must be rejected");
+    let err = res.unwrap_err();
+    assert!(
+        err.contains("possible decompression bomb") || err.contains("suspicious compression ratio"),
+        "Expected decompression bomb error, got: {err}"
+    );
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn zip_slip_path_traversal_is_rejected() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_slip_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let slip_path = temp_dir.join("slip.zip");
+    let file = std::fs::File::create(&slip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    zip.start_file("../../etc/passwd", options).unwrap();
+    std::io::Write::write_all(&mut zip, b"malicious").unwrap();
+    zip.finish().unwrap();
+
+    let res = IconPack::from_archive(&slip_path);
+    assert!(res.is_err(), "Zip slip archive must be rejected");
+    let err = res.unwrap_err();
+    assert!(
+        err.contains("insecure file path"),
+        "Expected insecure file path error, got: {err}"
+    );
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

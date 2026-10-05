@@ -25,6 +25,7 @@ An icon theme is either a directory on disk or a ZIP archive renamed with the `.
 ```text
 my-theme.qicons (or directory my-theme/)
 ├── manifest.ron
+├── icon.svg
 └── icons/
     ├── sketch/
     │   ├── line.svg
@@ -49,6 +50,8 @@ my-theme.qicons (or directory my-theme/)
         ├── settings.svg
         └── ...
 ```
+
+Place `icon.svg` beside `manifest.ron` to give the theme a thumbnail in the manager. It must be a valid square SVG using a `viewBox`. The built-in thumbnail is shown when this file is absent or invalid. The packager includes a valid `icon.svg` in `.qicons` bundles.
 
 ---
 

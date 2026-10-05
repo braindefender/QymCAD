@@ -217,6 +217,7 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
             if p.is_file() {
                 let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 let allowed = fname == "manifest.ron"
+                    || fname == "icon.svg"
                     || fname.starts_with("LICENSE")
                     || fname.starts_with("README")
                     || fname.starts_with("preview.")
@@ -224,6 +225,19 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
                     || fname.ends_with(".zip");
                 if !allowed {
                     extraneous.push(format!("extra root file: {fname}"));
+                } else if fname == "icon.svg" {
+                    if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
+                        rejected.push((fname.to_string(), "pack icon exceeds maximum SVG size".to_string()));
+                    } else {
+                        match std::fs::read(&p) {
+                            Ok(data) => {
+                                if let Err(err) = validate_svg(&data) {
+                                    rejected.push((fname.to_string(), err));
+                                }
+                            }
+                            Err(err) => rejected.push((fname.to_string(), format!("read error: {err}"))),
+                        }
+                    }
                 }
             }
         }
@@ -322,15 +336,17 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(
     zip.start_file("manifest.ron", options).map_err(|e| e.to_string())?;
     std::io::Write::write_all(&mut zip, ron_text.as_bytes()).map_err(|e| e.to_string())?;
 
-    // Mark as verified CAD package
-    let _ = zip.start_file(".verified", options);
-    let _ = std::io::Write::write_all(&mut zip, b"QymCAD Verified Bundle\n");
-
-    // 2. Write optional LICENSE, README, and preview files from root if present
-    for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "preview.svg", "preview.png", "preview.webp"] {
+    // 2. Write optional metadata and preview files from root if present
+    for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "preview.svg", "preview.png", "preview.webp", "icon.svg"] {
         let doc_path = source_dir.join(doc);
         if doc_path.is_file() {
+            if *doc == "icon.svg" && std::fs::metadata(&doc_path).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
+                continue;
+            }
             if let Ok(content) = std::fs::read(&doc_path) {
+                if *doc == "icon.svg" && (content.len() as u64 > super::pack::MAX_ICON_SVG_SIZE || validate_svg(&content).is_err()) {
+                    continue;
+                }
                 let _ = zip.start_file(*doc, options);
                 let _ = std::io::Write::write_all(&mut zip, &content);
             }
@@ -352,18 +368,7 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(
     Ok(report)
 }
 
-/// Package an icon folder into a `.qicons` file on disk.
-/// Automatically validates all icons and guarantees that only verified CAD icons enter the archive.
-pub fn package_bundle(
-    source_dir: impl AsRef<Path>,
-    manifest: &IconManifest,
-    output_archive: impl AsRef<Path>,
-) -> Result<ValidationReport, String> {
-    let out_file = std::fs::File::create(output_archive.as_ref()).map_err(|e| e.to_string())?;
-    package_bundle_to_writer(source_dir, manifest, out_file)
-}
-
-/// Package an icon folder into an in-memory byte buffer.
+/// Package an icon folder into an in-memory byte buffer, signed with QymCAD verification trailer.
 pub fn package_bundle_to_bytes(
     source_dir: impl AsRef<Path>,
     manifest: &IconManifest,
@@ -371,6 +376,20 @@ pub fn package_bundle_to_bytes(
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = cursor;
     let report = package_bundle_to_writer(source_dir, manifest, &mut writer)?;
-    Ok((writer.into_inner(), report))
+    let mut bytes = writer.into_inner();
+    super::sha256::append_qicons_trailer(&mut bytes);
+    Ok((bytes, report))
 }
 
+/// Package an icon folder into a `.qicons` bundle file on disk.
+/// Automatically validates all icons, guarantees that only verified CAD icons enter the bundle,
+/// and seals the bundle with a trailing cryptographic SHA-256 integrity record.
+pub fn package_bundle(
+    source_dir: impl AsRef<Path>,
+    manifest: &IconManifest,
+    output_archive: impl AsRef<Path>,
+) -> Result<ValidationReport, String> {
+    let (bytes, report) = package_bundle_to_bytes(source_dir, manifest)?;
+    std::fs::write(output_archive.as_ref(), bytes).map_err(|e| e.to_string())?;
+    Ok(report)
+}

@@ -12,6 +12,7 @@ pub mod id;
 pub mod manager;
 pub mod manifest;
 pub mod pack;
+pub mod sha256;
 
 #[cfg(test)]
 mod tests;

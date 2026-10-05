@@ -176,6 +176,10 @@ fn main() {
     zip.start_file("manifest.ron", options).expect("writes manifest into zip");
     zip.write_all(manifest_content.as_bytes()).expect("writes manifest bytes");
 
+    let pack_icon = fs::read(default_theme_dir.join("icon.svg")).expect("default pack icon reads");
+    zip.start_file("icon.svg", options).expect("writes pack icon into zip");
+    zip.write_all(&pack_icon).expect("writes pack icon bytes");
+
     // Write README.md if present
     let readme_path = default_theme_dir.join("README.md");
     if readme_path.is_file() {

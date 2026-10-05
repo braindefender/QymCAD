@@ -7,7 +7,7 @@ use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
     clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack,
     package_bundle, reload_active_icon_themes, BundleFormat, ColorMode, IconManifest, PackageType,
-    ValidationReport, ALL_ICONS,
+    IconPack, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::PathBuf;
@@ -71,33 +71,42 @@ pub(crate) fn apply_icon_themes(set: &Settings) {
 }
 
 /// Render a compact, colored visual badge indicating the format and provenance of an icon bundle.
-pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat) {
+pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat, is_tampered: bool) {
     let visuals = ui.visuals();
-    let (icon, label_key, bg, fg) = match format {
-        BundleFormat::Directory => (
-            ph::FOLDER_OPEN,
-            "bundle-format-folder",
-            visuals.warn_fg_color.linear_multiply(0.18),
-            visuals.warn_fg_color,
-        ),
-        BundleFormat::Archive => (
-            ph::PACKAGE,
-            "bundle-format-archive",
-            visuals.hyperlink_color.linear_multiply(0.18),
-            visuals.hyperlink_color,
-        ),
-        BundleFormat::VerifiedArchive => (
-            ph::CHECK,
-            "bundle-format-verified",
-            visuals.selection.bg_fill.linear_multiply(0.22),
-            visuals.selection.bg_fill,
-        ),
-        BundleFormat::Embedded => (
-            ph::GEAR,
-            "bundle-format-embedded",
-            visuals.faint_bg_color,
-            visuals.weak_text_color(),
-        ),
+    let (icon, label_key, bg, fg) = if is_tampered {
+        (
+            ph::WARNING,
+            "bundle-format-tampered",
+            visuals.error_fg_color.linear_multiply(0.20),
+            visuals.error_fg_color,
+        )
+    } else {
+        match format {
+            BundleFormat::Directory => (
+                ph::FOLDER_OPEN,
+                "bundle-format-folder",
+                visuals.warn_fg_color.linear_multiply(0.18),
+                visuals.warn_fg_color,
+            ),
+            BundleFormat::Archive => (
+                ph::PACKAGE,
+                "bundle-format-archive",
+                visuals.hyperlink_color.linear_multiply(0.18),
+                visuals.hyperlink_color,
+            ),
+            BundleFormat::VerifiedArchive => (
+                ph::SHIELD_CHECK,
+                "bundle-format-verified",
+                visuals.selection.bg_fill.linear_multiply(0.22),
+                visuals.selection.bg_fill,
+            ),
+            BundleFormat::Embedded => (
+                ph::GEAR,
+                "bundle-format-embedded",
+                visuals.faint_bg_color,
+                visuals.weak_text_color(),
+            ),
+        }
     };
 
     egui::Frame::NONE
@@ -111,6 +120,11 @@ pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat) 
                 ui.label(egui::RichText::new(crate::i18n::tr(label_key)).color(fg).small().strong());
             });
         });
+}
+
+fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, size: f32) {
+    let uri = format!("bytes://pack-icon/{}/r{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision());
+    ui.add(egui::Image::from_bytes(uri, pack.get_pack_icon_svg()).fit_to_exact_size(egui::vec2(size, size)));
 }
 
 /// Developer Packager modal state kept in UI context.
@@ -176,7 +190,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
         for id in &wc.set.active_icon_packs {
             if let Some(pack) = all_packs.iter().find(|p| &p.manifest.id == id) {
                 ui.label(egui::RichText::new(&pack.manifest.name).strong());
-                draw_bundle_format_badge(ui, pack.format());
+                draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
                 ui.label(egui::RichText::new(ph::ARROW_RIGHT).weak());
             } else {
                 ui.label(egui::RichText::new(id).weak());
@@ -186,7 +200,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
 
         // Base fallback is always the built-in SVG bundle
         ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-base")).strong());
-        draw_bundle_format_badge(ui, BundleFormat::Embedded);
+        draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
     });
 
     ui.add_space(6.0);
@@ -464,6 +478,63 @@ pub(crate) fn open_icon_manager(ctx: &egui::Context) {
     });
 }
 
+fn manager_theme_card(
+    ui: &mut egui::Ui,
+    id: &str,
+    selected: bool,
+    content: impl FnOnce(&mut egui::Ui) -> Option<egui::Rect>,
+) -> (bool, egui::Rect) {
+    let fill = if selected { ui.visuals().selection.bg_fill.linear_multiply(0.22) } else { ui.visuals().faint_bg_color };
+    let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 68.0), egui::Sense::click());
+    ui.painter().rect_filled(rect, 6.0, fill);
+    let inner = rect.shrink2(egui::vec2(8.0, 6.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    let action_rect = content(&mut child);
+    let mut selection_rect = rect;
+    if let Some(action_rect) = action_rect {
+        selection_rect.max.x = action_rect.left();
+    }
+    let foreground = ui.interact(selection_rect, ui.id().with(("theme_card", id)), egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    (foreground.clicked() || background.clicked(), rect)
+}
+
+fn manager_sidebar_shell(ui: &mut egui::Ui, actions: impl FnOnce(&mut egui::Ui)) -> egui::ScrollArea {
+    egui::Panel::bottom("icon_manager_actions").resizable(false).exact_size(78.0).show(ui, actions);
+    egui::ScrollArea::vertical().id_salt("mgr_sidebar_scroll").auto_shrink([false, false])
+}
+
+fn draw_icon_manager_actions(ctx: &egui::Context, wc: &mut WinCtx, ui: &mut egui::Ui) {
+    ui.add_space(6.0);
+    if let Some(user_dir) = user_themes_dir() {
+        if ui.add_sized([ui.available_width(), 28.0], egui::Button::new(
+            format!("{} {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-icon-open-folder"))
+        )).clicked() {
+            let _ = std::fs::create_dir_all(&user_dir);
+            let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &user_dir);
+            let _ = crate::system::start(bin, &args);
+        }
+    }
+    ui.horizontal(|ui| {
+        let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+        if ui.add_sized([width, 28.0], egui::Button::new(
+            format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-refresh"))
+        ).truncate()).clicked() {
+            clear_global_icon_cache();
+            apply_icon_themes(wc.set);
+            *wc.status = crate::i18n::tr("settings-icon-cache-cleared");
+        }
+        if ui.add_sized([width, 28.0], egui::Button::new(
+            format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))
+        ).truncate()).clicked() {
+            ctx.data_mut(|d| {
+                let ps = d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"));
+                ps.is_open = true;
+            });
+        }
+    });
+}
+
 /// Draw the dedicated Icon Theme Manager window.
 pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
     let mut state = ctx.data_mut(|d| {
@@ -513,183 +584,204 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
 
     egui::Window::new(format!("{} {}", ph::PALETTE, crate::i18n::tr("icon-mgr-title")))
         .open(&mut open)
-        .default_size(egui::vec2(860.0, 580.0))
-        .min_size(egui::vec2(680.0, 420.0))
+        .default_size(egui::vec2(1020.0, 700.0))
+        .min_size(egui::vec2(760.0, 500.0))
         .resizable(true)
         .show(ctx, |ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-desc")).small().weak());
-            ui.add_space(4.0);
+            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-desc")).weak());
+            ui.add_space(8.0);
             ui.separator();
 
-            ui.columns(2, |cols| {
-                // LEFT COLUMN: Packs & Cascade order
-                cols[0].vertical(|ui| {
-                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-active-cascade")).strong());
-                    ui.add_space(2.0);
+            egui::Panel::left("icon_manager_sidebar")
+                .resizable(true)
+                .default_size(330.0)
+                .size_range(300.0..=420.0)
+                .show(ui, |ui| {
+                    manager_sidebar_shell(ui, |ui| {
+                        draw_icon_manager_actions(ctx, wc, ui);
+                    }).show(ui, |ui| {
+                        ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-active-cascade")).strong());
+                        ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-priority-hint")).small().weak());
+                        ui.add_space(6.0);
 
-                    let mut to_swap = None;
-                    let mut to_remove = None;
+                        let mut to_swap = None;
+                        let mut to_remove = None;
 
-                    egui::ScrollArea::vertical().id_salt("mgr_active_scroll").max_height(200.0).show(ui, |ui| {
                         for (idx, id) in wc.set.active_icon_packs.iter().enumerate() {
                             let pack_opt = all_packs.iter().find(|p| &p.manifest.id == id);
                             let is_selected = state.selected_pack_id == *id;
 
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(format!("#{}:", idx + 1)).weak());
-
-                                if idx > 0 && ui.button(ph::ARROW_UP).on_hover_text(crate::i18n::tr("icon-mgr-move-up")).clicked() {
-                                    to_swap = Some((idx, idx - 1));
-                                }
-                                if idx + 1 < wc.set.active_icon_packs.len()
-                                    && ui.button(ph::ARROW_DOWN).on_hover_text(crate::i18n::tr("icon-mgr-move-down")).clicked()
-                                {
-                                    to_swap = Some((idx, idx + 1));
-                                }
-                                if ui.button(ph::MINUS).on_hover_text(crate::i18n::tr("icon-mgr-deactivate-btn")).clicked() {
-                                    to_remove = Some(idx);
-                                }
-
-                                let name = pack_opt.map(|p| p.manifest.name.as_str()).unwrap_or(id.as_str());
-                                let label = if is_selected {
-                                    egui::RichText::new(name).strong().underline()
-                                } else {
-                                    egui::RichText::new(name)
-                                };
-                                if ui.selectable_label(is_selected, label).clicked() {
-                                    state.selected_pack_id = id.clone();
-                                }
-                                if let Some(p) = pack_opt {
-                                    draw_bundle_format_badge(ui, p.format());
-                                    if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
-                                        ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color))
-                                            .on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                            let (clicked, _) = manager_theme_card(ui, id, is_selected, |ui| {
+                                let text_width = (ui.available_width() - 150.0).max(96.0);
+                                ui.horizontal(|ui| {
+                                    if let Some(pack) = pack_opt {
+                                        draw_pack_icon(ui, pack, 36.0);
+                                    } else {
+                                        ui.add_sized([36.0, 36.0], egui::Label::new(ph::PACKAGE));
                                     }
-                                }
+                                    ui.vertical(|ui| {
+                                        let name = pack_opt.map(|p| p.manifest.name.as_str()).unwrap_or(id.as_str());
+                                        let title = format!("{:02}  {name}", idx + 1);
+                                        ui.add_sized([text_width, 26.0], egui::Label::new(title).truncate()).on_hover_text(name);
+                                        if let Some(p) = pack_opt {
+                                            ui.horizontal(|ui| {
+                                                draw_bundle_format_badge(ui, p.format(), p.is_tampered);
+                                                if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
+                                                    ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color))
+                                                        .on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                                                }
+                                            });
+                                        }
+                                    });
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.add(egui::Button::new(ph::MINUS).small())
+                                            .on_hover_text(crate::i18n::tr("icon-mgr-deactivate-btn")).clicked() {
+                                            to_remove = Some(idx);
+                                        }
+                                        if ui.add_enabled(idx + 1 < wc.set.active_icon_packs.len(), egui::Button::new(ph::ARROW_DOWN).small())
+                                            .on_hover_text(crate::i18n::tr("icon-mgr-move-down")).clicked() {
+                                            to_swap = Some((idx, idx + 1));
+                                        }
+                                        let leftmost_action = ui.add_enabled(idx > 0, egui::Button::new(ph::ARROW_UP).small())
+                                            .on_hover_text(crate::i18n::tr("icon-mgr-move-up"));
+                                        if leftmost_action.clicked() {
+                                            to_swap = Some((idx, idx - 1));
+                                        }
+                                        Some(leftmost_action.rect)
+                                    }).inner
+                                }).inner
                             });
+                            if clicked {
+                                state.selected_pack_id = id.clone();
+                            }
+                            ui.add_space(4.0);
                         }
 
                         // Base fallback
-                        ui.horizontal(|ui| {
-                            let is_selected = state.selected_pack_id == "default";
-                            ui.label(egui::RichText::new("Base:").weak());
-                            if ui.selectable_label(is_selected, crate::i18n::tr("settings-icon-themes-base")).clicked() {
-                                state.selected_pack_id = "default".into();
-                            }
-                            draw_bundle_format_badge(ui, BundleFormat::Embedded);
+                        let (clicked, _) = manager_theme_card(ui, "default", state.selected_pack_id == "default", |ui| {
+                            let text_width = (ui.available_width() - 44.0).max(110.0);
+                            ui.horizontal(|ui| {
+                                if let Some(pack) = all_packs.iter().find(|p| p.manifest.id == "default") {
+                                    draw_pack_icon(ui, pack, 36.0);
+                                }
+                                ui.vertical(|ui| {
+                                    ui.add_sized([text_width, 26.0], egui::Label::new(
+                                        crate::i18n::tr("settings-icon-themes-base")
+                                    ).truncate()).on_hover_text(crate::i18n::tr("settings-icon-themes-base-desc"));
+                                    draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
+                                });
+                            });
+                            None
                         });
-                    });
-
-                    if let Some((a, b)) = to_swap {
-                        wc.set.active_icon_packs.swap(a, b);
-                        changed = true;
-                    }
-                    if let Some(idx) = to_remove {
-                        let removed = wc.set.active_icon_packs.remove(idx);
-                        if !wc.set.inactive_icon_packs.contains(&removed) {
-                            wc.set.inactive_icon_packs.push(removed);
+                        if clicked {
+                            state.selected_pack_id = "default".into();
                         }
-                        changed = true;
-                    }
 
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-available-themes")).strong());
-                    ui.add_space(2.0);
+                        if let Some((a, b)) = to_swap {
+                            wc.set.active_icon_packs.swap(a, b);
+                            changed = true;
+                        }
+                        if let Some(idx) = to_remove {
+                            let removed = wc.set.active_icon_packs.remove(idx);
+                            if !wc.set.inactive_icon_packs.contains(&removed) {
+                                wc.set.inactive_icon_packs.push(removed);
+                            }
+                            changed = true;
+                        }
 
-                    // Available (inactive) themes
-                    let mut to_activate = None;
-                    egui::ScrollArea::vertical().id_salt("mgr_avail_scroll").max_height(160.0).show(ui, |ui| {
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-available-themes")).strong());
+                        ui.add_space(6.0);
+
+                        // Available (inactive) themes
+                        let mut to_activate = None;
                         for p in &all_packs {
                             if p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id) {
                                 continue;
                             }
                             let is_selected = state.selected_pack_id == p.manifest.id;
-                            ui.horizontal(|ui| {
-                                if ui.button(ph::PLUS).on_hover_text(crate::i18n::tr("icon-mgr-activate-btn")).clicked() {
-                                    to_activate = Some(p.manifest.id.clone());
-                                }
-                                let label = if is_selected {
-                                    egui::RichText::new(&p.manifest.name).strong().underline()
-                                } else {
-                                    egui::RichText::new(&p.manifest.name)
-                                };
-                                if ui.selectable_label(is_selected, label).clicked() {
-                                    state.selected_pack_id = p.manifest.id.clone();
-                                }
-                                draw_bundle_format_badge(ui, p.format());
-                                if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
-                                    ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color))
-                                        .on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
-                                }
+                            let (clicked, _) = manager_theme_card(ui, &p.manifest.id, is_selected, |ui| {
+                                let text_width = (ui.available_width() - 168.0).max(90.0);
+                                ui.horizontal(|ui| {
+                                    draw_pack_icon(ui, p, 36.0);
+                                    ui.vertical(|ui| {
+                                        ui.add_sized([text_width, 26.0], egui::Label::new(&p.manifest.name).truncate())
+                                            .on_hover_text(&p.manifest.name);
+                                        ui.horizontal(|ui| {
+                                            draw_bundle_format_badge(ui, p.format(), p.is_tampered);
+                                            if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
+                                                ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color))
+                                                    .on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                                            }
+                                        });
+                                    });
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let label = format!("{} {}", ph::PLUS, crate::i18n::tr("icon-mgr-activate-btn"));
+                                        let action = ui.add_sized([112.0, 36.0], egui::Button::new(
+                                            egui::RichText::new(label).strong().color(ui.visuals().selection.stroke.color)
+                                        ).fill(ui.visuals().selection.bg_fill).truncate())
+                                            .on_hover_text(crate::i18n::tr("icon-mgr-activate-btn"));
+                                        if action.clicked() {
+                                            to_activate = Some(p.manifest.id.clone());
+                                        }
+                                        Some(action.rect)
+                                    }).inner
+                                }).inner
                             });
-                        }
-                    });
-
-                    if let Some(act) = to_activate {
-                        wc.set.active_icon_packs.push(act.clone());
-                        wc.set.inactive_icon_packs.retain(|x| x != &act);
-                        state.selected_pack_id = act;
-                        changed = true;
-                    }
-
-                    ui.add_space(8.0);
-                    ui.separator();
-
-                    // Toolbar actions
-                    ui.horizontal_wrapped(|ui| {
-                        if let Some(user_dir) = user_themes_dir() {
-                            if ui.button(format!("{} {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-icon-open-folder"))).clicked() {
-                                let _ = std::fs::create_dir_all(&user_dir);
-                                let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &user_dir);
-                                let _ = crate::system::start(bin, &args);
+                            if clicked {
+                                state.selected_pack_id = p.manifest.id.clone();
                             }
+                            ui.add_space(4.0);
                         }
-                        if ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-refresh"))).clicked() {
-                            clear_global_icon_cache();
-                            apply_icon_themes(wc.set);
-                            *wc.status = crate::i18n::tr("settings-icon-cache-cleared");
+                        if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
+                            ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
                         }
-                        if ui.button(format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))).clicked() {
-                            ctx.data_mut(|d| {
-                                let ps = d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"));
-                                ps.is_open = true;
-                            });
+
+                        if let Some(act) = to_activate {
+                            wc.set.active_icon_packs.push(act.clone());
+                            wc.set.inactive_icon_packs.retain(|x| x != &act);
+                            state.selected_pack_id = act;
+                            changed = true;
                         }
                     });
                 });
 
-                // RIGHT COLUMN: Selected Theme Details, Markdown README, and Icon Gallery Preview
-                cols[1].vertical(|ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                     let pack_opt = all_packs.iter().find(|p| p.manifest.id == state.selected_pack_id);
                     let Some(pack) = pack_opt else {
                         ui.label(crate::i18n::tr("icon-mgr-no-pack-selected"));
                         return;
                     };
 
-                    // Pack Header Card
-                    ui.group(|ui| {
+                    egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
-                            ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).weak());
-                            draw_bundle_format_badge(ui, pack.format());
+                            draw_pack_icon(ui, pack, 48.0);
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
+                                ui.horizontal_wrapped(|ui| {
+                                    draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
+                                    ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).small().weak());
+                                });
+                            });
                         });
 
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(egui::RichText::new(format!("ID: {}", pack.manifest.id)).small().monospace());
-                            ui.label("-");
-                            ui.label(egui::RichText::new(format!("License: {}", pack.manifest.license)).small());
+                            ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-id", "value", &pack.manifest.id)).small().monospace().weak());
+                            ui.separator();
+                            ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-license", "value", &pack.manifest.license)).small().weak());
                             if !pack.manifest.author.is_empty() {
-                                ui.label("-");
-                                ui.label(egui::RichText::new(format!("Author: {}", pack.manifest.author)).small().weak());
+                                ui.separator();
+                                ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-author", "value", &pack.manifest.author)).small().weak());
                             }
-                            ui.label("-");
-                            let mode_str = match &pack.manifest.color_mode {
-                                ColorMode::Monochrome => "Monochrome",
-                                ColorMode::Universal => "Universal Colors",
-                                ColorMode::Specific(_) => "Specific Themes",
+                            ui.separator();
+                            let mode_key = match &pack.manifest.color_mode {
+                                ColorMode::Monochrome => "icon-mgr-color-monochrome",
+                                ColorMode::Universal => "icon-mgr-color-universal",
+                                ColorMode::Specific(_) => "icon-mgr-color-specific",
                             };
-                            ui.label(egui::RichText::new(mode_str).small().color(ui.visuals().hyperlink_color));
+                            ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
                         });
 
                         let (cov, total) = pack.coverage();
@@ -698,43 +790,79 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                             "icon-mgr-total-icons",
                             &[("count", &cov.to_string()), ("total", &total.to_string()), ("percent", &pct.to_string())],
                         );
-                        ui.add_space(2.0);
+                        ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(cov_msg).small().strong());
                         });
+                        ui.add(egui::ProgressBar::new(pct as f32 / 100.0).desired_width(ui.available_width()));
 
-                        // Scan for SVG hygiene / validation issues
-                        let mut invalid_icons = Vec::new();
-                        for &id in ALL_ICONS {
-                            if let Some(svg_bytes) = pack.get_svg_for_id(id) {
-                                if let Err(e) = qymcad_ui_state::icons::validate_svg(&svg_bytes) {
-                                    invalid_icons.push((id, e));
-                                }
-                            }
-                        }
-
-                        ui.add_space(2.0);
-                        if !invalid_icons.is_empty() {
+                        // Verified bundle / Archive / Tampered status and hygiene checks
+                        if pack.format() == BundleFormat::VerifiedArchive {
+                            ui.add_space(2.0);
                             ui.horizontal(|ui| {
                                 ui.label(
-                                    egui::RichText::new(format!(
-                                        "{} {}",
-                                        ph::WARNING,
-                                        crate::i18n::trn("icon-mgr-hygiene-warning", &[("count", &invalid_icons.len().to_string())])
-                                    ))
-                                    .color(ui.visuals().warn_fg_color)
-                                    .small()
-                                    .strong(),
+                                    egui::RichText::new(format!("{} {}", ph::SHIELD_CHECK, crate::i18n::tr("icon-mgr-verified-bundle-desc")))
+                                        .color(ui.visuals().selection.bg_fill)
+                                        .small()
+                                        .strong(),
                                 );
                             });
-                        } else {
+                        } else if pack.is_tampered {
+                            ui.add_space(2.0);
                             ui.horizontal(|ui| {
                                 ui.label(
-                                    egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean")))
-                                        .color(ui.visuals().selection.bg_fill)
+                                    egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-tampered-desc")))
+                                        .color(ui.visuals().error_fg_color)
+                                        .small()
+                                        .strong(),
+                                );
+                            });
+                        } else if pack.format() == BundleFormat::Archive {
+                            ui.add_space(2.0);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icon-mgr-archive-desc")))
+                                        .color(ui.visuals().hyperlink_color)
                                         .small(),
                                 );
                             });
+                        }
+
+                        // For unverified packs (Archive, Directory), scan for SVG hygiene / validation issues
+                        // Verified bundles intentionally skip runtime scans for maximum responsiveness
+                        if pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded {
+                            let mut invalid_icons = Vec::new();
+                            for &id in ALL_ICONS {
+                                if let Some(svg_bytes) = pack.get_svg_for_id(id) {
+                                    if let Err(e) = qymcad_ui_state::icons::validate_svg(&svg_bytes) {
+                                        invalid_icons.push((id, e));
+                                    }
+                                }
+                            }
+
+                            ui.add_space(2.0);
+                            if !invalid_icons.is_empty() {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} {}",
+                                            ph::WARNING,
+                                            crate::i18n::trn("icon-mgr-hygiene-warning", &[("count", &invalid_icons.len().to_string())])
+                                        ))
+                                        .color(ui.visuals().warn_fg_color)
+                                        .small()
+                                        .strong(),
+                                    );
+                                });
+                            } else {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean")))
+                                            .color(ui.visuals().selection.bg_fill)
+                                            .small(),
+                                    );
+                                });
+                            }
                         }
 
                         ui.add_space(4.0);
@@ -766,10 +894,9 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                         }
                     });
 
-                    ui.add_space(4.0);
+                    ui.add_space(10.0);
 
-                    // Tab selector
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.selectable_value(&mut state.active_tab, IconManagerTab::Readme, crate::i18n::tr("icon-mgr-tab-readme"));
                         ui.selectable_value(&mut state.active_tab, IconManagerTab::Gallery, crate::i18n::tr("icon-mgr-tab-gallery"));
                     });
@@ -777,10 +904,10 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
 
                     match state.active_tab {
                         IconManagerTab::Readme => {
-                            egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").max_height(380.0).show(ui, |ui| {
+                            egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").auto_shrink([false, false]).show(ui, |ui| {
                                 if let Some((img_bytes, ext)) = pack.get_preview_image() {
                                     let uri = format!("bytes://preview/{}/{}.{}", pack.manifest.id, ext, ext);
-                                    let img = egui::Image::from_bytes(uri, img_bytes).fit_to_original_size(1.0);
+                                    let img = egui::Image::from_bytes(uri, img_bytes).max_width(ui.available_width());
                                     ui.add(img);
                                     ui.add_space(8.0);
                                     ui.separator();
@@ -797,11 +924,11 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut state.search_query)
                                         .hint_text(crate::i18n::tr("icon-mgr-search-icons"))
-                                        .desired_width(140.0),
+                                        .desired_width((ui.available_width() - 8.0).max(120.0)),
                                 );
+                            });
 
-                                ui.separator();
-
+                            ui.horizontal_wrapped(|ui| {
                                 let cats = [
                                     ("all", "icon-mgr-filter-all"),
                                     ("sketch", "icon-mgr-filter-sketch"),
@@ -822,8 +949,9 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                             let q = state.search_query.trim().to_lowercase();
                             let cat_filter = state.category_filter.as_str();
 
-                            egui::ScrollArea::vertical().id_salt("mgr_gallery_scroll").max_height(340.0).show(ui, |ui| {
+                            egui::ScrollArea::vertical().id_salt("mgr_gallery_scroll").auto_shrink([false, false]).show(ui, |ui| {
                                 ui.horizontal_wrapped(|ui| {
+                                    let mut shown = 0;
                                     for &id in ALL_ICONS {
                                         let rel_path = id.relative_path();
 
@@ -834,6 +962,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                         if !q.is_empty() && !rel_path.to_lowercase().contains(&q) {
                                             continue;
                                         }
+                                        shown += 1;
 
                                         let icon_svg = pack.get_svg_for_id(id);
                                         let is_present = icon_svg.is_some();
@@ -841,9 +970,10 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
 
                                         egui::Frame::NONE
                                             .fill(if is_present { ui.visuals().faint_bg_color } else { Color32::TRANSPARENT })
-                                            .corner_radius(4.0)
-                                            .inner_margin(4.0)
+                                            .corner_radius(6.0)
+                                            .inner_margin(egui::Margin::symmetric(6, 8))
                                             .show(ui, |ui| {
+                                                ui.set_width(104.0);
                                                 ui.vertical_centered(|ui| {
                                                     let val_err = icon_svg.as_ref().and_then(|data| qymcad_ui_state::icons::validate_svg(data).err());
                                                     if let Some(svg_data) = icon_svg {
@@ -854,7 +984,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                                             img = img.tint(ui.visuals().text_color());
                                                         }
                                                         let tip = if let Some(ref e) = val_err {
-                                                            format!("{rel_path}\n(in pack)\n⚠️ Validation / Hygiene Issue:\n{e}")
+                                                            format!("{rel_path}\n(in pack)\n[!] Validation / Hygiene Issue:\n{e}")
                                                         } else {
                                                             format!("{rel_path}\n(in pack)")
                                                         };
@@ -870,20 +1000,22 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                                                     }
 
                                                     let label_text = if val_err.is_some() {
-                                                        egui::RichText::new(format!("⚠️ {short_name}")).small().color(ui.visuals().warn_fg_color)
+                                                        egui::RichText::new(format!("{} {short_name}", ph::WARNING)).small().color(ui.visuals().warn_fg_color)
                                                     } else {
                                                         egui::RichText::new(short_name).small().weak()
                                                     };
-                                                    ui.label(label_text);
+                                                    ui.add(egui::Label::new(label_text).truncate());
                                                 });
                                             });
+                                    }
+                                    if shown == 0 {
+                                        ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-no-icons-found")).weak());
                                     }
                                 });
                             });
                         }
                     }
                 });
-            });
         });
 
     if changed {
@@ -949,5 +1081,96 @@ mod tests {
         assert!(!state.is_open);
         assert_eq!(state.active_tab, IconManagerTab::Readme);
         assert_eq!(state.category_filter, "all");
+    }
+
+    #[test]
+    fn icon_manager_sidebar_scroll_stops_above_actions() {
+        use std::cell::Cell;
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 320.0));
+        let actions = Cell::new(egui::Rect::NOTHING);
+        let scroll = Cell::new(egui::Rect::NOTHING);
+        let content_height = Cell::new(0.0);
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input, |ui| {
+            egui::Panel::left("icon_test_sidebar").exact_size(300.0).show(ui, |ui| {
+                let area = manager_sidebar_shell(ui, |ui| {
+                    actions.set(ui.max_rect());
+                    let _ = ui.button("Open folder");
+                    let _ = ui.button("Reload themes");
+                }).show(ui, |ui| {
+                    for n in 0..30 {
+                        ui.add_sized([ui.available_width(), 35.0], egui::Label::new(format!("Theme {n}")));
+                    }
+                });
+                scroll.set(area.inner_rect);
+                content_height.set(area.content_size.y);
+            });
+        });
+        assert!(scroll.get().bottom() <= actions.get().top(), "the actions cover part of the list");
+        assert!(content_height.get() > scroll.get().height(), "the list must remain scrollable when it is long");
+    }
+
+    #[test]
+    fn clicking_a_theme_card_selects_it_without_activating_it() {
+        use std::cell::Cell;
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 160.0));
+        let card = Cell::new(egui::Rect::NOTHING);
+        let icon = Cell::new(egui::Rect::NOTHING);
+        let name = Cell::new(egui::Rect::NOTHING);
+        let badge = Cell::new(egui::Rect::NOTHING);
+        let button = Cell::new(egui::Rect::NOTHING);
+        let selected = Cell::new(false);
+        let activated = Cell::new(false);
+        let draw = |events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let _ = ctx.run_ui(input, |ui| {
+                let (clicked, rect) = manager_theme_card(ui, "test-pack", false, |ui| {
+                    ui.horizontal(|ui| {
+                        icon.set(ui.add(egui::Image::from_bytes(
+                            "bytes://test-pack-icon.svg",
+                            b"<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'></svg>",
+                        ).fit_to_exact_size(egui::vec2(20.0, 20.0))).rect);
+                        name.set(ui.label("Theme").rect);
+                        badge.set(ui.scope(|ui| draw_bundle_format_badge(ui, BundleFormat::Directory, false)).response.rect);
+                        let response = ui.button("Activate");
+                        button.set(response.rect);
+                        if response.clicked() { activated.set(true); }
+                        Some(response.rect)
+                    }).inner
+                });
+                card.set(rect);
+                if clicked { selected.set(true); }
+            });
+        };
+        draw(vec![]);
+        let at = egui::pos2(card.get().left() + 3.0, card.get().center().y);
+        let click = |pos, pressed| egui::Event::PointerButton {
+            pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default()
+        };
+        draw(vec![egui::Event::PointerMoved(at)]);
+        draw(vec![click(at, true)]);
+        draw(vec![click(at, false)]);
+        assert!(selected.get(), "clicking the card background must select the theme");
+        assert!(!activated.get(), "selection must not activate the theme");
+
+        for target in [icon.get(), name.get(), badge.get()] {
+            selected.set(false);
+            let at = target.center();
+            draw(vec![egui::Event::PointerMoved(at)]);
+            draw(vec![click(at, true)]);
+            draw(vec![click(at, false)]);
+            assert!(selected.get(), "clicking visible card content must select the theme: {target:?}");
+            assert!(!activated.get(), "clicking card content must not activate the theme");
+        }
+
+        selected.set(false);
+        let at = button.get().center();
+        draw(vec![egui::Event::PointerMoved(at)]);
+        draw(vec![click(at, true)]);
+        draw(vec![click(at, false)]);
+        assert!(activated.get(), "the activation button must keep its own action");
+        assert!(!selected.get(), "the card must not steal the activation click");
     }
 }

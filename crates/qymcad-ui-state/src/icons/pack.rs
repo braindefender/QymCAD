@@ -5,7 +5,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
-use super::manifest::IconManifest;
+use super::manifest::{ColorMode, IconManifest, PackageType};
+
+const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes/default/icon.svg"));
 
 /// Source storage for an icon pack.
 #[derive(Debug, Clone)]
@@ -36,10 +38,79 @@ impl BundleFormat {
         match self {
             Self::Directory => "Folder",
             Self::Archive => "Archive",
-            Self::VerifiedArchive => "Verified Archive",
+            Self::VerifiedArchive => "Bundle",
             Self::Embedded => "Built-in",
         }
     }
+}
+
+/// Maximum number of file entries permitted in an icon archive (prevents zip bomb exhaustion).
+pub const MAX_ARCHIVE_ENTRIES: usize = 1_000;
+/// Maximum cumulative uncompressed size of all files across an entire icon archive (32 MB).
+pub const MAX_TOTAL_UNCOMPRESSED_SIZE: u64 = 32 * 1024 * 1024;
+/// Maximum uncompressed size permitted for any single file inside an icon archive (2 MB).
+pub const MAX_SINGLE_FILE_UNCOMPRESSED_SIZE: u64 = 2 * 1024 * 1024;
+/// Maximum uncompressed size permitted for an individual SVG icon (512 KB).
+pub const MAX_ICON_SVG_SIZE: u64 = 512 * 1024;
+/// Maximum allowed size for manifest.ron (64 KB).
+pub const MAX_MANIFEST_SIZE: u64 = 64 * 1024;
+/// Maximum allowed size for documentation text files (512 KB).
+pub const MAX_TEXT_FILE_SIZE: u64 = 512 * 1024;
+/// Maximum compression ratio before triggering decompression bomb rejection for files > 64 KB.
+pub const MAX_COMPRESSION_RATIO: u64 = 250;
+
+/// Validate a ZIP archive against decompression bombs (Zip Bombs), zip slip, and resource exhaustion.
+pub fn validate_archive_safety<R: std::io::Read + std::io::Seek>(
+    zip: &mut zip::ZipArchive<R>,
+) -> Result<(), String> {
+    if zip.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(format!(
+            "archive contains too many files: {} (limit is {})",
+            zip.len(),
+            MAX_ARCHIVE_ENTRIES
+        ));
+    }
+
+    let mut total_uncompressed: u64 = 0;
+
+    for i in 0..zip.len() {
+        let file = zip.by_index(i).map_err(|e| e.to_string())?;
+        let name = file.name();
+
+        // 1. Path traversal / Zip Slip protection
+        if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains(':') {
+            return Err(format!("insecure file path inside archive: {name}"));
+        }
+
+        let uncompressed = file.size();
+        let compressed = file.compressed_size();
+
+        // 2. Single file size ceiling (e.g. rejects gigantic multi-gigabyte files)
+        if uncompressed > MAX_SINGLE_FILE_UNCOMPRESSED_SIZE {
+            return Err(format!(
+                "file {name} exceeds maximum uncompressed size: {uncompressed} bytes (limit is {MAX_SINGLE_FILE_UNCOMPRESSED_SIZE})"
+            ));
+        }
+
+        // 3. Compression ratio check (detects Deflate bomb payloads)
+        if compressed > 0 && uncompressed > 64 * 1024 {
+            let ratio = uncompressed / compressed;
+            if ratio > MAX_COMPRESSION_RATIO {
+                return Err(format!(
+                    "suspicious compression ratio in {name} ({ratio}:1, possible decompression bomb)"
+                ));
+            }
+        }
+
+        total_uncompressed = total_uncompressed.saturating_add(uncompressed);
+        if total_uncompressed > MAX_TOTAL_UNCOMPRESSED_SIZE {
+            return Err(format!(
+                "archive total uncompressed size exceeds limit: {total_uncompressed} bytes (limit is {MAX_TOTAL_UNCOMPRESSED_SIZE})"
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 /// A loaded icon pack ready for icon retrieval.
@@ -47,6 +118,8 @@ impl BundleFormat {
 pub struct IconPack {
     pub manifest: IconManifest,
     pub source: PackSource,
+    /// Whether this package had its verification trailer tampered with or corrupted.
+    pub is_tampered: bool,
 }
 
 impl IconPack {
@@ -57,15 +130,8 @@ impl IconPack {
         }
         match &self.source {
             PackSource::Directory(_) => BundleFormat::Directory,
-            PackSource::Archive(_) => {
-                if self.manifest.verified {
-                    BundleFormat::VerifiedArchive
-                } else {
-                    BundleFormat::Archive
-                }
-            }
-            PackSource::Memory(_) => {
-                if self.manifest.verified {
+            PackSource::Archive(_) | PackSource::Memory(_) => {
+                if self.manifest.verified && !self.is_tampered {
                     BundleFormat::VerifiedArchive
                 } else {
                     BundleFormat::Archive
@@ -110,42 +176,93 @@ impl IconPack {
         }
         let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
         let manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
-        Ok(Self { manifest, source: PackSource::Directory(dir.to_path_buf()) })
+        Ok(Self { manifest, source: PackSource::Directory(dir.to_path_buf()), is_tampered: false })
     }
 
-    /// Load an icon pack from a `.qicons` (zip) file.
-    /// The archive must strictly contain `manifest.ron` and `icons/` at the root level.
+    /// Load an icon pack from a `.qicons` (bundle) or `.zip` (archive) file.
+    /// - `.qicons`: Verified QymCAD bundle (checks cryptographic trailer; if tampered, downgraded to unverified archive).
+    /// - `.zip`: Unverified community archive (can omit manifest.ron, crash-guarded).
     pub fn from_archive(file_path: impl AsRef<Path>) -> Result<Self, String> {
         let file_path = file_path.as_ref();
-        let file = std::fs::File::open(file_path).map_err(|e| e.to_string())?;
-        let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        let file_bytes = std::fs::read(file_path).map_err(|e| e.to_string())?;
 
-        let is_verified = zip.by_name(".verified").is_ok();
-        let mut manifest_file = zip
-            .by_name("manifest.ron")
-            .map_err(|_| "missing manifest.ron in archive".to_string())?;
-        let mut content = String::new();
-        manifest_file.read_to_string(&mut content).map_err(|e| e.to_string())?;
-        let mut manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
-        if is_verified {
-            manifest.verified = true;
-        }
+        let is_qicons = file_path.extension().is_some_and(|e| e == "qicons");
+        let trailer_check = super::sha256::verify_qicons_trailer(&file_bytes);
 
-        Ok(Self { manifest, source: PackSource::Archive(file_path.to_path_buf()) })
+        let (is_verified, is_tampered) = match trailer_check {
+            super::sha256::TrailerCheck::Verified => (true, false),
+            super::sha256::TrailerCheck::Tampered => (false, true),
+            super::sha256::TrailerCheck::Unsigned => {
+                // If it claims to be .qicons but has no valid trailer, it is an unverified/tampered archive
+                (false, is_qicons)
+            }
+        };
+
+        let cursor = std::io::Cursor::new(&file_bytes);
+        let mut zip = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+
+        // Guard against decompression bombs (Zip Bombs), excessive file counts, and zip-slip
+        validate_archive_safety(&mut zip)?;
+
+        let mut manifest = if let Ok(manifest_file) = zip.by_name("manifest.ron") {
+            let mut content = String::new();
+            manifest_file
+                .take(MAX_MANIFEST_SIZE + 1)
+                .read_to_string(&mut content)
+                .map_err(|e| e.to_string())?;
+            if content.len() as u64 > MAX_MANIFEST_SIZE {
+                return Err("manifest.ron exceeds maximum allowed size".to_string());
+            }
+            IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?
+        } else {
+            // Missing manifest: allowed for generic .zip community archives.
+            // Synthesize a safe fallback manifest from the file name.
+            let raw_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("community-icons");
+            let id = raw_stem.to_lowercase().replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "-");
+            IconManifest {
+                package_type: PackageType::IconTheme,
+                id,
+                name: raw_stem.to_string(),
+                version: "1.0.0".to_string(),
+                author: "Community".to_string(),
+                license: "Unknown".to_string(),
+                description: "Imported ZIP archive (unverified)".to_string(),
+                color_mode: ColorMode::Universal,
+                verified: false,
+            }
+        };
+
+        manifest.verified = is_verified;
+
+        Ok(Self {
+            manifest,
+            source: PackSource::Archive(file_path.to_path_buf()),
+            is_tampered,
+        })
     }
 
     /// Load an icon pack from in-memory ZIP archive bytes (e.g. from `include_bytes!`).
     pub fn from_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let trailer_check = super::sha256::verify_qicons_trailer(bytes);
         let cursor = std::io::Cursor::new(bytes);
         let mut zip = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
 
-        let is_verified = zip.by_name(".verified").is_ok();
+        // Guard against decompression bombs and unsafe archives
+        validate_archive_safety(&mut zip)?;
+
+        let is_verified = trailer_check == super::sha256::TrailerCheck::Verified;
         let mut manifest = {
-            let mut manifest_file = zip
+            let manifest_file = zip
                 .by_name("manifest.ron")
                 .map_err(|_| "missing manifest.ron in archive".to_string())?;
             let mut content = String::new();
-            manifest_file.read_to_string(&mut content).map_err(|e| e.to_string())?;
+            manifest_file
+                .take(MAX_MANIFEST_SIZE + 1)
+                .read_to_string(&mut content)
+                .map_err(|e| e.to_string())?;
+            if content.len() as u64 > MAX_MANIFEST_SIZE {
+                return Err("manifest.ron exceeds maximum allowed size".to_string());
+            }
             IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?
         };
         if is_verified || manifest.id == "default" {
@@ -154,16 +271,23 @@ impl IconPack {
 
         let mut map = HashMap::new();
         for i in 0..zip.len() {
-            let mut file = zip.by_index(i).map_err(|e| e.to_string())?;
+            let file = zip.by_index(i).map_err(|e| e.to_string())?;
             if !file.is_dir() {
                 let name = file.name().to_string();
                 let mut buf = Vec::new();
-                file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                file.take(MAX_SINGLE_FILE_UNCOMPRESSED_SIZE + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                if buf.len() as u64 > MAX_SINGLE_FILE_UNCOMPRESSED_SIZE {
+                    return Err(format!("file {name} exceeds safe memory limit"));
+                }
                 map.insert(name, buf);
             }
         }
 
-        Ok(Self { manifest, source: PackSource::Memory(map) })
+        Ok(Self {
+            manifest,
+            source: PackSource::Memory(map),
+            is_tampered: trailer_check == super::sha256::TrailerCheck::Tampered,
+        })
     }
 
     /// Retrieve raw SVG bytes for a relative path inside `icons/` (e.g. `"sketch/line.svg"`).
@@ -187,10 +311,22 @@ impl IconPack {
                 let index = zip
                     .index_for_name(&full_name)
                     .or_else(|| zip.index_for_name(&file_subpath))?;
-                let mut entry = zip.by_index(index).ok()?;
+                let entry = zip.by_index(index).ok()?;
+                if entry.size() > MAX_ICON_SVG_SIZE {
+                    return None;
+                }
                 let mut buf = Vec::new();
-                entry.read_to_end(&mut buf).ok()?;
-                Some(buf)
+                entry.take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut buf).ok()?;
+                if buf.len() as u64 > MAX_ICON_SVG_SIZE {
+                    return None;
+                }
+                if self.format() == BundleFormat::VerifiedArchive {
+                    // Fast path: Verified QymCAD bundle, trusted pre-validated content, zero overhead
+                    Some(buf)
+                } else {
+                    // Archive path: Crash-guard against entity bombs or non-renderable byte sequences
+                    sanitize_svg_for_safety(buf)
+                }
             }
             PackSource::Memory(map) => {
                 let full_name = format!("icons/{file_subpath}");
@@ -202,6 +338,37 @@ impl IconPack {
     /// Retrieve raw SVG bytes for an `IconId`.
     pub fn get_svg_for_id(&self, id: IconId) -> Option<Vec<u8>> {
         self.get_svg(id.relative_path())
+    }
+
+    /// Return the pack's root icon.svg, falling back to the built-in pack image.
+    pub fn get_pack_icon_svg(&self) -> Vec<u8> {
+        let data = match &self.source {
+            PackSource::Directory(base) => {
+                let path = base.join("icon.svg");
+                if std::fs::metadata(&path).ok().is_some_and(|m| m.len() <= MAX_ICON_SVG_SIZE) {
+                    std::fs::read(path).ok()
+                } else {
+                    None
+                }
+            }
+            PackSource::Archive(archive_path) => {
+                let file = std::fs::File::open(archive_path).ok();
+                file.and_then(|file| zip::ZipArchive::new(file).ok())
+                    .and_then(|mut zip| {
+                        let entry = zip.by_name("icon.svg").ok()?;
+                        if entry.size() > MAX_ICON_SVG_SIZE {
+                            return None;
+                        }
+                        let mut data = Vec::new();
+                        entry.take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut data).ok()?;
+                        (data.len() as u64 <= MAX_ICON_SVG_SIZE).then_some(data)
+                    })
+            }
+            PackSource::Memory(map) => map.get("icon.svg").cloned(),
+        };
+        data.and_then(sanitize_svg_for_safety)
+            .filter(|svg| super::bundle::validate_svg(svg).is_ok())
+            .unwrap_or_else(|| DEFAULT_PACK_ICON_SVG.to_vec())
     }
 
     /// List all known `IconId`s present in this pack.
@@ -230,9 +397,15 @@ impl IconPack {
                 PackSource::Archive(archive_path) => {
                     let file = std::fs::File::open(archive_path).ok()?;
                     let mut zip = zip::ZipArchive::new(file).ok()?;
-                    let mut entry = zip.by_name(name).ok()?;
+                    let entry = zip.by_name(name).ok()?;
+                    if entry.size() > MAX_TEXT_FILE_SIZE {
+                        return None;
+                    }
                     let mut s = String::new();
-                    entry.read_to_string(&mut s).ok()?;
+                    entry.take(MAX_TEXT_FILE_SIZE + 1).read_to_string(&mut s).ok()?;
+                    if s.len() as u64 > MAX_TEXT_FILE_SIZE {
+                        return None;
+                    }
                     Some(s)
                 }
                 PackSource::Memory(map) => {
@@ -273,9 +446,15 @@ impl IconPack {
                 PackSource::Archive(archive_path) => {
                     let file = std::fs::File::open(archive_path).ok()?;
                     let mut zip = zip::ZipArchive::new(file).ok()?;
-                    let mut entry = zip.by_name(candidate).ok()?;
+                    let entry = zip.by_name(candidate).ok()?;
+                    if entry.size() > MAX_SINGLE_FILE_UNCOMPRESSED_SIZE {
+                        return None;
+                    }
                     let mut buf = Vec::new();
-                    entry.read_to_end(&mut buf).ok()?;
+                    entry.take(MAX_SINGLE_FILE_UNCOMPRESSED_SIZE + 1).read_to_end(&mut buf).ok()?;
+                    if buf.len() as u64 > MAX_SINGLE_FILE_UNCOMPRESSED_SIZE {
+                        return None;
+                    }
                     Some(buf)
                 }
                 PackSource::Memory(map) => map.get(candidate).cloned(),
@@ -302,6 +481,12 @@ impl IconPack {
         if let Ok(m) = std::fs::metadata(&manifest_path) {
             let mtime = m.modified().unwrap_or(std::time::UNIX_EPOCH);
             snapshot.insert(PathBuf::from("manifest.ron"), (mtime, m.len()));
+        }
+
+        let icon_path = base.join("icon.svg");
+        if let Ok(m) = std::fs::metadata(&icon_path) {
+            let mtime = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+            snapshot.insert(PathBuf::from("icon.svg"), (mtime, m.len()));
         }
 
         let icons_dir = base.join("icons");
@@ -375,4 +560,29 @@ fn collect_svgs_recursively(
             }
         }
     }
+}
+
+/// Crash-guard for unverified archives (.zip or corrupted .qicons):
+/// Protects against XML entity bombs, gigantic payloads, null bytes, and non-SVG data.
+fn sanitize_svg_for_safety(buf: Vec<u8>) -> Option<Vec<u8>> {
+    // 1. Guard against memory exhaustion (icons should not exceed 512 KB)
+    if buf.len() > 512 * 1024 {
+        return None;
+    }
+    // 2. Must be valid UTF-8
+    let text = std::str::from_utf8(&buf).ok()?;
+    let lower = text.to_lowercase();
+    // 3. Must contain root SVG element
+    if !lower.contains("<svg") {
+        return None;
+    }
+    // 4. Guard against XML entity expansion / billion laughs attack
+    if lower.contains("<!entity") || lower.contains("system \"") || lower.contains("system '") {
+        return None;
+    }
+    // 5. Guard against null bytes
+    if buf.contains(&0) {
+        return None;
+    }
+    Some(buf)
 }
