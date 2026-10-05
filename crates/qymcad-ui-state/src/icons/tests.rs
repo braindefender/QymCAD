@@ -669,13 +669,15 @@ fn freecad_theme_is_complete_and_valid() {
 
 #[test]
 fn user_shapr_alike_pack_if_present_loads_and_has_icons() {
-    let user_path = std::path::PathBuf::from("/home/pavver/.antigravity-profiles/tony.ai.new77/.local/share/qymcad/icon_themes/shapr-alike.qicons");
-    if user_path.is_file() {
-        let pack = IconPack::from_archive(&user_path).expect("shapr-alike.qicons must load cleanly");
-        assert_eq!(pack.manifest.id, "shapr-alike");
-        assert_eq!(pack.manifest.name, "Shapr-Alike");
-        let (cov, _total) = pack.coverage();
-        assert!(cov >= 90, "shapr-alike should cover almost all icons, got {cov}");
+    let user_path = std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share/qymcad/icon_themes/shapr-alike.qicons"));
+    if let Some(user_path) = user_path {
+        if user_path.is_file() {
+            let pack = IconPack::from_archive(&user_path).expect("shapr-alike.qicons must load cleanly");
+            assert_eq!(pack.manifest.id, "shapr-alike");
+            assert_eq!(pack.manifest.name, "Shapr-Alike");
+            let (cov, _total) = pack.coverage();
+            assert!(cov >= 90, "shapr-alike should cover almost all icons, got {cov}");
+        }
     }
 }
 

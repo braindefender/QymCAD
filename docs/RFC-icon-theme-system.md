@@ -294,10 +294,10 @@ pub struct Settings {
 - [ ] Написати тести на каскадний пошук: пріоритет вищого паку, провалювання у нижчий пак, fallback на вбудований символ.
 
 ### Етап 3: Оновлення віджетів інтерфейсу
-- [ ] Оновити функцію [`icon_tool`](file:///home/pavver/rust/QymCAD/crates/qymcad-ui-state/src/lib.rs#L13119):
+- [ ] Оновити функцію `icon_tool` (`crates/qymcad-ui-state/src/lib.rs`):
   - Прийом `IconId` та посилання на резолвер іконок (без змін в `impl App`).
   - Підтримка відмальовування як векторного SVG через `Button::image`, так і шрифтового гліфа.
-- [ ] Замінити виклики [`sym_button`](file:///home/pavver/rust/QymCAD/crates/qymcad-render/src/lib.rs#L3766) та процедурне малювання `Circle3`, `Ellipse` на повноцінні `IconId`.
+- [ ] Замінити виклики `sym_button` (`crates/qymcad-render/src/lib.rs`) та процедурне малювання `Circle3`, `Ellipse` на повноцінні `IconId`.
 
 ### Етап 4: Інтерфейс налаштувань (UI)
 - [ ] Додати поля `active_icon_packs` та `inactive_icon_packs` у структуру `Settings`.
