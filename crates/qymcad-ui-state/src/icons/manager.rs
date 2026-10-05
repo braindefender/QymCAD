@@ -195,10 +195,7 @@ impl IconManager {
                     match String::from_utf8(data) {
                         Ok(text) => {
                             if text.contains("currentColor") || text.contains("fill=\"#000000\"") || text.contains("fill=\"black\"") {
-                                let replaced = text
-                                    .replace("currentColor", "white")
-                                    .replace("fill=\"#000000\"", "fill=\"white\"")
-                                    .replace("fill=\"black\"", "fill=\"white\"");
+                                let replaced = text.replace("currentColor", "white").replace("fill=\"#000000\"", "fill=\"white\"").replace("fill=\"black\"", "fill=\"white\"");
                                 data = replaced.into_bytes();
                             } else {
                                 data = text.into_bytes();
@@ -209,12 +206,7 @@ impl IconManager {
                         }
                     }
                 }
-                let res = ResolvedIcon {
-                    data,
-                    color_mode: pack.manifest.color_mode.clone(),
-                    pack_id: pack.manifest.id.clone(),
-                    revision: self.revision,
-                };
+                let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode.clone(), pack_id: pack.manifest.id.clone(), revision: self.revision };
                 self.cache.insert(id, res.clone());
                 return res;
             } else if pack.has_icon_on_disk(id) {
@@ -268,12 +260,7 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
     }
     if let Some(def) = load_default_pack() {
         if let Some(data) = def.get_svg_for_id(id) {
-            return ResolvedIcon {
-                data,
-                color_mode: ColorMode::Monochrome,
-                pack_id: "default".to_string(),
-                revision: 0,
-            };
+            return ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "default".to_string(), revision: 0 };
         }
     }
     ResolvedIcon {

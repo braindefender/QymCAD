@@ -41,10 +41,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", default_theme_dir.display());
 
     if !default_theme_dir.is_dir() {
-        panic!(
-            "Default icon theme directory not found at: {}",
-            default_theme_dir.display()
-        );
+        panic!("Default icon theme directory not found at: {}", default_theme_dir.display());
     }
 
     // 1. Read and validate manifest.ron
@@ -102,11 +99,7 @@ fn main() {
     for rel_path in &expected_icons {
         let full_path = icons_dir.join(rel_path);
         if !full_path.is_file() {
-            panic!(
-                "COMPILE ERROR: Missing default vector SVG icon: {}\nExpected at: {}",
-                rel_path,
-                full_path.display()
-            );
+            panic!("COMPILE ERROR: Missing default vector SVG icon: {}\nExpected at: {}", rel_path, full_path.display());
         }
 
         let svg_data = fs::read(&full_path).unwrap_or_else(|e| {
@@ -169,8 +162,7 @@ fn main() {
     let out_archive = out_dir.join("default.qicons");
     let out_file = fs::File::create(&out_archive).expect("creates output zip in OUT_DIR");
     let mut zip = zip::ZipWriter::new(out_file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // Write manifest.ron
     zip.start_file("manifest.ron", options).expect("writes manifest into zip");
@@ -189,12 +181,7 @@ fn main() {
     }
 
     // Walk and write all SVGs
-    fn walk_dir(
-        base: &Path,
-        current: &Path,
-        zip: &mut zip::ZipWriter<fs::File>,
-        options: zip::write::SimpleFileOptions,
-    ) {
+    fn walk_dir(base: &Path, current: &Path, zip: &mut zip::ZipWriter<fs::File>, options: zip::write::SimpleFileOptions) {
         for entry in fs::read_dir(current).expect("reads dir").flatten() {
             let p = entry.path();
             if p.is_dir() {

@@ -28,7 +28,11 @@ impl ValidationReport {
     /// Total percentage coverage (0 to 100).
     pub fn coverage_percent(&self) -> usize {
         let (cov, total) = self.coverage();
-        if total == 0 { 0 } else { (cov * 100) / total }
+        if total == 0 {
+            0
+        } else {
+            (cov * 100) / total
+        }
     }
 
     /// Whether there are any issues (rejected or extraneous files).
@@ -81,10 +85,7 @@ fn parse_viewbox_dimensions(text: &str) -> Option<(f32, f32)> {
     let quote_end = content.find(quote_char)?;
     let val_str = &content[..quote_end];
 
-    let parts: Vec<&str> = val_str
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let parts: Vec<&str> = val_str.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).collect();
     if parts.len() == 4 {
         let w: f32 = parts[2].parse().ok()?;
         let h: f32 = parts[3].parse().ok()?;
@@ -244,13 +245,7 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
     }
 
     // 2. Recursively walk icons/ directory
-    fn walk_icons(
-        base: &Path,
-        current: &Path,
-        included: &mut Vec<IconId>,
-        rejected: &mut Vec<(String, String)>,
-        extraneous: &mut Vec<String>,
-    ) {
+    fn walk_icons(base: &Path, current: &Path, included: &mut Vec<IconId>, rejected: &mut Vec<(String, String)>, extraneous: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(current) else { return };
         for entry in entries.flatten() {
             let p = entry.path();
@@ -296,28 +291,15 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
     included.sort_by_key(|id| id.relative_path());
 
     // 3. Compute missing icons from standard catalog
-    let missing: Vec<IconId> = ALL_ICONS
-        .iter()
-        .copied()
-        .filter(|id| !included.contains(id))
-        .collect();
+    let missing: Vec<IconId> = ALL_ICONS.iter().copied().filter(|id| !included.contains(id)).collect();
 
-    Ok(ValidationReport {
-        included,
-        missing,
-        rejected,
-        extraneous,
-    })
+    Ok(ValidationReport { included, missing, rejected, extraneous })
 }
 
 /// Package an icon folder into any writer (e.g. file or in-memory cursor).
 /// Only valid, verified icons that match a known `IconId` are packaged into the archive.
 /// Extraneous files and invalid SVGs are automatically excluded.
-pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(
-    source_dir: impl AsRef<Path>,
-    manifest: &IconManifest,
-    writer: W,
-) -> Result<ValidationReport, String> {
+pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, writer: W) -> Result<ValidationReport, String> {
     let source_dir = source_dir.as_ref();
     let report = inspect_pack_directory(source_dir)?;
 
@@ -326,8 +308,7 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(
     }
 
     let mut zip = zip::ZipWriter::new(writer);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // 1. Write manifest.ron (marked verified)
     let mut manifest = manifest.clone();
@@ -369,10 +350,7 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(
 }
 
 /// Package an icon folder into an in-memory byte buffer, signed with QymCAD verification trailer.
-pub fn package_bundle_to_bytes(
-    source_dir: impl AsRef<Path>,
-    manifest: &IconManifest,
-) -> Result<(Vec<u8>, ValidationReport), String> {
+pub fn package_bundle_to_bytes(source_dir: impl AsRef<Path>, manifest: &IconManifest) -> Result<(Vec<u8>, ValidationReport), String> {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = cursor;
     let report = package_bundle_to_writer(source_dir, manifest, &mut writer)?;
@@ -384,11 +362,7 @@ pub fn package_bundle_to_bytes(
 /// Package an icon folder into a `.qicons` bundle file on disk.
 /// Automatically validates all icons, guarantees that only verified CAD icons enter the bundle,
 /// and seals the bundle with a trailing cryptographic SHA-256 integrity record.
-pub fn package_bundle(
-    source_dir: impl AsRef<Path>,
-    manifest: &IconManifest,
-    output_archive: impl AsRef<Path>,
-) -> Result<ValidationReport, String> {
+pub fn package_bundle(source_dir: impl AsRef<Path>, manifest: &IconManifest, output_archive: impl AsRef<Path>) -> Result<ValidationReport, String> {
     let (bytes, report) = package_bundle_to_bytes(source_dir, manifest)?;
     std::fs::write(output_archive.as_ref(), bytes).map_err(|e| e.to_string())?;
     Ok(report)

@@ -35,9 +35,7 @@ mod tests {
             } else {
                 after
             };
-            let end = icon_expr
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(icon_expr.len());
+            let end = icon_expr.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(icon_expr.len());
             let name = &icon_expr[..end];
             if !name.is_empty() {
                 out.push(name.to_string());

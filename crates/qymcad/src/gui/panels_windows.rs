@@ -1789,4 +1789,3 @@ pub(crate) fn scheme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
 pub(crate) fn icon_theme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context) {
     crate::gui::icon_themes::icon_theme_section(wc, ui, ctx);
 }
-

@@ -5,9 +5,8 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack,
-    package_bundle, reload_active_icon_themes, BundleFormat, ColorMode, IconManifest, PackageType,
-    IconPack, ValidationReport, ALL_ICONS,
+    clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat, ColorMode, IconManifest, PackageType, IconPack,
+    ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::PathBuf;
@@ -74,52 +73,23 @@ pub(crate) fn apply_icon_themes(set: &Settings) {
 pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat, is_tampered: bool) {
     let visuals = ui.visuals();
     let (icon, label_key, bg, fg) = if is_tampered {
-        (
-            ph::WARNING,
-            "bundle-format-tampered",
-            visuals.error_fg_color.linear_multiply(0.20),
-            visuals.error_fg_color,
-        )
+        (ph::WARNING, "bundle-format-tampered", visuals.error_fg_color.linear_multiply(0.20), visuals.error_fg_color)
     } else {
         match format {
-            BundleFormat::Directory => (
-                ph::FOLDER_OPEN,
-                "bundle-format-folder",
-                visuals.warn_fg_color.linear_multiply(0.18),
-                visuals.warn_fg_color,
-            ),
-            BundleFormat::Archive => (
-                ph::PACKAGE,
-                "bundle-format-archive",
-                visuals.hyperlink_color.linear_multiply(0.18),
-                visuals.hyperlink_color,
-            ),
-            BundleFormat::VerifiedArchive => (
-                ph::SHIELD_CHECK,
-                "bundle-format-verified",
-                visuals.selection.bg_fill.linear_multiply(0.22),
-                visuals.selection.bg_fill,
-            ),
-            BundleFormat::Embedded => (
-                ph::GEAR,
-                "bundle-format-embedded",
-                visuals.faint_bg_color,
-                visuals.weak_text_color(),
-            ),
+            BundleFormat::Directory => (ph::FOLDER_OPEN, "bundle-format-folder", visuals.warn_fg_color.linear_multiply(0.18), visuals.warn_fg_color),
+            BundleFormat::Archive => (ph::PACKAGE, "bundle-format-archive", visuals.hyperlink_color.linear_multiply(0.18), visuals.hyperlink_color),
+            BundleFormat::VerifiedArchive => (ph::SHIELD_CHECK, "bundle-format-verified", visuals.selection.bg_fill.linear_multiply(0.22), visuals.selection.bg_fill),
+            BundleFormat::Embedded => (ph::GEAR, "bundle-format-embedded", visuals.faint_bg_color, visuals.weak_text_color()),
         }
     };
 
-    egui::Frame::NONE
-        .fill(bg)
-        .corner_radius(3.0)
-        .inner_margin(egui::Margin::symmetric(5, 2))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                ui.label(egui::RichText::new(icon).color(fg).small());
-                ui.label(egui::RichText::new(crate::i18n::tr(label_key)).color(fg).small().strong());
-            });
+    egui::Frame::NONE.fill(bg).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            ui.label(egui::RichText::new(icon).color(fg).small());
+            ui.label(egui::RichText::new(crate::i18n::tr(label_key)).color(fg).small().strong());
         });
+    });
 }
 
 fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, size: f32) {
@@ -212,232 +182,206 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
 /// In-app developer modal dialog for packaging an icon bundle into `.qicons`.
 fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
     let mut open = state.is_open;
-    egui::Window::new(crate::i18n::tr("icon-packager-title"))
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(true)
-        .default_width(450.0)
-        .show(ctx, |ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-desc")).small().weak());
+    egui::Window::new(crate::i18n::tr("icon-packager-title")).open(&mut open).collapsible(false).resizable(true).default_width(450.0).show(ctx, |ui| {
+        ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-desc")).small().weak());
+        ui.add_space(4.0);
+
+        egui::Grid::new("packager_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            ui.label("Theme ID:");
+            ui.text_edit_singleline(&mut state.id);
+            ui.end_row();
+
+            ui.label("Theme Name:");
+            ui.text_edit_singleline(&mut state.name);
+            ui.end_row();
+
+            ui.label("Version:");
+            ui.text_edit_singleline(&mut state.version);
+            ui.end_row();
+
+            ui.label("Author:");
+            ui.text_edit_singleline(&mut state.author);
+            ui.end_row();
+
+            ui.label("License:");
+            ui.text_edit_singleline(&mut state.license);
+            ui.end_row();
+
+            ui.label("Description:");
+            ui.text_edit_singleline(&mut state.description);
+            ui.end_row();
+
+            ui.label("Monochrome:");
+            ui.checkbox(&mut state.is_monochrome, "Theme adapts to UI foreground");
+            ui.end_row();
+
+            ui.label("Source Folder:");
+            ui.text_edit_singleline(&mut state.source_dir);
+            ui.end_row();
+
+            ui.label("Output .qicons Path:");
+            ui.text_edit_singleline(&mut state.output_file);
+            ui.end_row();
+        });
+
+        ui.add_space(8.0);
+
+        if let Some(msg) = &state.message {
+            let color = if state.is_error { Color32::RED } else { Color32::GREEN };
+            ui.label(egui::RichText::new(msg).color(color));
             ui.add_space(4.0);
+        }
 
-            egui::Grid::new("packager_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.label("Theme ID:");
-                ui.text_edit_singleline(&mut state.id);
-                ui.end_row();
-
-                ui.label("Theme Name:");
-                ui.text_edit_singleline(&mut state.name);
-                ui.end_row();
-
-                ui.label("Version:");
-                ui.text_edit_singleline(&mut state.version);
-                ui.end_row();
-
-                ui.label("Author:");
-                ui.text_edit_singleline(&mut state.author);
-                ui.end_row();
-
-                ui.label("License:");
-                ui.text_edit_singleline(&mut state.license);
-                ui.end_row();
-
-                ui.label("Description:");
-                ui.text_edit_singleline(&mut state.description);
-                ui.end_row();
-
-                ui.label("Monochrome:");
-                ui.checkbox(&mut state.is_monochrome, "Theme adapts to UI foreground");
-                ui.end_row();
-
-                ui.label("Source Folder:");
-                ui.text_edit_singleline(&mut state.source_dir);
-                ui.end_row();
-
-                ui.label("Output .qicons Path:");
-                ui.text_edit_singleline(&mut state.output_file);
-                ui.end_row();
-            });
-
-            ui.add_space(8.0);
-
-            if let Some(msg) = &state.message {
-                let color = if state.is_error { Color32::RED } else { Color32::GREEN };
-                ui.label(egui::RichText::new(msg).color(color));
-                ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.button(crate::i18n::tr("icon-packager-inspect-btn")).clicked() {
+                let source_path = PathBuf::from(state.source_dir.trim());
+                if !source_path.exists() {
+                    state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
+                    state.is_error = true;
+                    state.report = None;
+                } else {
+                    match inspect_pack_directory(&source_path) {
+                        Ok(rep) => {
+                            if rep.has_issues() {
+                                state.message =
+                                    Some(format!("Validation found {} issue(s): {} rejected, {} extraneous", rep.rejected.len() + rep.extraneous.len(), rep.rejected.len(), rep.extraneous.len()));
+                                state.is_error = !rep.rejected.is_empty();
+                            } else {
+                                state.message = Some(crate::i18n::tr("icon-packager-all-valid"));
+                                state.is_error = false;
+                            }
+                            state.report = Some(rep);
+                        }
+                        Err(e) => {
+                            state.message = Some(format!("Inspection failed: {e}"));
+                            state.is_error = true;
+                            state.report = None;
+                        }
+                    }
+                }
             }
 
-            ui.horizontal(|ui| {
-                if ui.button(crate::i18n::tr("icon-packager-inspect-btn")).clicked() {
-                    let source_path = PathBuf::from(state.source_dir.trim());
-                    if !source_path.exists() {
-                        state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
-                        state.is_error = true;
-                        state.report = None;
-                    } else {
-                        match inspect_pack_directory(&source_path) {
-                            Ok(rep) => {
-                                if rep.has_issues() {
-                                    state.message = Some(format!(
-                                        "Validation found {} issue(s): {} rejected, {} extraneous",
-                                        rep.rejected.len() + rep.extraneous.len(),
-                                        rep.rejected.len(),
-                                        rep.extraneous.len()
-                                    ));
-                                    state.is_error = !rep.rejected.is_empty();
-                                } else {
-                                    state.message = Some(crate::i18n::tr("icon-packager-all-valid"));
-                                    state.is_error = false;
-                                }
-                                state.report = Some(rep);
-                            }
-                            Err(e) => {
-                                state.message = Some(format!("Inspection failed: {e}"));
+            if ui.button(crate::i18n::tr("icon-packager-build-btn")).clicked() {
+                let source_path = PathBuf::from(state.source_dir.trim());
+                let output_path = PathBuf::from(state.output_file.trim());
+
+                if state.id.trim().is_empty() || state.name.trim().is_empty() {
+                    state.message = Some("Theme ID and Name cannot be empty".into());
+                    state.is_error = true;
+                } else if !source_path.exists() {
+                    state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
+                    state.is_error = true;
+                } else if state.output_file.trim().is_empty() {
+                    state.message = Some("Output .qicons path cannot be empty".into());
+                    state.is_error = true;
+                } else {
+                    let manifest = IconManifest {
+                        package_type: PackageType::IconTheme,
+                        id: state.id.trim().to_string(),
+                        name: state.name.trim().to_string(),
+                        version: state.version.trim().to_string(),
+                        author: state.author.trim().to_string(),
+                        license: state.license.trim().to_string(),
+                        description: state.description.trim().to_string(),
+                        color_mode: if state.is_monochrome { ColorMode::Monochrome } else { ColorMode::Universal },
+                        verified: true,
+                    };
+
+                    match package_bundle(&source_path, &manifest, &output_path) {
+                        Ok(rep) => {
+                            if rep.included.is_empty() {
+                                state.message = Some(crate::i18n::tr("icon-packager-no-icons"));
                                 state.is_error = true;
-                                state.report = None;
-                            }
-                        }
-                    }
-                }
-
-                if ui.button(crate::i18n::tr("icon-packager-build-btn")).clicked() {
-                    let source_path = PathBuf::from(state.source_dir.trim());
-                    let output_path = PathBuf::from(state.output_file.trim());
-
-                    if state.id.trim().is_empty() || state.name.trim().is_empty() {
-                        state.message = Some("Theme ID and Name cannot be empty".into());
-                        state.is_error = true;
-                    } else if !source_path.exists() {
-                        state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
-                        state.is_error = true;
-                    } else if state.output_file.trim().is_empty() {
-                        state.message = Some("Output .qicons path cannot be empty".into());
-                        state.is_error = true;
-                    } else {
-                        let manifest = IconManifest {
-                            package_type: PackageType::IconTheme,
-                            id: state.id.trim().to_string(),
-                            name: state.name.trim().to_string(),
-                            version: state.version.trim().to_string(),
-                            author: state.author.trim().to_string(),
-                            license: state.license.trim().to_string(),
-                            description: state.description.trim().to_string(),
-                            color_mode: if state.is_monochrome {
-                                ColorMode::Monochrome
                             } else {
-                                ColorMode::Universal
-                            },
-                            verified: true,
-                        };
-
-                        match package_bundle(&source_path, &manifest, &output_path) {
-                            Ok(rep) => {
-                                if rep.included.is_empty() {
-                                    state.message = Some(crate::i18n::tr("icon-packager-no-icons"));
-                                    state.is_error = true;
-                                } else {
-                                    let cov_str = rep.included.len().to_string();
-                                    let path_str = output_path.display().to_string();
-                                    state.message = Some(crate::i18n::trn(
-                                        "icon-packager-success",
-                                        &[("count", &cov_str), ("path", &path_str)],
-                                    ));
-                                    state.is_error = false;
-                                }
-                                state.report = Some(rep);
+                                let cov_str = rep.included.len().to_string();
+                                let path_str = output_path.display().to_string();
+                                state.message = Some(crate::i18n::trn("icon-packager-success", &[("count", &cov_str), ("path", &path_str)]));
+                                state.is_error = false;
                             }
-                            Err(e) => {
-                                state.message = Some(format!("Packaging failed: {e}"));
-                                state.is_error = true;
-                            }
+                            state.report = Some(rep);
+                        }
+                        Err(e) => {
+                            state.message = Some(format!("Packaging failed: {e}"));
+                            state.is_error = true;
                         }
                     }
                 }
+            }
 
-                if ui.button(crate::i18n::tr("nav-cancel")).clicked() {
-                    state.is_open = false;
-                }
-            });
-
-            // Diagnostic validation report section
-            if let Some(rep) = &state.report {
-                ui.separator();
-                let (cov, total) = rep.coverage();
-                let pct = rep.coverage_percent();
-                let cov_str = cov.to_string();
-                let total_str = total.to_string();
-                let pct_str = pct.to_string();
-
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(crate::i18n::trn(
-                            "icon-packager-coverage",
-                            &[("included", &cov_str), ("total", &total_str), ("percent", &pct_str)],
-                        ))
-                        .strong(),
-                    );
-                });
-
-                // Category badges
-                ui.horizontal_wrapped(|ui| {
-                    for (cat, inc, cat_total) in rep.category_breakdown() {
-                        let text = format!("{cat}: {inc}/{cat_total}");
-                        ui.label(egui::RichText::new(text).small().weak());
-                    }
-                });
-
-                egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                    // Rejected files (critical errors)
-                    if !rep.rejected.is_empty() {
-                        ui.add_space(4.0);
-                        let title = crate::i18n::tr1("icon-packager-rejected-title", "count", &rep.rejected.len().to_string());
-                        ui.label(egui::RichText::new(title).strong().color(Color32::RED));
-                        ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-rejected-desc")).small().weak());
-                        for (path, reason) in &rep.rejected {
-                            ui.label(egui::RichText::new(format!("  - {path}: {reason}")).color(ui.visuals().error_fg_color).small());
-                        }
-                    }
-
-                    // Extraneous files (warnings)
-                    if !rep.extraneous.is_empty() {
-                        ui.add_space(4.0);
-                        let title = crate::i18n::tr1("icon-packager-extraneous-title", "count", &rep.extraneous.len().to_string());
-                        ui.label(egui::RichText::new(title).strong().color(ui.visuals().warn_fg_color));
-                        ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-extraneous-desc")).small().weak());
-                        for file in &rep.extraneous {
-                            ui.label(egui::RichText::new(format!("  - {file}")).color(ui.visuals().warn_fg_color).small());
-                        }
-                    }
-
-                    // Included icons list (collapsible)
-                    if !rep.included.is_empty() {
-                        ui.add_space(4.0);
-                        let inc_title = crate::i18n::tr1("icon-packager-included-title", "count", &cov_str);
-                        egui::CollapsingHeader::new(egui::RichText::new(inc_title).color(Color32::GREEN))
-                            .default_open(rep.rejected.is_empty() && rep.extraneous.is_empty())
-                            .show(ui, |ui| {
-                                for id in &rep.included {
-                                    ui.label(egui::RichText::new(format!("  {} {}", ph::CHECK, id.relative_path())).small());
-                                }
-                            });
-                    }
-
-                    // Missing icons list (collapsible)
-                    if !rep.missing.is_empty() {
-                        ui.add_space(4.0);
-                        let miss_title = crate::i18n::tr1("icon-packager-missing-title", "count", &rep.missing.len().to_string());
-                        egui::CollapsingHeader::new(egui::RichText::new(miss_title).weak())
-                            .default_open(false)
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-missing-desc")).small().weak());
-                                for id in &rep.missing {
-                                    ui.label(egui::RichText::new(format!("  - {}", id.relative_path())).weak().small());
-                                }
-                            });
-                    }
-                });
+            if ui.button(crate::i18n::tr("nav-cancel")).clicked() {
+                state.is_open = false;
             }
         });
+
+        // Diagnostic validation report section
+        if let Some(rep) = &state.report {
+            ui.separator();
+            let (cov, total) = rep.coverage();
+            let pct = rep.coverage_percent();
+            let cov_str = cov.to_string();
+            let total_str = total.to_string();
+            let pct_str = pct.to_string();
+
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(crate::i18n::trn("icon-packager-coverage", &[("included", &cov_str), ("total", &total_str), ("percent", &pct_str)])).strong());
+            });
+
+            // Category badges
+            ui.horizontal_wrapped(|ui| {
+                for (cat, inc, cat_total) in rep.category_breakdown() {
+                    let text = format!("{cat}: {inc}/{cat_total}");
+                    ui.label(egui::RichText::new(text).small().weak());
+                }
+            });
+
+            egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                // Rejected files (critical errors)
+                if !rep.rejected.is_empty() {
+                    ui.add_space(4.0);
+                    let title = crate::i18n::tr1("icon-packager-rejected-title", "count", &rep.rejected.len().to_string());
+                    ui.label(egui::RichText::new(title).strong().color(Color32::RED));
+                    ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-rejected-desc")).small().weak());
+                    for (path, reason) in &rep.rejected {
+                        ui.label(egui::RichText::new(format!("  - {path}: {reason}")).color(ui.visuals().error_fg_color).small());
+                    }
+                }
+
+                // Extraneous files (warnings)
+                if !rep.extraneous.is_empty() {
+                    ui.add_space(4.0);
+                    let title = crate::i18n::tr1("icon-packager-extraneous-title", "count", &rep.extraneous.len().to_string());
+                    ui.label(egui::RichText::new(title).strong().color(ui.visuals().warn_fg_color));
+                    ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-extraneous-desc")).small().weak());
+                    for file in &rep.extraneous {
+                        ui.label(egui::RichText::new(format!("  - {file}")).color(ui.visuals().warn_fg_color).small());
+                    }
+                }
+
+                // Included icons list (collapsible)
+                if !rep.included.is_empty() {
+                    ui.add_space(4.0);
+                    let inc_title = crate::i18n::tr1("icon-packager-included-title", "count", &cov_str);
+                    egui::CollapsingHeader::new(egui::RichText::new(inc_title).color(Color32::GREEN)).default_open(rep.rejected.is_empty() && rep.extraneous.is_empty()).show(ui, |ui| {
+                        for id in &rep.included {
+                            ui.label(egui::RichText::new(format!("  {} {}", ph::CHECK, id.relative_path())).small());
+                        }
+                    });
+                }
+
+                // Missing icons list (collapsible)
+                if !rep.missing.is_empty() {
+                    ui.add_space(4.0);
+                    let miss_title = crate::i18n::tr1("icon-packager-missing-title", "count", &rep.missing.len().to_string());
+                    egui::CollapsingHeader::new(egui::RichText::new(miss_title).weak()).default_open(false).show(ui, |ui| {
+                        ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-missing-desc")).small().weak());
+                        for id in &rep.missing {
+                            ui.label(egui::RichText::new(format!("  - {}", id.relative_path())).weak().small());
+                        }
+                    });
+                }
+            });
+        }
+    });
     state.is_open = open;
 }
 
@@ -460,13 +404,7 @@ pub(crate) struct IconManagerState {
 
 impl Default for IconManagerState {
     fn default() -> Self {
-        Self {
-            is_open: false,
-            selected_pack_id: "freecad-classic".into(),
-            active_tab: IconManagerTab::Readme,
-            search_query: String::new(),
-            category_filter: "all".into(),
-        }
+        Self { is_open: false, selected_pack_id: "freecad-classic".into(), active_tab: IconManagerTab::Readme, search_query: String::new(), category_filter: "all".into() }
     }
 }
 
@@ -478,12 +416,7 @@ pub(crate) fn open_icon_manager(ctx: &egui::Context) {
     });
 }
 
-fn manager_theme_card(
-    ui: &mut egui::Ui,
-    id: &str,
-    selected: bool,
-    content: impl FnOnce(&mut egui::Ui) -> Option<egui::Rect>,
-) -> (bool, egui::Rect) {
+fn manager_theme_card(ui: &mut egui::Ui, id: &str, selected: bool, content: impl FnOnce(&mut egui::Ui) -> Option<egui::Rect>) -> (bool, egui::Rect) {
     let fill = if selected { ui.visuals().selection.bg_fill.linear_multiply(0.22) } else { ui.visuals().faint_bg_color };
     let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 68.0), egui::Sense::click());
     ui.painter().rect_filled(rect, 6.0, fill);
@@ -494,8 +427,7 @@ fn manager_theme_card(
     if let Some(action_rect) = action_rect {
         selection_rect.max.x = action_rect.left();
     }
-    let foreground = ui.interact(selection_rect, ui.id().with(("theme_card", id)), egui::Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let foreground = ui.interact(selection_rect, ui.id().with(("theme_card", id)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     (foreground.clicked() || background.clicked(), rect)
 }
 
@@ -507,9 +439,7 @@ fn manager_sidebar_shell(ui: &mut egui::Ui, actions: impl FnOnce(&mut egui::Ui))
 fn draw_icon_manager_actions(ctx: &egui::Context, wc: &mut WinCtx, ui: &mut egui::Ui) {
     ui.add_space(6.0);
     if let Some(user_dir) = user_themes_dir() {
-        if ui.add_sized([ui.available_width(), 28.0], egui::Button::new(
-            format!("{} {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-icon-open-folder"))
-        )).clicked() {
+        if ui.add_sized([ui.available_width(), 28.0], egui::Button::new(format!("{} {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-icon-open-folder")))).clicked() {
             let _ = std::fs::create_dir_all(&user_dir);
             let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &user_dir);
             let _ = crate::system::start(bin, &args);
@@ -517,16 +447,12 @@ fn draw_icon_manager_actions(ctx: &egui::Context, wc: &mut WinCtx, ui: &mut egui
     }
     ui.horizontal(|ui| {
         let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-        if ui.add_sized([width, 28.0], egui::Button::new(
-            format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-refresh"))
-        ).truncate()).clicked() {
+        if ui.add_sized([width, 28.0], egui::Button::new(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-refresh"))).truncate()).clicked() {
             clear_global_icon_cache();
             apply_icon_themes(wc.set);
             *wc.status = crate::i18n::tr("settings-icon-cache-cleared");
         }
-        if ui.add_sized([width, 28.0], egui::Button::new(
-            format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))
-        ).truncate()).clicked() {
+        if ui.add_sized([width, 28.0], egui::Button::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))).truncate()).clicked() {
             ctx.data_mut(|d| {
                 let ps = d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"));
                 ps.is_open = true;
@@ -537,15 +463,9 @@ fn draw_icon_manager_actions(ctx: &egui::Context, wc: &mut WinCtx, ui: &mut egui
 
 /// Draw the dedicated Icon Theme Manager window.
 pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
-    let mut state = ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window"))
-            .clone()
-    });
+    let mut state = ctx.data_mut(|d| d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window")).clone());
 
-    let mut packager_state = ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"))
-            .clone()
-    });
+    let mut packager_state = ctx.data_mut(|d| d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog")).clone());
 
     if packager_state.is_open {
         draw_packager_modal(ctx, &mut packager_state);
@@ -592,430 +512,398 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
             ui.add_space(8.0);
             ui.separator();
 
-            egui::Panel::left("icon_manager_sidebar")
-                .resizable(true)
-                .default_size(330.0)
-                .size_range(300.0..=420.0)
+            egui::Panel::left("icon_manager_sidebar").resizable(true).default_size(330.0).size_range(300.0..=420.0).show(ui, |ui| {
+                manager_sidebar_shell(ui, |ui| {
+                    draw_icon_manager_actions(ctx, wc, ui);
+                })
                 .show(ui, |ui| {
-                    manager_sidebar_shell(ui, |ui| {
-                        draw_icon_manager_actions(ctx, wc, ui);
-                    }).show(ui, |ui| {
-                        ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-active-cascade")).strong());
-                        ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-priority-hint")).small().weak());
-                        ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-active-cascade")).strong());
+                    ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-priority-hint")).small().weak());
+                    ui.add_space(6.0);
 
-                        let mut to_swap = None;
-                        let mut to_remove = None;
+                    let mut to_swap = None;
+                    let mut to_remove = None;
 
-                        for (idx, id) in wc.set.active_icon_packs.iter().enumerate() {
-                            let pack_opt = all_packs.iter().find(|p| &p.manifest.id == id);
-                            let is_selected = state.selected_pack_id == *id;
+                    for (idx, id) in wc.set.active_icon_packs.iter().enumerate() {
+                        let pack_opt = all_packs.iter().find(|p| &p.manifest.id == id);
+                        let is_selected = state.selected_pack_id == *id;
 
-                            let (clicked, _) = manager_theme_card(ui, id, is_selected, |ui| {
-                                let text_width = (ui.available_width() - 150.0).max(96.0);
-                                ui.horizontal(|ui| {
-                                    if let Some(pack) = pack_opt {
-                                        draw_pack_icon(ui, pack, 36.0);
-                                    } else {
-                                        ui.add_sized([36.0, 36.0], egui::Label::new(ph::PACKAGE));
-                                    }
-                                    ui.vertical(|ui| {
-                                        let name = pack_opt.map(|p| p.manifest.name.as_str()).unwrap_or(id.as_str());
-                                        let title = format!("{:02}  {name}", idx + 1);
-                                        ui.add_sized([text_width, 26.0], egui::Label::new(title).truncate()).on_hover_text(name);
-                                        if let Some(p) = pack_opt {
-                                            ui.horizontal(|ui| {
-                                                draw_bundle_format_badge(ui, p.format(), p.is_tampered);
-                                                if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
-                                                    ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color))
-                                                        .on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
-                                                }
-                                            });
-                                        }
-                                    });
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        if ui.add(egui::Button::new(ph::MINUS).small())
-                                            .on_hover_text(crate::i18n::tr("icon-mgr-deactivate-btn")).clicked() {
-                                            to_remove = Some(idx);
-                                        }
-                                        if ui.add_enabled(idx + 1 < wc.set.active_icon_packs.len(), egui::Button::new(ph::ARROW_DOWN).small())
-                                            .on_hover_text(crate::i18n::tr("icon-mgr-move-down")).clicked() {
-                                            to_swap = Some((idx, idx + 1));
-                                        }
-                                        let leftmost_action = ui.add_enabled(idx > 0, egui::Button::new(ph::ARROW_UP).small())
-                                            .on_hover_text(crate::i18n::tr("icon-mgr-move-up"));
-                                        if leftmost_action.clicked() {
-                                            to_swap = Some((idx, idx - 1));
-                                        }
-                                        Some(leftmost_action.rect)
-                                    }).inner
-                                }).inner
-                            });
-                            if clicked {
-                                state.selected_pack_id = id.clone();
-                            }
-                            ui.add_space(4.0);
-                        }
-
-                        // Base fallback
-                        let (clicked, _) = manager_theme_card(ui, "default", state.selected_pack_id == "default", |ui| {
-                            let text_width = (ui.available_width() - 44.0).max(110.0);
+                        let (clicked, _) = manager_theme_card(ui, id, is_selected, |ui| {
+                            let text_width = (ui.available_width() - 150.0).max(96.0);
                             ui.horizontal(|ui| {
-                                if let Some(pack) = all_packs.iter().find(|p| p.manifest.id == "default") {
+                                if let Some(pack) = pack_opt {
                                     draw_pack_icon(ui, pack, 36.0);
+                                } else {
+                                    ui.add_sized([36.0, 36.0], egui::Label::new(ph::PACKAGE));
                                 }
                                 ui.vertical(|ui| {
-                                    ui.add_sized([text_width, 26.0], egui::Label::new(
-                                        crate::i18n::tr("settings-icon-themes-base")
-                                    ).truncate()).on_hover_text(crate::i18n::tr("settings-icon-themes-base-desc"));
-                                    draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
-                                });
-                            });
-                            None
-                        });
-                        if clicked {
-                            state.selected_pack_id = "default".into();
-                        }
-
-                        if let Some((a, b)) = to_swap {
-                            wc.set.active_icon_packs.swap(a, b);
-                            changed = true;
-                        }
-                        if let Some(idx) = to_remove {
-                            let removed = wc.set.active_icon_packs.remove(idx);
-                            if !wc.set.inactive_icon_packs.contains(&removed) {
-                                wc.set.inactive_icon_packs.push(removed);
-                            }
-                            changed = true;
-                        }
-
-                        ui.add_space(10.0);
-                        ui.separator();
-                        ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-available-themes")).strong());
-                        ui.add_space(6.0);
-
-                        // Available (inactive) themes
-                        let mut to_activate = None;
-                        for p in &all_packs {
-                            if p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id) {
-                                continue;
-                            }
-                            let is_selected = state.selected_pack_id == p.manifest.id;
-                            let (clicked, _) = manager_theme_card(ui, &p.manifest.id, is_selected, |ui| {
-                                let text_width = (ui.available_width() - 168.0).max(90.0);
-                                ui.horizontal(|ui| {
-                                    draw_pack_icon(ui, p, 36.0);
-                                    ui.vertical(|ui| {
-                                        ui.add_sized([text_width, 26.0], egui::Label::new(&p.manifest.name).truncate())
-                                            .on_hover_text(&p.manifest.name);
+                                    let name = pack_opt.map(|p| p.manifest.name.as_str()).unwrap_or(id.as_str());
+                                    let title = format!("{:02}  {name}", idx + 1);
+                                    ui.add_sized([text_width, 26.0], egui::Label::new(title).truncate()).on_hover_text(name);
+                                    if let Some(p) = pack_opt {
                                         ui.horizontal(|ui| {
                                             draw_bundle_format_badge(ui, p.format(), p.is_tampered);
-                                            if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
-                                                ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color))
-                                                    .on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                                            if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
+                                                ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
                                             }
                                         });
-                                    });
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        let label = format!("{} {}", ph::PLUS, crate::i18n::tr("icon-mgr-activate-btn"));
-                                        let action = ui.add_sized([112.0, 36.0], egui::Button::new(
-                                            egui::RichText::new(label).strong().color(ui.visuals().selection.stroke.color)
-                                        ).fill(ui.visuals().selection.bg_fill).truncate())
-                                            .on_hover_text(crate::i18n::tr("icon-mgr-activate-btn"));
-                                        if action.clicked() {
-                                            to_activate = Some(p.manifest.id.clone());
-                                        }
-                                        Some(action.rect)
-                                    }).inner
-                                }).inner
-                            });
-                            if clicked {
-                                state.selected_pack_id = p.manifest.id.clone();
-                            }
-                            ui.add_space(4.0);
+                                    }
+                                });
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.add(egui::Button::new(ph::MINUS).small()).on_hover_text(crate::i18n::tr("icon-mgr-deactivate-btn")).clicked() {
+                                        to_remove = Some(idx);
+                                    }
+                                    if ui
+                                        .add_enabled(idx + 1 < wc.set.active_icon_packs.len(), egui::Button::new(ph::ARROW_DOWN).small())
+                                        .on_hover_text(crate::i18n::tr("icon-mgr-move-down"))
+                                        .clicked()
+                                    {
+                                        to_swap = Some((idx, idx + 1));
+                                    }
+                                    let leftmost_action = ui.add_enabled(idx > 0, egui::Button::new(ph::ARROW_UP).small()).on_hover_text(crate::i18n::tr("icon-mgr-move-up"));
+                                    if leftmost_action.clicked() {
+                                        to_swap = Some((idx, idx - 1));
+                                    }
+                                    Some(leftmost_action.rect)
+                                })
+                                .inner
+                            })
+                            .inner
+                        });
+                        if clicked {
+                            state.selected_pack_id = id.clone();
                         }
-                        if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
-                            ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
-                        }
+                        ui.add_space(4.0);
+                    }
 
-                        if let Some(act) = to_activate {
-                            wc.set.active_icon_packs.push(act.clone());
-                            wc.set.inactive_icon_packs.retain(|x| x != &act);
-                            state.selected_pack_id = act;
-                            changed = true;
-                        }
+                    // Base fallback
+                    let (clicked, _) = manager_theme_card(ui, "default", state.selected_pack_id == "default", |ui| {
+                        let text_width = (ui.available_width() - 44.0).max(110.0);
+                        ui.horizontal(|ui| {
+                            if let Some(pack) = all_packs.iter().find(|p| p.manifest.id == "default") {
+                                draw_pack_icon(ui, pack, 36.0);
+                            }
+                            ui.vertical(|ui| {
+                                ui.add_sized([text_width, 26.0], egui::Label::new(crate::i18n::tr("settings-icon-themes-base")).truncate())
+                                    .on_hover_text(crate::i18n::tr("settings-icon-themes-base-desc"));
+                                draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
+                            });
+                        });
+                        None
                     });
+                    if clicked {
+                        state.selected_pack_id = "default".into();
+                    }
+
+                    if let Some((a, b)) = to_swap {
+                        wc.set.active_icon_packs.swap(a, b);
+                        changed = true;
+                    }
+                    if let Some(idx) = to_remove {
+                        let removed = wc.set.active_icon_packs.remove(idx);
+                        if !wc.set.inactive_icon_packs.contains(&removed) {
+                            wc.set.inactive_icon_packs.push(removed);
+                        }
+                        changed = true;
+                    }
+
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-available-themes")).strong());
+                    ui.add_space(6.0);
+
+                    // Available (inactive) themes
+                    let mut to_activate = None;
+                    for p in &all_packs {
+                        if p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id) {
+                            continue;
+                        }
+                        let is_selected = state.selected_pack_id == p.manifest.id;
+                        let (clicked, _) = manager_theme_card(ui, &p.manifest.id, is_selected, |ui| {
+                            let text_width = (ui.available_width() - 168.0).max(90.0);
+                            ui.horizontal(|ui| {
+                                draw_pack_icon(ui, p, 36.0);
+                                ui.vertical(|ui| {
+                                    ui.add_sized([text_width, 26.0], egui::Label::new(&p.manifest.name).truncate()).on_hover_text(&p.manifest.name);
+                                    ui.horizontal(|ui| {
+                                        draw_bundle_format_badge(ui, p.format(), p.is_tampered);
+                                        if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
+                                            ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                                        }
+                                    });
+                                });
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let label = format!("{} {}", ph::PLUS, crate::i18n::tr("icon-mgr-activate-btn"));
+                                    let action = ui
+                                        .add_sized(
+                                            [112.0, 36.0],
+                                            egui::Button::new(egui::RichText::new(label).strong().color(ui.visuals().selection.stroke.color)).fill(ui.visuals().selection.bg_fill).truncate(),
+                                        )
+                                        .on_hover_text(crate::i18n::tr("icon-mgr-activate-btn"));
+                                    if action.clicked() {
+                                        to_activate = Some(p.manifest.id.clone());
+                                    }
+                                    Some(action.rect)
+                                })
+                                .inner
+                            })
+                            .inner
+                        });
+                        if clicked {
+                            state.selected_pack_id = p.manifest.id.clone();
+                        }
+                        ui.add_space(4.0);
+                    }
+                    if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
+                        ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
+                    }
+
+                    if let Some(act) = to_activate {
+                        wc.set.active_icon_packs.push(act.clone());
+                        wc.set.inactive_icon_packs.retain(|x| x != &act);
+                        state.selected_pack_id = act;
+                        changed = true;
+                    }
                 });
+            });
 
             egui::CentralPanel::default().show(ui, |ui| {
-                    let pack_opt = all_packs.iter().find(|p| p.manifest.id == state.selected_pack_id);
-                    let Some(pack) = pack_opt else {
-                        ui.label(crate::i18n::tr("icon-mgr-no-pack-selected"));
-                        return;
-                    };
+                let pack_opt = all_packs.iter().find(|p| p.manifest.id == state.selected_pack_id);
+                let Some(pack) = pack_opt else {
+                    ui.label(crate::i18n::tr("icon-mgr-no-pack-selected"));
+                    return;
+                };
 
-                    egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            draw_pack_icon(ui, pack, 48.0);
-                            ui.vertical(|ui| {
-                                ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
-                                ui.horizontal_wrapped(|ui| {
-                                    draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
-                                    ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).small().weak());
-                                });
+                egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        draw_pack_icon(ui, pack, 48.0);
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
+                            ui.horizontal_wrapped(|ui| {
+                                draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
+                                ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).small().weak());
                             });
                         });
+                    });
 
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-id", "value", &pack.manifest.id)).small().monospace().weak());
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-id", "value", &pack.manifest.id)).small().monospace().weak());
+                        ui.separator();
+                        ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-license", "value", &pack.manifest.license)).small().weak());
+                        if !pack.manifest.author.is_empty() {
                             ui.separator();
-                            ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-license", "value", &pack.manifest.license)).small().weak());
-                            if !pack.manifest.author.is_empty() {
-                                ui.separator();
-                                ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-author", "value", &pack.manifest.author)).small().weak());
-                            }
-                            ui.separator();
-                            let mode_key = match &pack.manifest.color_mode {
-                                ColorMode::Monochrome => "icon-mgr-color-monochrome",
-                                ColorMode::Universal => "icon-mgr-color-universal",
-                                ColorMode::Specific(_) => "icon-mgr-color-specific",
-                            };
-                            ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
-                        });
-
-                        let (cov, total) = pack.coverage();
-                        let pct = if total == 0 { 0 } else { (cov * 100) / total };
-                        let cov_msg = crate::i18n::trn(
-                            "icon-mgr-total-icons",
-                            &[("count", &cov.to_string()), ("total", &total.to_string()), ("percent", &pct.to_string())],
-                        );
-                        ui.add_space(8.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(cov_msg).small().strong());
-                        });
-                        ui.add(egui::ProgressBar::new(pct as f32 / 100.0).desired_width(ui.available_width()));
-
-                        // Verified bundle / Archive / Tampered status and hygiene checks
-                        if pack.format() == BundleFormat::VerifiedArchive {
-                            ui.add_space(2.0);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{} {}", ph::SHIELD_CHECK, crate::i18n::tr("icon-mgr-verified-bundle-desc")))
-                                        .color(ui.visuals().selection.bg_fill)
-                                        .small()
-                                        .strong(),
-                                );
-                            });
-                        } else if pack.is_tampered {
-                            ui.add_space(2.0);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-tampered-desc")))
-                                        .color(ui.visuals().error_fg_color)
-                                        .small()
-                                        .strong(),
-                                );
-                            });
-                        } else if pack.format() == BundleFormat::Archive {
-                            ui.add_space(2.0);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icon-mgr-archive-desc")))
-                                        .color(ui.visuals().hyperlink_color)
-                                        .small(),
-                                );
-                            });
+                            ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-author", "value", &pack.manifest.author)).small().weak());
                         }
+                        ui.separator();
+                        let mode_key = match &pack.manifest.color_mode {
+                            ColorMode::Monochrome => "icon-mgr-color-monochrome",
+                            ColorMode::Universal => "icon-mgr-color-universal",
+                            ColorMode::Specific(_) => "icon-mgr-color-specific",
+                        };
+                        ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
+                    });
 
-                        // For unverified packs (Archive, Directory), scan for SVG hygiene / validation issues
-                        // Verified bundles intentionally skip runtime scans for maximum responsiveness
-                        if pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded {
-                            let mut invalid_icons = Vec::new();
-                            for &id in ALL_ICONS {
-                                if let Some(svg_bytes) = pack.get_svg_for_id(id) {
-                                    if let Err(e) = qymcad_ui_state::icons::validate_svg(&svg_bytes) {
-                                        invalid_icons.push((id, e));
-                                    }
+                    let (cov, total) = pack.coverage();
+                    let pct = if total == 0 { 0 } else { (cov * 100) / total };
+                    let cov_msg = crate::i18n::trn("icon-mgr-total-icons", &[("count", &cov.to_string()), ("total", &total.to_string()), ("percent", &pct.to_string())]);
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(cov_msg).small().strong());
+                    });
+                    ui.add(egui::ProgressBar::new(pct as f32 / 100.0).desired_width(ui.available_width()));
+
+                    // Verified bundle / Archive / Tampered status and hygiene checks
+                    if pack.format() == BundleFormat::VerifiedArchive {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(format!("{} {}", ph::SHIELD_CHECK, crate::i18n::tr("icon-mgr-verified-bundle-desc"))).color(ui.visuals().selection.bg_fill).small().strong());
+                        });
+                    } else if pack.is_tampered {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-tampered-desc"))).color(ui.visuals().error_fg_color).small().strong());
+                        });
+                    } else if pack.format() == BundleFormat::Archive {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icon-mgr-archive-desc"))).color(ui.visuals().hyperlink_color).small());
+                        });
+                    }
+
+                    // For unverified packs (Archive, Directory), scan for SVG hygiene / validation issues
+                    // Verified bundles intentionally skip runtime scans for maximum responsiveness
+                    if pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded {
+                        let mut invalid_icons = Vec::new();
+                        for &id in ALL_ICONS {
+                            if let Some(svg_bytes) = pack.get_svg_for_id(id) {
+                                if let Err(e) = qymcad_ui_state::icons::validate_svg(&svg_bytes) {
+                                    invalid_icons.push((id, e));
                                 }
                             }
+                        }
 
-                            ui.add_space(2.0);
-                            if !invalid_icons.is_empty() {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} {}",
-                                            ph::WARNING,
-                                            crate::i18n::trn("icon-mgr-hygiene-warning", &[("count", &invalid_icons.len().to_string())])
-                                        ))
+                        ui.add_space(2.0);
+                        if !invalid_icons.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::trn("icon-mgr-hygiene-warning", &[("count", &invalid_icons.len().to_string())])))
                                         .color(ui.visuals().warn_fg_color)
                                         .small()
                                         .strong(),
-                                    );
-                                });
-                            } else {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean")))
-                                            .color(ui.visuals().selection.bg_fill)
-                                            .small(),
-                                    );
-                                });
-                            }
-                        }
-
-                        ui.add_space(4.0);
-                        ui.separator();
-                        if pack.is_directory() {
-                            ui.horizontal(|ui| {
-                                let mut is_watched = wc.set.watched_icon_packs.contains(&pack.manifest.id);
-                                if ui.checkbox(&mut is_watched, crate::i18n::tr("icon-mgr-watch-this-pack")).changed() {
-                                    if is_watched {
-                                        if !wc.set.watched_icon_packs.contains(&pack.manifest.id) {
-                                            wc.set.watched_icon_packs.push(pack.manifest.id.clone());
-                                        }
-                                    } else {
-                                        wc.set.watched_icon_packs.retain(|id| id != &pack.manifest.id);
-                                    }
-                                    qymcad_ui_state::icons::sync_global_watched_packs(&wc.set.watched_icon_packs);
-                                    changed = true;
-                                }
-
-                                if ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-reload-now"))).clicked() {
-                                    clear_global_icon_cache();
-                                    apply_icon_themes(wc.set);
-                                    ctx.request_repaint();
-                                    *wc.status = crate::i18n::tr("icon-mgr-reloaded");
-                                }
-                            });
-                        } else {
-                            ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-watch-folder-only")).small().weak());
-                        }
-                    });
-
-                    ui.add_space(10.0);
-
-                    ui.horizontal_wrapped(|ui| {
-                        ui.selectable_value(&mut state.active_tab, IconManagerTab::Readme, crate::i18n::tr("icon-mgr-tab-readme"));
-                        ui.selectable_value(&mut state.active_tab, IconManagerTab::Gallery, crate::i18n::tr("icon-mgr-tab-gallery"));
-                    });
-                    ui.separator();
-
-                    match state.active_tab {
-                        IconManagerTab::Readme => {
-                            egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").auto_shrink([false, false]).show(ui, |ui| {
-                                if let Some((img_bytes, ext)) = pack.get_preview_image() {
-                                    let uri = format!("bytes://preview/{}/{}.{}", pack.manifest.id, ext, ext);
-                                    let img = egui::Image::from_bytes(uri, img_bytes).max_width(ui.available_width());
-                                    ui.add(img);
-                                    ui.add_space(8.0);
-                                    ui.separator();
-                                }
-
-                                let readme_md = pack.get_readme();
-                                crate::gui::help_window::markdown(&wc.scheme.pal, ui, &readme_md);
-                            });
-                        }
-                        IconManagerTab::Gallery => {
-                            // Filter & Search bar
-                            ui.horizontal(|ui| {
-                                ui.label(ph::MAGNIFYING_GLASS);
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut state.search_query)
-                                        .hint_text(crate::i18n::tr("icon-mgr-search-icons"))
-                                        .desired_width((ui.available_width() - 8.0).max(120.0)),
                                 );
                             });
-
-                            ui.horizontal_wrapped(|ui| {
-                                let cats = [
-                                    ("all", "icon-mgr-filter-all"),
-                                    ("sketch", "icon-mgr-filter-sketch"),
-                                    ("constraint", "icon-mgr-filter-constraint"),
-                                    ("part", "icon-mgr-filter-part"),
-                                    ("assembly", "icon-mgr-filter-assembly"),
-                                    ("datum", "icon-mgr-filter-datum"),
-                                    ("common", "icon-mgr-filter-common"),
-                                ];
-                                for (val, key) in cats {
-                                    ui.selectable_value(&mut state.category_filter, val.to_string(), crate::i18n::tr(key));
-                                }
-                            });
-
-                            ui.add_space(4.0);
-
-                            // Icons Grid
-                            let q = state.search_query.trim().to_lowercase();
-                            let cat_filter = state.category_filter.as_str();
-
-                            egui::ScrollArea::vertical().id_salt("mgr_gallery_scroll").auto_shrink([false, false]).show(ui, |ui| {
-                                ui.horizontal_wrapped(|ui| {
-                                    let mut shown = 0;
-                                    for &id in ALL_ICONS {
-                                        let rel_path = id.relative_path();
-
-                                        if cat_filter != "all" && !rel_path.starts_with(cat_filter) {
-                                            continue;
-                                        }
-
-                                        if !q.is_empty() && !rel_path.to_lowercase().contains(&q) {
-                                            continue;
-                                        }
-                                        shown += 1;
-
-                                        let icon_svg = pack.get_svg_for_id(id);
-                                        let is_present = icon_svg.is_some();
-                                        let short_name = rel_path.split('/').last().unwrap_or(rel_path);
-
-                                        egui::Frame::NONE
-                                            .fill(if is_present { ui.visuals().faint_bg_color } else { Color32::TRANSPARENT })
-                                            .corner_radius(6.0)
-                                            .inner_margin(egui::Margin::symmetric(6, 8))
-                                            .show(ui, |ui| {
-                                                ui.set_width(104.0);
-                                                ui.vertical_centered(|ui| {
-                                                    let val_err = icon_svg.as_ref().and_then(|data| qymcad_ui_state::icons::validate_svg(data).err());
-                                                    if let Some(svg_data) = icon_svg {
-                                                        let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), rel_path);
-                                                        let mut img = egui::Image::from_bytes(uri, svg_data)
-                                                            .fit_to_exact_size(egui::vec2(28.0, 28.0));
-                                                        if pack.manifest.color_mode == ColorMode::Monochrome {
-                                                            img = img.tint(ui.visuals().text_color());
-                                                        }
-                                                        let tip = if let Some(ref e) = val_err {
-                                                            format!("{rel_path}\n(in pack)\n[!] Validation / Hygiene Issue:\n{e}")
-                                                        } else {
-                                                            format!("{rel_path}\n(in pack)")
-                                                        };
-                                                        ui.add(img).on_hover_text(tip);
-                                                    } else {
-                                                        let resolved = qymcad_ui_state::icons::resolve_global_icon(id);
-                                                        let uri = format!("bytes://mgr/fallback/r{}/{}.svg", resolved.revision, rel_path);
-                                                        let mut img = egui::Image::from_bytes(uri, resolved.data)
-                                                            .fit_to_exact_size(egui::vec2(28.0, 28.0));
-                                                        img = img.tint(ui.visuals().weak_text_color());
-                                                        ui.add(img)
-                                                            .on_hover_text(format!("{rel_path}\n(missing: falls back to default)"));
-                                                    }
-
-                                                    let label_text = if val_err.is_some() {
-                                                        egui::RichText::new(format!("{} {short_name}", ph::WARNING)).small().color(ui.visuals().warn_fg_color)
-                                                    } else {
-                                                        egui::RichText::new(short_name).small().weak()
-                                                    };
-                                                    ui.add(egui::Label::new(label_text).truncate());
-                                                });
-                                            });
-                                    }
-                                    if shown == 0 {
-                                        ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-no-icons-found")).weak());
-                                    }
-                                });
+                        } else {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean"))).color(ui.visuals().selection.bg_fill).small());
                             });
                         }
                     }
+
+                    ui.add_space(4.0);
+                    ui.separator();
+                    if pack.is_directory() {
+                        ui.horizontal(|ui| {
+                            let mut is_watched = wc.set.watched_icon_packs.contains(&pack.manifest.id);
+                            if ui.checkbox(&mut is_watched, crate::i18n::tr("icon-mgr-watch-this-pack")).changed() {
+                                if is_watched {
+                                    if !wc.set.watched_icon_packs.contains(&pack.manifest.id) {
+                                        wc.set.watched_icon_packs.push(pack.manifest.id.clone());
+                                    }
+                                } else {
+                                    wc.set.watched_icon_packs.retain(|id| id != &pack.manifest.id);
+                                }
+                                qymcad_ui_state::icons::sync_global_watched_packs(&wc.set.watched_icon_packs);
+                                changed = true;
+                            }
+
+                            if ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-reload-now"))).clicked() {
+                                clear_global_icon_cache();
+                                apply_icon_themes(wc.set);
+                                ctx.request_repaint();
+                                *wc.status = crate::i18n::tr("icon-mgr-reloaded");
+                            }
+                        });
+                    } else {
+                        ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-watch-folder-only")).small().weak());
+                    }
                 });
+
+                ui.add_space(10.0);
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.selectable_value(&mut state.active_tab, IconManagerTab::Readme, crate::i18n::tr("icon-mgr-tab-readme"));
+                    ui.selectable_value(&mut state.active_tab, IconManagerTab::Gallery, crate::i18n::tr("icon-mgr-tab-gallery"));
+                });
+                ui.separator();
+
+                match state.active_tab {
+                    IconManagerTab::Readme => {
+                        egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").auto_shrink([false, false]).show(ui, |ui| {
+                            if let Some((img_bytes, ext)) = pack.get_preview_image() {
+                                let uri = format!("bytes://preview/{}/{}.{}", pack.manifest.id, ext, ext);
+                                let img = egui::Image::from_bytes(uri, img_bytes).max_width(ui.available_width());
+                                ui.add(img);
+                                ui.add_space(8.0);
+                                ui.separator();
+                            }
+
+                            let readme_md = pack.get_readme();
+                            crate::gui::help_window::markdown(&wc.scheme.pal, ui, &readme_md);
+                        });
+                    }
+                    IconManagerTab::Gallery => {
+                        // Filter & Search bar
+                        ui.horizontal(|ui| {
+                            ui.label(ph::MAGNIFYING_GLASS);
+                            ui.add(egui::TextEdit::singleline(&mut state.search_query).hint_text(crate::i18n::tr("icon-mgr-search-icons")).desired_width((ui.available_width() - 8.0).max(120.0)));
+                        });
+
+                        ui.horizontal_wrapped(|ui| {
+                            let cats = [
+                                ("all", "icon-mgr-filter-all"),
+                                ("sketch", "icon-mgr-filter-sketch"),
+                                ("constraint", "icon-mgr-filter-constraint"),
+                                ("part", "icon-mgr-filter-part"),
+                                ("assembly", "icon-mgr-filter-assembly"),
+                                ("datum", "icon-mgr-filter-datum"),
+                                ("common", "icon-mgr-filter-common"),
+                            ];
+                            for (val, key) in cats {
+                                ui.selectable_value(&mut state.category_filter, val.to_string(), crate::i18n::tr(key));
+                            }
+                        });
+
+                        ui.add_space(4.0);
+
+                        // Icons Grid
+                        let q = state.search_query.trim().to_lowercase();
+                        let cat_filter = state.category_filter.as_str();
+
+                        egui::ScrollArea::vertical().id_salt("mgr_gallery_scroll").auto_shrink([false, false]).show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                let mut shown = 0;
+                                for &id in ALL_ICONS {
+                                    let rel_path = id.relative_path();
+
+                                    if cat_filter != "all" && !rel_path.starts_with(cat_filter) {
+                                        continue;
+                                    }
+
+                                    if !q.is_empty() && !rel_path.to_lowercase().contains(&q) {
+                                        continue;
+                                    }
+                                    shown += 1;
+
+                                    let icon_svg = pack.get_svg_for_id(id);
+                                    let is_present = icon_svg.is_some();
+                                    let short_name = rel_path.split('/').last().unwrap_or(rel_path);
+
+                                    egui::Frame::NONE
+                                        .fill(if is_present { ui.visuals().faint_bg_color } else { Color32::TRANSPARENT })
+                                        .corner_radius(6.0)
+                                        .inner_margin(egui::Margin::symmetric(6, 8))
+                                        .show(ui, |ui| {
+                                            ui.set_width(104.0);
+                                            ui.vertical_centered(|ui| {
+                                                let val_err = icon_svg.as_ref().and_then(|data| qymcad_ui_state::icons::validate_svg(data).err());
+                                                if let Some(svg_data) = icon_svg {
+                                                    let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), rel_path);
+                                                    let mut img = egui::Image::from_bytes(uri, svg_data).fit_to_exact_size(egui::vec2(28.0, 28.0));
+                                                    if pack.manifest.color_mode == ColorMode::Monochrome {
+                                                        img = img.tint(ui.visuals().text_color());
+                                                    }
+                                                    let tip = if let Some(ref e) = val_err {
+                                                        format!("{rel_path}\n(in pack)\n[!] Validation / Hygiene Issue:\n{e}")
+                                                    } else {
+                                                        format!("{rel_path}\n(in pack)")
+                                                    };
+                                                    ui.add(img).on_hover_text(tip);
+                                                } else {
+                                                    let resolved = qymcad_ui_state::icons::resolve_global_icon(id);
+                                                    let uri = format!("bytes://mgr/fallback/r{}/{}.svg", resolved.revision, rel_path);
+                                                    let mut img = egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(28.0, 28.0));
+                                                    img = img.tint(ui.visuals().weak_text_color());
+                                                    ui.add(img).on_hover_text(format!("{rel_path}\n(missing: falls back to default)"));
+                                                }
+
+                                                let label_text = if val_err.is_some() {
+                                                    egui::RichText::new(format!("{} {short_name}", ph::WARNING)).small().color(ui.visuals().warn_fg_color)
+                                                } else {
+                                                    egui::RichText::new(short_name).small().weak()
+                                                };
+                                                ui.add(egui::Label::new(label_text).truncate());
+                                            });
+                                        });
+                                }
+                                if shown == 0 {
+                                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-no-icons-found")).weak());
+                                }
+                            });
+                        });
+                    }
+                }
+            });
         });
 
     if changed {
@@ -1098,7 +986,8 @@ mod tests {
                     actions.set(ui.max_rect());
                     let _ = ui.button("Open folder");
                     let _ = ui.button("Reload themes");
-                }).show(ui, |ui| {
+                })
+                .show(ui, |ui| {
                     for n in 0..30 {
                         ui.add_sized([ui.available_width(), 35.0], egui::Label::new(format!("Theme {n}")));
                     }
@@ -1128,27 +1017,33 @@ mod tests {
             let _ = ctx.run_ui(input, |ui| {
                 let (clicked, rect) = manager_theme_card(ui, "test-pack", false, |ui| {
                     ui.horizontal(|ui| {
-                        icon.set(ui.add(egui::Image::from_bytes(
-                            "bytes://test-pack-icon.svg",
-                            b"<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'></svg>",
-                        ).fit_to_exact_size(egui::vec2(20.0, 20.0))).rect);
+                        icon.set(
+                            ui.add(
+                                egui::Image::from_bytes("bytes://test-pack-icon.svg", b"<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'></svg>")
+                                    .fit_to_exact_size(egui::vec2(20.0, 20.0)),
+                            )
+                            .rect,
+                        );
                         name.set(ui.label("Theme").rect);
                         badge.set(ui.scope(|ui| draw_bundle_format_badge(ui, BundleFormat::Directory, false)).response.rect);
                         let response = ui.button("Activate");
                         button.set(response.rect);
-                        if response.clicked() { activated.set(true); }
+                        if response.clicked() {
+                            activated.set(true);
+                        }
                         Some(response.rect)
-                    }).inner
+                    })
+                    .inner
                 });
                 card.set(rect);
-                if clicked { selected.set(true); }
+                if clicked {
+                    selected.set(true);
+                }
             });
         };
         draw(vec![]);
         let at = egui::pos2(card.get().left() + 3.0, card.get().center().y);
-        let click = |pos, pressed| egui::Event::PointerButton {
-            pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default()
-        };
+        let click = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         draw(vec![egui::Event::PointerMoved(at)]);
         draw(vec![click(at, true)]);
         draw(vec![click(at, false)]);

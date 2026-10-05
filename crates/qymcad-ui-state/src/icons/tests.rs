@@ -307,7 +307,7 @@ fn default_embedded_pack_is_valid_and_complete() {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
     assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
     validate_svg(&pack.get_pack_icon_svg()).expect("default pack icon is a valid SVG");
-    
+
     // Check coverage of all known IconIds
     let (cov, total) = pack.coverage();
     assert_eq!(cov, total, "embedded default.qicons must cover 100% of icons (got {}/{})", cov, total);
@@ -429,7 +429,6 @@ fn freecad_theme_is_complete_and_valid() {
 
     assert!(pack.get_readme().contains("FreeCAD Classic Icon Theme"), "FreeCAD README should be available");
 }
-
 
 #[test]
 fn user_shapr_alike_pack_if_present_loads_and_has_icons() {
@@ -702,8 +701,7 @@ fn zip_bomb_excessive_compression_ratio_is_rejected() {
     let bomb_path = temp_dir.join("bomb.zip");
     let file = std::fs::File::create(&bomb_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     zip.start_file("icons/sketch/line.svg", options).unwrap();
     let zero_payload = vec![0u8; 500 * 1024];
@@ -713,10 +711,7 @@ fn zip_bomb_excessive_compression_ratio_is_rejected() {
     let res = IconPack::from_archive(&bomb_path);
     assert!(res.is_err(), "Zip bomb archive must be rejected");
     let err = res.unwrap_err();
-    assert!(
-        err.contains("possible decompression bomb") || err.contains("suspicious compression ratio"),
-        "Expected decompression bomb error, got: {err}"
-    );
+    assert!(err.contains("possible decompression bomb") || err.contains("suspicious compression ratio"), "Expected decompression bomb error, got: {err}");
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
@@ -738,10 +733,7 @@ fn zip_slip_path_traversal_is_rejected() {
     let res = IconPack::from_archive(&slip_path);
     assert!(res.is_err(), "Zip slip archive must be rejected");
     let err = res.unwrap_err();
-    assert!(
-        err.contains("insecure file path"),
-        "Expected insecure file path error, got: {err}"
-    );
+    assert!(err.contains("insecure file path"), "Expected insecure file path error, got: {err}");
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
