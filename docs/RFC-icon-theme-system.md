@@ -119,7 +119,6 @@ freecad-classic.qicons (або папка freecad-classic/)
     // Режим роботи з кольором:
     // - Universal: повноколірні іконки, відображаються як є на будь-якій темі
     // - Monochrome: одноколірні іконки, динамічно тонуються кольором тексту поточної теми UI
-    // - Specific(["dark", "dracula"]): тема оптимізована під конкретні стилі оформлення
     color_mode: Universal,
 )
 ```
@@ -171,7 +170,6 @@ impl IconId {
 pub enum ColorMode {
     Universal,
     Monochrome,
-    Specific(Vec<String>),
 }
 
 /// Пакет іконок (завантажений з папки або .qicons)

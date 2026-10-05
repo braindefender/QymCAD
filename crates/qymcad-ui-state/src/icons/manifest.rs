@@ -13,14 +13,12 @@ impl Default for PackageType {
 }
 
 /// Colour rendering mode of the theme.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ColorMode {
     /// Full-colour icons rendered as-is across all UI themes.
     Universal,
     /// Single-colour icons dynamically tinted by the active theme foreground.
     Monochrome,
-    /// Pack tailored specifically for listed theme names (e.g. `["dark", "dracula"]`).
-    Specific(Vec<String>),
 }
 
 impl Default for ColorMode {

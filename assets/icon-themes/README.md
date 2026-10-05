@@ -84,7 +84,7 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
     // Short summary describing the theme
     description: "Classic multi-color CAD tool icons from FreeCAD",
 
-    // Color rendering mode: Universal | Monochrome | Specific([...])
+    // Color rendering mode: Universal (full-color) | Monochrome
     color_mode: Universal,
 )
 ```
@@ -106,7 +106,7 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
 
 ## 4. Color Modes (`color_mode`)
 
-QymCAD supports three distinct color rendering modes:
+QymCAD supports two color rendering modes:
 
 ### 4.1. `Universal` (Full-Color Icons)
 * **Purpose:** Multi-color icons (e.g. FreeCAD Classic, SolidWorks, Inventor styles).
@@ -119,9 +119,6 @@ QymCAD supports three distinct color rendering modes:
 * **Design Guidelines:**
   * Visible vector paths must use `fill="white"`, `fill="#FFFFFF"`, or `fill="currentColor"`.
   * Do **not** use `#000000` or dark colors for primary shapes, as they will become invisible when tinted against dark UI backgrounds.
-
-### 4.3. `Specific(["dark", "light", ...])`
-* **Purpose:** Targeted packs tailored specifically for named application color schemes.
 
 ---
 

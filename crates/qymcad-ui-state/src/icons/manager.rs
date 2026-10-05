@@ -206,7 +206,7 @@ impl IconManager {
                         }
                     }
                 }
-                let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode.clone(), pack_id: pack.manifest.id.clone(), revision: self.revision };
+                let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision };
                 self.cache.insert(id, res.clone());
                 return res;
             } else if pack.has_icon_on_disk(id) {

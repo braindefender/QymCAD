@@ -155,6 +155,17 @@ fn manifest_ron_roundtrip() {
     assert_eq!(parsed.id, "freecad-classic");
     assert_eq!(parsed.name, "FreeCAD Classic");
     assert_eq!(parsed.color_mode, ColorMode::Universal);
+
+    let mut monochrome = manifest;
+    monochrome.color_mode = ColorMode::Monochrome;
+    let parsed = IconManifest::parse_ron(&monochrome.to_ron().expect("monochrome manifest serializes")).expect("monochrome manifest parses");
+    assert_eq!(parsed.color_mode, ColorMode::Monochrome);
+}
+
+#[test]
+fn manifest_rejects_palette_specific_color_mode() {
+    let manifest = r#"(id: "old-mode", name: "Old Mode", color_mode: Specific(["dark"]))"#;
+    assert!(IconManifest::parse_ron(manifest).is_err(), "icon packs must use only monochrome or full-color rendering");
 }
 
 #[test]

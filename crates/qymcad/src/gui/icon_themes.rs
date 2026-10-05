@@ -943,7 +943,6 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         let mode_key = match &pack.manifest.color_mode {
                             ColorMode::Monochrome => "icon-mgr-color-monochrome",
                             ColorMode::Universal => "icon-mgr-color-universal",
-                            ColorMode::Specific(_) => "icon-mgr-color-specific",
                         };
                         ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
                     });
