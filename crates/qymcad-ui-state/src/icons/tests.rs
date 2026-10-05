@@ -1266,3 +1266,68 @@ fn directory_pack_rejects_manifest_with_oversized_description() {
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn has_zalgo_correctly_detects_zalgo_and_allows_normal_text() {
+    use super::manifest::has_zalgo;
+
+    // Normal natural text (precomposed and normal decomposed)
+    assert!(!has_zalgo("QymCAD Default Theme"));
+    assert!(!has_zalgo("Стандартні монохромні іконки"));
+    assert!(!has_zalgo("Café au lait"));
+    assert!(!has_zalgo("Cafe\u{0301}")); // NFD French accent
+    assert!(!has_zalgo("Tiếng Việt"));
+
+    // Zalgo text: stacked diacritics
+    assert!(has_zalgo("Ȟ̸̠e̷͚͝l̸͌ͅl̷͚̆o̴͙̓"));
+    assert!(has_zalgo("Z̵̰͒A̸̜͊L̴͇͝G̸͎̀O̷͙͠"));
+    assert!(has_zalgo("T\u{0300}\u{0301}\u{0302}est")); // 3 consecutive combining marks
+    assert!(has_zalgo("\u{0300}LeadingMark")); // Isolated combining mark at start
+    assert!(has_zalgo("Z̷a̷l̷g̷o̷")); // Heavy combining mark density
+}
+
+#[test]
+fn manifest_validation_rejects_zalgo_in_all_fields() {
+    let base_manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-theme".into(),
+        name: "Valid Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Valid short description".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+
+    let zalgo_sample = "T\u{0300}\u{0301}\u{0302}est";
+
+    let mut m = base_manifest.clone();
+    m.name = zalgo_sample.into();
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+
+    let mut m = base_manifest.clone();
+    m.version = zalgo_sample.into();
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+
+    let mut m = base_manifest.clone();
+    m.author = zalgo_sample.into();
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+
+    let mut m = base_manifest.clone();
+    m.license = zalgo_sample.into();
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+
+    let mut m = base_manifest.clone();
+    m.description = zalgo_sample.into();
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+
+    let mut m = base_manifest.clone();
+    m.translations.insert("uk".into(), LocalizedThemeText { name: zalgo_sample.into(), description: "Опис".into() });
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+
+    let mut m = base_manifest.clone();
+    m.translations.insert("uk".into(), LocalizedThemeText { name: "Назва".into(), description: zalgo_sample.into() });
+    assert!(m.validate().unwrap_err().contains("Zalgo"));
+}
