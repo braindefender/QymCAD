@@ -6173,7 +6173,7 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSplitBody, &qymcad_i18n::tr("tb-split-body-hint"), bc.armed.cmd_kind() == 27) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 27, qymcad_ui_state::BarAsk::FeatCmd(27)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::CommonMeasure, &qymcad_i18n::tr("tb-measure3d-hint"), bc.m3.on) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartMeasure, &qymcad_i18n::tr("tb-measure3d-hint"), bc.m3.on) {
                         bc.ask.push(qymcad_ui_state::BarAsk::ToggleMeasure3d);
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSplitFace, &qymcad_i18n::tr("tb-split-face-hint"), bc.armed.cmd_kind() == 29) {

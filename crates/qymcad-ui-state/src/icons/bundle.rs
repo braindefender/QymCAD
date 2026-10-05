@@ -44,7 +44,7 @@ impl ValidationReport {
 
     /// Counts of included icons per category: [("sketch", 20, 32), ("constraint", 12, 12), ...]
     pub fn category_breakdown(&self) -> Vec<(&'static str, usize, usize)> {
-        const CATEGORIES: &[&str] = &["sketch", "constraint", "part", "assembly", "datum", "common"];
+        const CATEGORIES: &[&str] = &["sketch", "constraint", "part", "assembly", "datum"];
         let mut breakdown = Vec::new();
         for &cat in CATEGORIES {
             let total = ALL_ICONS.iter().filter(|id| id.relative_path().starts_with(cat)).count();

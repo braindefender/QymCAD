@@ -77,6 +77,7 @@ pub enum IconId {
     PartSplitFace,
     PartThicken,
     PartFaceCopy,
+    PartMeasure,
 
     // --- 3D Primitives ---
     PartBox,
@@ -112,11 +113,7 @@ pub enum IconId {
     AssemblyWidth,
     AssemblyTangent,
     AssemblyRelation,
-    AssemblyDrive,
     AssemblyArray,
-
-    // --- Common & Shell ---
-    CommonMeasure,
 }
 
 include!(concat!(env!("OUT_DIR"), "/icon_generated.rs"));
