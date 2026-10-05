@@ -494,12 +494,66 @@ fn default_embedded_pack_is_valid_and_complete() {
     // Verify SVG data is valid for every single icon
     for id in ALL_ICONS {
         let svg = pack.get_svg_for_id(*id).expect("must have SVG");
-        validate_svg(&svg).expect("SVG must pass validation");
+        validate_icon_svg(&svg, ColorMode::Monochrome).expect("default SVG must pass monochrome validation");
     }
 
     // Verify pack README is loaded
     let readme = pack.get_readme();
     assert!(readme.contains("Default Vector Icon Theme"), "embedded README should be available");
+}
+
+#[test]
+fn monochrome_inspection_and_packaging_share_color_validation() {
+    let root = std::env::temp_dir().join(format!("qymcad_mono_validation_{}", std::process::id()));
+    let icons = root.join("icons/sketch");
+    std::fs::create_dir_all(&icons).unwrap();
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "mono-validation".into(),
+        name: "Mono validation".into(),
+        version: "1.0.0".into(),
+        author: "Test".into(),
+        license: "MIT".into(),
+        description: String::new(),
+        color_mode: ColorMode::Monochrome,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(root.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+    std::fs::write(icons.join("line.svg"), br#"<svg viewBox="0 0 24 24" fill="white"><path d="M0 0h24v24"/></svg>"#).unwrap();
+    std::fs::write(icons.join("circle.svg"), br#"<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red"/></svg>"#).unwrap();
+    let report = inspect_pack_directory(&root).unwrap();
+    assert_eq!(report.included, vec![IconId::SketchLine]);
+    assert!(report.rejected.iter().any(|(path, reason)| path == "sketch/circle.svg" && reason.contains("fill") && reason.contains("red")));
+    let pack = IconPack::from_directory(&root).unwrap();
+    assert!(pack.inspect_svg_for_id(IconId::SketchCircle).unwrap_err().contains("red"));
+    let archive = root.join("output.qicons");
+    package_bundle(&root, &manifest, &archive).unwrap();
+    let bundled = IconPack::from_archive(&archive).unwrap();
+    assert!(bundled.get_svg_for_id(IconId::SketchCircle).is_none());
+    let mut color_manifest = manifest.clone();
+    color_manifest.color_mode = ColorMode::Universal;
+    let color_archive = root.join("color.qicons");
+    let color_report = package_bundle(&root, &color_manifest, &color_archive).unwrap();
+    assert!(color_report.included.contains(&IconId::SketchCircle));
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn monochrome_svg_checks_inherited_fill_stroke_styles_and_paint_servers() {
+    for (svg, expected) in [
+        (r#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24"/></svg>"#, "implicit black fill"),
+        (r##"<svg viewBox="0 0 24 24" fill="white"><path d="M0 0h24" stroke="#f00"/></svg>"##, "stroke"),
+        (r#"<svg viewBox="0 0 24 24" style="fill: white"><circle r="12" style="stroke: rgb(255, 0, 0)"/></svg>"#, "stroke"),
+        (r#"<svg viewBox="0 0 24 24" fill="white"><style>path { fill: red }</style><path d="M0 0h24"/></svg>"#, "<style>"),
+        (r#"<svg viewBox="0 0 24 24" fill="white"><path d="M0 0h24" stroke="url(#paint)"/></svg>"#, "stroke"),
+    ] {
+        let err = validate_icon_svg(svg.as_bytes(), ColorMode::Monochrome).unwrap_err();
+        assert!(err.contains(expected), "{err}");
+        validate_icon_svg(svg.as_bytes(), ColorMode::Universal).unwrap();
+    }
+    let valid = br##"<svg viewBox="0 0 24 24"><g fill="#fff"><circle r="12" fill="none" stroke="currentColor"/><path d="M0 0h24"/></g></svg>"##;
+    validate_icon_svg(valid, ColorMode::Monochrome).unwrap();
 }
 
 #[test]

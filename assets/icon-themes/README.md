@@ -138,8 +138,9 @@ QymCAD supports two color rendering modes:
 * **Purpose:** Single-color minimalist or line-art icons (e.g. QymCAD Default Phosphor theme).
 * **Behavior:** Dynamically tinted using the active UI theme's foreground text / interactive accent color (`egui`). Hovered and active button states automatically modulate brightness and contrast.
 * **Design Guidelines:**
-  * Visible vector paths must use `fill="white"`, `fill="#FFFFFF"`, or `fill="currentColor"`.
-  * Do **not** use `#000000` or dark colors for primary shapes, as they will become invisible when tinted against dark UI backgrounds.
+  * Visible shapes must use white (`white`, `#fff`, `#ffffff`), `currentColor`, or `none` for fills and strokes. A white fill may be inherited from a parent `<g>` or `<svg>`.
+  * The validator rejects implicit black fills, other colors, CSS `<style>` elements, classes, paint servers, and unresolved paint references. Rejected icons are shown with a reason in the icon manager and omitted from packaged bundles.
+  * The bundle's `icon.svg` is a theme thumbnail and may use multiple colors.
 
 ---
 

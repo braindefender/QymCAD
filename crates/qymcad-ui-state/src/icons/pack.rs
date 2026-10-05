@@ -381,7 +381,7 @@ impl IconPack {
         if data.is_empty() {
             return Err("SVG file is empty".to_string());
         }
-        super::bundle::validate_svg(&data)?;
+        super::bundle::validate_icon_svg(&data, self.manifest.color_mode)?;
         if matches!(self.source, PackSource::Archive(_) | PackSource::Memory(_)) && self.format() != BundleFormat::VerifiedArchive && sanitize_svg_for_safety(data.clone()).is_none() {
             return Err("SVG failed archive safety checks (external reference or NUL byte)".to_string());
         }

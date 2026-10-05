@@ -5,7 +5,7 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_in, inspect_pack_directory_for_mode, load_default_pack, package_bundle,
     reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
@@ -178,7 +178,7 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         Err(reason) => {
                             let error = format!("{}: {reason}", crate::i18n::tr("icon-mgr-gallery-invalid"));
                             ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
-                            if cleanable {
+                            if cleanable && !reason.starts_with("monochrome ") {
                                 if ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-icon"))).clicked() {
                                     clean_clicked = true;
                                 }
@@ -337,7 +337,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                     state.is_error = true;
                     state.report = None;
                 } else {
-                    match inspect_pack_directory(&source_path) {
+                    let color_mode = if state.is_monochrome { ColorMode::Monochrome } else { ColorMode::Universal };
+                    match inspect_pack_directory_for_mode(&source_path, color_mode) {
                         Ok(rep) => {
                             if rep.has_issues() {
                                 state.message =

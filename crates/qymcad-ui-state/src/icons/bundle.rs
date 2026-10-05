@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::id::{IconId, ALL_ICONS};
-use super::manifest::IconManifest;
+use super::manifest::{ColorMode, IconManifest};
 use super::pack::IconPack;
 
 fn localized_readme_tag(name: &str) -> Option<&str> {
@@ -202,6 +202,102 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
         return Err(format!("extraneous/junk tags detected: {}", junk.join(", ")));
     }
 
+    Ok(())
+}
+
+fn monochrome_paint(value: &str) -> bool {
+    let value = value.trim();
+    value == "currentColor" || matches!(value.to_ascii_lowercase().as_str(), "white" | "#fff" | "#ffffff" | "none" | "rgb(255,255,255)" | "rgb(255, 255, 255)")
+}
+
+fn validate_monochrome_svg(data: &[u8]) -> Result<(), String> {
+    let mut reader = quick_xml::Reader::from_reader(data);
+    let mut inherited_fill = vec![false];
+    loop {
+        use quick_xml::events::Event;
+        let event = reader.read_event().map_err(|err| format!("cannot parse SVG colors: {err}"))?;
+        let (element, is_empty) = match &event {
+            Event::Start(element) => (element, false),
+            Event::Empty(element) => (element, true),
+            Event::End(_) => {
+                inherited_fill.pop();
+                continue;
+            }
+            Event::Eof => break,
+            _ => continue,
+        };
+        let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid SVG element name: {err}"))?.to_ascii_lowercase();
+        if matches!(name.as_str(), "style" | "lineargradient" | "radialgradient" | "pattern" | "filter" | "use" | "animate" | "animatetransform" | "animatecolor" | "set") || name.starts_with("fe") {
+            return Err(format!("monochrome icon cannot use <{name}> because its colors cannot be checked"));
+        }
+        let mut fill_safe = *inherited_fill.last().unwrap_or(&false);
+        for attr in element.attributes() {
+            let attr = attr.map_err(|err| format!("invalid SVG color attribute: {err}"))?;
+            let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid SVG color attribute name: {err}"))?.to_ascii_lowercase();
+            let value = attr.unescape_value().map_err(|err| format!("invalid SVG color attribute value: {err}"))?;
+            if key == "class" || value.to_ascii_lowercase().contains("url(") {
+                return Err(format!("monochrome icon cannot use {key}={value:?} because its colors cannot be checked"));
+            }
+            if key == "style" {
+                for declaration in value.split(';').filter(|part| !part.trim().is_empty()) {
+                    let (property, paint) = declaration.split_once(':').ok_or_else(|| format!("invalid monochrome style declaration: {declaration}"))?;
+                    let property = property.trim().to_ascii_lowercase();
+                    let paint = paint.trim();
+                    if !matches!(
+                        property.as_str(),
+                        "fill"
+                            | "stroke"
+                            | "color"
+                            | "opacity"
+                            | "fill-opacity"
+                            | "stroke-opacity"
+                            | "stroke-width"
+                            | "stroke-linecap"
+                            | "stroke-linejoin"
+                            | "stroke-miterlimit"
+                            | "stroke-dasharray"
+                            | "stroke-dashoffset"
+                            | "fill-rule"
+                            | "clip-rule"
+                            | "transform"
+                            | "display"
+                            | "visibility"
+                    ) {
+                        return Err(format!("monochrome icon cannot use style property {property:?} because its colors cannot be checked"));
+                    }
+                    if matches!(property.as_str(), "fill" | "stroke" | "color" | "stop-color" | "flood-color" | "lighting-color") || property.ends_with("-color") {
+                        if paint != "inherit" && !monochrome_paint(paint) {
+                            return Err(format!("monochrome icon has unsupported {property}={paint:?}; use white, currentColor, or none"));
+                        }
+                        if property == "fill" && paint != "inherit" {
+                            fill_safe = true;
+                        }
+                    }
+                }
+            } else if matches!(key.as_str(), "fill" | "stroke" | "color" | "stop-color" | "flood-color" | "lighting-color") || key.ends_with("-color") {
+                if value != "inherit" && !monochrome_paint(&value) {
+                    return Err(format!("monochrome icon has unsupported {key}={value:?}; use white, currentColor, or none"));
+                }
+                if key == "fill" && value != "inherit" {
+                    fill_safe = true;
+                }
+            }
+        }
+        if matches!(name.as_str(), "path" | "rect" | "circle" | "ellipse" | "polygon" | "polyline" | "text" | "tspan") && !fill_safe {
+            return Err(format!("monochrome <{name}> uses the implicit black fill; set fill to white, currentColor, or none"));
+        }
+        if !is_empty {
+            inherited_fill.push(fill_safe);
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_icon_svg(data: &[u8], color_mode: ColorMode) -> Result<(), String> {
+    validate_svg(data)?;
+    if color_mode == ColorMode::Monochrome {
+        validate_monochrome_svg(data)?;
+    }
     Ok(())
 }
 
@@ -449,6 +545,13 @@ pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String>
 /// Checks all SVG viewports, identifies extraneous/unknown files, and lists included vs missing icons.
 pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<ValidationReport, String> {
     let source_dir = source_dir.as_ref();
+    let color_mode = if source_dir.join("manifest.ron").exists() { IconPack::from_directory(source_dir)?.manifest.color_mode } else { ColorMode::Universal };
+    inspect_pack_directory_for_mode(source_dir, color_mode)
+}
+
+/// Inspect a folder using the color mode that will be written to its bundle manifest.
+pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode: ColorMode) -> Result<ValidationReport, String> {
+    let source_dir = source_dir.as_ref();
     let icons_dir = source_dir.join("icons");
     if !icons_dir.is_dir() {
         return Err(format!("missing icons/ directory in {}", source_dir.display()));
@@ -500,12 +603,12 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
     }
 
     // 2. Recursively walk icons/ directory
-    fn walk_icons(base: &Path, current: &Path, included: &mut Vec<IconId>, rejected: &mut Vec<(String, String)>, extraneous: &mut Vec<String>) {
+    fn walk_icons(base: &Path, current: &Path, color_mode: ColorMode, included: &mut Vec<IconId>, rejected: &mut Vec<(String, String)>, extraneous: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(current) else { return };
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                walk_icons(base, &p, included, rejected, extraneous);
+                walk_icons(base, &p, color_mode, included, rejected, extraneous);
             } else if p.is_file() {
                 let Ok(rel) = p.strip_prefix(base) else { continue };
                 let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -524,7 +627,7 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
 
                 // Validate SVG content and viewport
                 match std::fs::read(&p) {
-                    Ok(data) => match validate_svg(&data) {
+                    Ok(data) => match validate_icon_svg(&data, color_mode) {
                         Ok(()) => {
                             if !included.contains(&id) {
                                 included.push(id);
@@ -542,7 +645,7 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
         }
     }
 
-    walk_icons(&icons_dir, &icons_dir, &mut included, &mut rejected, &mut extraneous);
+    walk_icons(&icons_dir, &icons_dir, color_mode, &mut included, &mut rejected, &mut extraneous);
     included.sort_by_key(|id| id.relative_path());
 
     // 3. Compute missing icons from standard catalog
@@ -556,7 +659,7 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
 /// Extraneous files and invalid SVGs are automatically excluded.
 pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, writer: W) -> Result<ValidationReport, String> {
     let source_dir = source_dir.as_ref();
-    let report = inspect_pack_directory(source_dir)?;
+    let report = inspect_pack_directory_for_mode(source_dir, manifest.color_mode)?;
 
     if report.included.is_empty() {
         return Err("cannot package bundle: 0 valid CAD icons found in icons/ directory".to_string());
