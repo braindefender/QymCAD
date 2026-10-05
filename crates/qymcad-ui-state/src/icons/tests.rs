@@ -675,7 +675,7 @@ fn user_shapr_alike_pack_if_present_loads_and_has_icons() {
         assert_eq!(pack.manifest.id, "shapr-alike");
         assert_eq!(pack.manifest.name, "Shapr-Alike");
         let (cov, _total) = pack.coverage();
-        assert!(cov >= 105, "shapr-alike should cover almost all icons, got {cov}");
+        assert!(cov >= 90, "shapr-alike should cover almost all icons, got {cov}");
     }
 }
 

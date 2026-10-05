@@ -87,9 +87,6 @@ pub enum IconId {
     PartPrism,
 
     // --- Booleans ---
-    PartBooleanUnion,
-    PartBooleanCut,
-    PartBooleanIntersect,
     PartBooleanBodies,
 
     // --- Surfaces ---
@@ -99,7 +96,6 @@ pub enum IconId {
     PartStitch,
     PartTrimSurface,
     PartRecognise,
-    PartSurfaceFlow,
 
     // --- 3D Patterns ---
     PartArrayLinear,
@@ -118,18 +114,9 @@ pub enum IconId {
     AssemblyRelation,
     AssemblyDrive,
     AssemblyArray,
-    AssemblyExplode,
 
     // --- Common & Shell ---
-    CommonSelect,
-    CommonDelete,
-    CommonCopy,
-    CommonCut,
     CommonMeasure,
-    CommonVisibility,
-    CommonSettings,
-    CommonHelp,
-    CommonFolder,
 }
 
 include!(concat!(env!("OUT_DIR"), "/icon_generated.rs"));
