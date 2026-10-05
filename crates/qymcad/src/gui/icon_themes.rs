@@ -6,7 +6,7 @@ use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
     clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat, ColorMode, IconManifest, PackageType, IconPack,
-    ValidationReport, ALL_ICONS,
+    IconId, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::PathBuf;
@@ -95,6 +95,62 @@ pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat, 
 fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, size: f32) {
     let uri = format!("bytes://pack-icon/{}/r{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision());
     ui.add(egui::Image::from_bytes(uri, pack.get_pack_icon_svg()).fit_to_exact_size(egui::vec2(size, size)));
+}
+
+fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId) -> egui::Rect {
+    let relative_path = id.relative_path();
+    let archive_path = format!("icons/{relative_path}.svg");
+    let name = relative_path.rsplit('/').next().unwrap_or(relative_path);
+    let icon = pack.inspect_svg_for_id(id);
+    let row_width = ui.available_width();
+    egui::Frame::NONE
+        .fill(ui.visuals().faint_bg_color)
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            let inner_width = (row_width - 20.0).max(0.0);
+            ui.set_width(inner_width);
+            ui.horizontal(|ui| {
+                let (preview, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
+                ui.painter().rect_filled(preview, 4.0, ui.visuals().extreme_bg_color);
+                ui.painter().rect_stroke(preview, 4.0, egui::Stroke::new(1.0, ui.visuals().weak_text_color()), egui::StrokeKind::Inside);
+                match &icon {
+                    Ok(Some(svg_data)) => {
+                        let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), relative_path,);
+                        let mut image = egui::Image::from_bytes(uri, svg_data.clone()).fit_to_exact_size(egui::vec2(48.0, 48.0));
+                        if pack.manifest.color_mode == ColorMode::Monochrome {
+                            image = image.tint(ui.visuals().text_color());
+                        }
+                        ui.put(preview.shrink(4.0), image);
+                    }
+                    Err(_) => {
+                        ui.painter().text(preview.center(), egui::Align2::CENTER_CENTER, ph::WARNING, egui::FontId::proportional(22.0), ui.visuals().warn_fg_color);
+                    }
+                    Ok(None) => {}
+                }
+
+                let text_width = (inner_width - 56.0 - ui.spacing().item_spacing.x).max(0.0);
+                ui.vertical(|ui| {
+                    ui.set_max_width(text_width);
+                    ui.label(egui::RichText::new(name).strong());
+                    ui.add(egui::Label::new(egui::RichText::new(&archive_path).monospace().small().weak()).wrap());
+                    match &icon {
+                        Ok(Some(_)) => {
+                            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-gallery-present")).small().weak());
+                        }
+                        Ok(None) => {
+                            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-gallery-missing")).small().weak());
+                        }
+                        Err(reason) => {
+                            let error = format!("{}: {reason}", crate::i18n::tr("icon-mgr-gallery-invalid"));
+                            ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
+                        }
+                    }
+                });
+            });
+        })
+        .response
+        .rect
 }
 
 /// Developer Packager modal state kept in UI context.
@@ -599,13 +655,6 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                         wc.set.active_icon_packs.swap(a, b);
                         changed = true;
                     }
-                    if let Some(idx) = to_remove {
-                        let removed = wc.set.active_icon_packs.remove(idx);
-                        if !wc.set.inactive_icon_packs.contains(&removed) {
-                            wc.set.inactive_icon_packs.push(removed);
-                        }
-                        changed = true;
-                    }
 
                     ui.add_space(10.0);
                     ui.separator();
@@ -656,6 +705,14 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
                     }
                     if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
                         ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
+                    }
+
+                    if let Some(idx) = to_remove {
+                        let removed = wc.set.active_icon_packs.remove(idx);
+                        if !wc.set.inactive_icon_packs.contains(&removed) {
+                            wc.set.inactive_icon_packs.push(removed);
+                        }
+                        changed = true;
                     }
 
                     if let Some(act) = to_activate {
@@ -836,70 +893,26 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
 
                         ui.add_space(4.0);
 
-                        // Icons Grid
                         let q = state.search_query.trim().to_lowercase();
                         let cat_filter = state.category_filter.as_str();
 
                         egui::ScrollArea::vertical().id_salt("mgr_gallery_scroll").auto_shrink([false, false]).show(ui, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                let mut shown = 0;
-                                for &id in ALL_ICONS {
-                                    let rel_path = id.relative_path();
-
-                                    if cat_filter != "all" && !rel_path.starts_with(cat_filter) {
-                                        continue;
-                                    }
-
-                                    if !q.is_empty() && !rel_path.to_lowercase().contains(&q) {
-                                        continue;
-                                    }
-                                    shown += 1;
-
-                                    let icon_svg = pack.get_svg_for_id(id);
-                                    let is_present = icon_svg.is_some();
-                                    let short_name = rel_path.split('/').last().unwrap_or(rel_path);
-
-                                    egui::Frame::NONE
-                                        .fill(if is_present { ui.visuals().faint_bg_color } else { Color32::TRANSPARENT })
-                                        .corner_radius(6.0)
-                                        .inner_margin(egui::Margin::symmetric(6, 8))
-                                        .show(ui, |ui| {
-                                            ui.set_width(104.0);
-                                            ui.vertical_centered(|ui| {
-                                                let val_err = icon_svg.as_ref().and_then(|data| qymcad_ui_state::icons::validate_svg(data).err());
-                                                if let Some(svg_data) = icon_svg {
-                                                    let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), rel_path);
-                                                    let mut img = egui::Image::from_bytes(uri, svg_data).fit_to_exact_size(egui::vec2(28.0, 28.0));
-                                                    if pack.manifest.color_mode == ColorMode::Monochrome {
-                                                        img = img.tint(ui.visuals().text_color());
-                                                    }
-                                                    let tip = if let Some(ref e) = val_err {
-                                                        format!("{rel_path}\n(in pack)\n[!] Validation / Hygiene Issue:\n{e}")
-                                                    } else {
-                                                        format!("{rel_path}\n(in pack)")
-                                                    };
-                                                    ui.add(img).on_hover_text(tip);
-                                                } else {
-                                                    let resolved = qymcad_ui_state::icons::resolve_global_icon(id);
-                                                    let uri = format!("bytes://mgr/fallback/r{}/{}.svg", resolved.revision, rel_path);
-                                                    let mut img = egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(28.0, 28.0));
-                                                    img = img.tint(ui.visuals().weak_text_color());
-                                                    ui.add(img).on_hover_text(format!("{rel_path}\n(missing: falls back to default)"));
-                                                }
-
-                                                let label_text = if val_err.is_some() {
-                                                    egui::RichText::new(format!("{} {short_name}", ph::WARNING)).small().color(ui.visuals().warn_fg_color)
-                                                } else {
-                                                    egui::RichText::new(short_name).small().weak()
-                                                };
-                                                ui.add(egui::Label::new(label_text).truncate());
-                                            });
-                                        });
+                            let mut shown = 0;
+                            for &id in ALL_ICONS {
+                                let relative_path = id.relative_path();
+                                if cat_filter != "all" && !relative_path.starts_with(cat_filter) {
+                                    continue;
                                 }
-                                if shown == 0 {
-                                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-no-icons-found")).weak());
+                                if !q.is_empty() && !relative_path.to_lowercase().contains(&q) {
+                                    continue;
                                 }
-                            });
+                                shown += 1;
+                                draw_gallery_icon_row(ui, pack, id);
+                                ui.add_space(4.0);
+                            }
+                            if shown == 0 {
+                                ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-no-icons-found")).weak());
+                            }
                         });
                     }
                 }
@@ -1067,5 +1080,110 @@ mod tests {
         draw(vec![click(at, false)]);
         assert!(activated.get(), "the activation button must keep its own action");
         assert!(!selected.get(), "the card must not steal the activation click");
+    }
+
+    #[test]
+    fn deactivation_does_not_paint_the_theme_in_both_lists() {
+        use crate::gui::App;
+
+        struct PaintedLabel {
+            text: String,
+            rect: egui::Rect,
+        }
+        fn labels_in(shape: &egui::epaint::Shape, labels: &mut Vec<PaintedLabel>) {
+            match shape {
+                egui::epaint::Shape::Text(text) => labels.push(PaintedLabel { text: text.galley.text().to_string(), rect: egui::Rect::from_min_size(text.pos, text.galley.size()) }),
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().for_each(|shape| labels_in(shape, labels)),
+                _ => {}
+            }
+        }
+
+        let mut app = App::default();
+        app.set.active_icon_packs = vec!["freecad-classic".into()];
+        app.set.inactive_icon_packs.retain(|id| id != "freecad-classic");
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let mut draw = |events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            ctx.run_ui(input, |ui| draw_icon_manager_window(ui.ctx(), &mut app.win_ctx(&mut Vec::new())))
+        };
+        let _ = draw(vec![]);
+        let output = draw(vec![]);
+        let mut labels = Vec::new();
+        for shape in &output.shapes {
+            labels_in(&shape.shape, &mut labels);
+        }
+        let minus = labels.iter().find(|label| label.text == ph::MINUS).expect("the active theme has a deactivate button").rect.center();
+        let click = |pressed| egui::Event::PointerButton { pos: minus, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        draw(vec![egui::Event::PointerMoved(minus)]);
+        draw(vec![click(true)]);
+        let output = draw(vec![click(false)]);
+        assert!(app.set.active_icon_packs.is_empty(), "the button did not deactivate the theme");
+        let mut labels = Vec::new();
+        for shape in &output.shapes {
+            labels_in(&shape.shape, &mut labels);
+        }
+        let sidebar_copies = labels.iter().filter(|label| label.rect.left() < 300.0 && label.text.contains("FreeCAD Classic")).count();
+        assert_eq!(sidebar_copies, 1, "deactivation paints the old and new cards in one frame");
+    }
+
+    #[test]
+    fn gallery_rows_stack_within_the_panel_width() {
+        use std::cell::RefCell;
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(420.0, 300.0));
+        let mut icons = std::collections::HashMap::new();
+        icons.insert("icons/sketch/line.svg".to_string(), br#"<svg viewBox="0 0 32 16"/>"#.to_vec());
+        let pack = IconPack {
+            manifest: IconManifest {
+                package_type: PackageType::IconTheme,
+                id: "gallery-test".into(),
+                name: "Gallery Test".into(),
+                version: "1.0".into(),
+                author: "Test".into(),
+                license: "MIT".into(),
+                description: String::new(),
+                color_mode: ColorMode::Universal,
+                verified: false,
+            },
+            source: qymcad_ui_state::icons::PackSource::Memory(icons),
+            is_tampered: false,
+        };
+        let rows = RefCell::new(Vec::new());
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let output = ctx.run_ui(input, |ui| {
+            ui.set_width(380.0);
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, qymcad_ui_state::icons::IconId::SketchLine));
+            let longest_path = ALL_ICONS.iter().copied().max_by_key(|id| id.relative_path().len()).unwrap();
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path));
+        });
+        let rows = rows.borrow();
+        assert!(rows[0].width() <= 380.0, "a gallery row expands the panel");
+        assert!(rows[1].top() >= rows[0].bottom(), "gallery icons must form a vertical list");
+        assert!(rows[1].width() <= 380.0, "long paths expand the panel");
+
+        fn painted_in(shape: &egui::epaint::Shape, labels: &mut Vec<String>, previews: &mut usize) {
+            match shape {
+                egui::epaint::Shape::Text(text) => labels.push(text.galley.text().to_string()),
+                egui::epaint::Shape::Rect(rect) if (rect.rect.width() - 56.0).abs() < 0.1 && (rect.rect.height() - 56.0).abs() < 0.1 && rect.stroke.width > 0.0 => {
+                    *previews += 1;
+                }
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().for_each(|shape| painted_in(shape, labels, previews)),
+                _ => {}
+            }
+        }
+        let mut labels = Vec::new();
+        let mut preview_frames = 0;
+        for shape in &output.shapes {
+            painted_in(&shape.shape, &mut labels, &mut preview_frames);
+        }
+        let longest_path = ALL_ICONS.iter().max_by_key(|id| id.relative_path().len()).unwrap().relative_path();
+        assert!(labels.iter().any(|text| text.contains("icons/sketch/line.svg")), "the archive path is not visible");
+        assert!(labels.iter().any(|text| text.contains(&format!("icons/{longest_path}.svg"))), "a missing icon needs its expected archive path");
+        assert!(labels.iter().any(|text| text.contains("non-square viewBox")), "the specific SVG error is not visible");
+        assert!(labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-gallery-missing"))), "missing icons need a neutral status");
+        assert_eq!(preview_frames, 2, "every icon needs a visible 56 px preview frame");
     }
 }

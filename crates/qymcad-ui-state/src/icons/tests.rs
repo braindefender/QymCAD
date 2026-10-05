@@ -26,6 +26,34 @@ fn generated_correct_break_path() {
 }
 
 #[test]
+fn gallery_inspection_distinguishes_missing_and_invalid_icons() {
+    let valid = br#"<svg viewBox="0 0 32 32"><path d="M0 0h32v32z"/></svg>"#;
+    let invalid = br#"<svg viewBox="0 0 32 16"><path d="M0 0h32v16z"/></svg>"#;
+    let mut icons = HashMap::new();
+    icons.insert("icons/sketch/line.svg".to_string(), valid.to_vec());
+    icons.insert("icons/sketch/rect.svg".to_string(), invalid.to_vec());
+    let pack = IconPack {
+        manifest: IconManifest {
+            package_type: PackageType::IconTheme,
+            id: "gallery-test".to_string(),
+            name: "Gallery Test".to_string(),
+            version: "1.0".to_string(),
+            author: "Test".to_string(),
+            license: "MIT".to_string(),
+            description: String::new(),
+            color_mode: ColorMode::Universal,
+            verified: false,
+        },
+        source: PackSource::Memory(icons),
+        is_tampered: false,
+    };
+
+    assert_eq!(pack.inspect_svg_for_id(IconId::SketchLine).unwrap(), Some(valid.to_vec()));
+    assert_eq!(pack.inspect_svg_for_id(IconId::SketchCircle).unwrap(), None);
+    assert!(pack.inspect_svg_for_id(IconId::SketchRect).unwrap_err().contains("non-square viewBox"));
+}
+
+#[test]
 fn manifest_ron_roundtrip() {
     let manifest = IconManifest {
         package_type: PackageType::IconTheme,
@@ -230,6 +258,14 @@ fn validation_viewbox_square_and_invalid() {
     let no_viewbox_svg = br#"<svg width="64" height="64"><circle r="10"/></svg>"#;
     let err = validate_svg(no_viewbox_svg).unwrap_err();
     assert!(err.contains("missing viewBox"), "Expected missing viewBox error, got: {}", err);
+
+    let malformed_viewbox_svg = br#"<svg viewBox="0 0 wide 64"><circle r="10"/></svg>"#;
+    let err = validate_svg(malformed_viewbox_svg).unwrap_err();
+    assert!(err.contains("invalid viewBox"), "Expected malformed viewBox error, got: {}", err);
+
+    let non_finite_viewbox_svg = br#"<svg viewBox="0 0 NaN NaN"><circle r="10"/></svg>"#;
+    let err = validate_svg(non_finite_viewbox_svg).unwrap_err();
+    assert!(err.contains("invalid viewBox"), "Expected non-finite viewBox error, got: {}", err);
 
     // Raster image tag fails
     let raster_svg = br#"<svg viewBox="0 0 64 64"><image href="photo.png"/></svg>"#;
@@ -688,6 +724,8 @@ fn generic_zip_without_manifest_loads_as_archive_with_crash_guard() {
     // Dangerous XML entity bomb must be rejected by crash-guard (returns None instead of crashing)
     let line_data = pack.get_svg_for_id(IconId::SketchLine);
     assert!(line_data.is_none(), "Entity bomb should be filtered out by crash-guard");
+    assert!(pack.inspect_svg_for_id(IconId::SketchLine).unwrap_err().contains("ENTITY"), "the gallery needs the archive error instead of a missing status");
+    assert_eq!(pack.inspect_svg_for_id(IconId::SketchRect).unwrap(), None, "an absent archive entry is normal");
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

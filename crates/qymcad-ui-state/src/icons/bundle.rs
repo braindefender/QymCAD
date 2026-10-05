@@ -87,9 +87,11 @@ fn parse_viewbox_dimensions(text: &str) -> Option<(f32, f32)> {
 
     let parts: Vec<&str> = val_str.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).collect();
     if parts.len() == 4 {
+        let x: f32 = parts[0].parse().ok()?;
+        let y: f32 = parts[1].parse().ok()?;
         let w: f32 = parts[2].parse().ok()?;
         let h: f32 = parts[3].parse().ok()?;
-        Some((w, h))
+        (x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()).then_some((w, h))
     } else {
         None
     }
@@ -176,14 +178,13 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
         return Err("missing viewBox attribute (expected 1:1, e.g. viewBox=\"0 0 64 64\")".to_string());
     }
 
-    if let Some((w, h)) = parse_viewbox_dimensions(text) {
-        if w <= 0.0 || h <= 0.0 {
-            return Err(format!("non-positive viewBox dimensions: {w}x{h}"));
-        }
-        let ratio = w / h;
-        if ratio < 0.95 || ratio > 1.05 {
-            return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
-        }
+    let (w, h) = parse_viewbox_dimensions(text).ok_or_else(|| "invalid viewBox attribute (expected four finite numbers)".to_string())?;
+    if w <= 0.0 || h <= 0.0 {
+        return Err(format!("non-positive viewBox dimensions: {w}x{h}"));
+    }
+    let ratio = w / h;
+    if ratio < 0.95 || ratio > 1.05 {
+        return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
     }
 
     if text.contains("<image") || text.contains("data:image/") {

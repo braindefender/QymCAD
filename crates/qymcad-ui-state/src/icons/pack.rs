@@ -306,6 +306,64 @@ impl IconPack {
         self.get_svg(id.relative_path())
     }
 
+    /// Read an icon for preview, distinguishing an absent file from a file that cannot be used.
+    pub fn inspect_svg_for_id(&self, id: IconId) -> Result<Option<Vec<u8>>, String> {
+        let file_subpath = format!("{}.svg", id.relative_path());
+        let full_name = format!("icons/{file_subpath}");
+        let data = match &self.source {
+            PackSource::Directory(base) => {
+                let path = base.join(&full_name);
+                let metadata = match std::fs::metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                    Err(err) => return Err(format!("cannot inspect SVG file: {err}")),
+                };
+                if !metadata.is_file() {
+                    return Err("SVG path is not a file".to_string());
+                }
+                if metadata.len() > MAX_ICON_SVG_SIZE {
+                    return Err(format!("SVG file exceeds {MAX_ICON_SVG_SIZE} byte limit"));
+                }
+                if metadata.len() == 0 {
+                    return Err("SVG file is empty".to_string());
+                }
+                read_svg_with_retry(&path).ok_or_else(|| "SVG file is empty or cannot be read".to_string())?
+            }
+            PackSource::Archive(archive_path) => {
+                let file = std::fs::File::open(archive_path).map_err(|err| format!("cannot open archive: {err}"))?;
+                let mut zip = zip::ZipArchive::new(file).map_err(|err| format!("cannot read archive: {err}"))?;
+                let Some(index) = zip.index_for_name(&full_name).or_else(|| zip.index_for_name(&file_subpath)) else {
+                    return Ok(None);
+                };
+                let entry = zip.by_index(index).map_err(|err| format!("cannot read SVG entry: {err}"))?;
+                if entry.size() > MAX_ICON_SVG_SIZE {
+                    return Err(format!("SVG file exceeds {MAX_ICON_SVG_SIZE} byte limit"));
+                }
+                let mut data = Vec::new();
+                entry.take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut data).map_err(|err| format!("cannot read SVG entry: {err}"))?;
+                data
+            }
+            PackSource::Memory(map) => {
+                let Some(data) = map.get(&full_name).or_else(|| map.get(&file_subpath)) else {
+                    return Ok(None);
+                };
+                data.clone()
+            }
+        };
+
+        if data.len() as u64 > MAX_ICON_SVG_SIZE {
+            return Err(format!("SVG file exceeds {MAX_ICON_SVG_SIZE} byte limit"));
+        }
+        if data.is_empty() {
+            return Err("SVG file is empty".to_string());
+        }
+        super::bundle::validate_svg(&data)?;
+        if matches!(self.source, PackSource::Archive(_)) && self.format() != BundleFormat::VerifiedArchive && sanitize_svg_for_safety(data.clone()).is_none() {
+            return Err("SVG failed archive safety checks (external reference or NUL byte)".to_string());
+        }
+        Ok(Some(data))
+    }
+
     /// Return the pack's root icon.svg, falling back to the built-in pack image.
     pub fn get_pack_icon_svg(&self) -> Vec<u8> {
         let data = match &self.source {
