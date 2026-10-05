@@ -119,6 +119,7 @@ fn directory_cleaner_updates_single_and_all_repairable_icons() {
     std::fs::write(icons.join("custom.svg"), dirty).unwrap();
     std::fs::write(root.join("icon.svg"), dirty).unwrap();
     let pack = IconPack::from_directory(&root).unwrap();
+    assert!(directory_has_cleanable_icons(&pack).unwrap(), "directory offers bulk cleaning while repairable SVGs exist");
 
     assert_eq!(clean_directory_icon(&pack, IconId::SketchLine).unwrap(), CleanIconResult::Cleaned);
     validate_svg(&std::fs::read(icons.join("line.svg")).unwrap()).unwrap();
@@ -134,6 +135,7 @@ fn directory_cleaner_updates_single_and_all_repairable_icons() {
     validate_svg(&std::fs::read(icons.join("circle.svg")).unwrap()).unwrap();
     validate_svg(&std::fs::read(icons.join("custom.svg")).unwrap()).expect("bulk clean includes custom SVG files");
     validate_svg(&std::fs::read(root.join("icon.svg")).unwrap()).unwrap();
+    assert!(!directory_has_cleanable_icons(&pack).unwrap(), "manual-only errors do not offer bulk cleaning");
     let _ = std::fs::remove_dir_all(root);
 }
 

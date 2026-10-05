@@ -5,8 +5,8 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat,
-    CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle,
+    reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::PathBuf;
@@ -545,6 +545,7 @@ struct ManagerPreviewImage {
 struct ManagerPackPreview {
     coverage: usize,
     invalid_icons: usize,
+    has_cleanable_icons: bool,
     image_generation: u64,
     readmes: std::collections::HashMap<String, String>,
     preview_image: Option<ManagerPreviewImage>,
@@ -583,6 +584,7 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
     let preview = std::sync::Arc::new(ManagerPackPreview {
         coverage,
         invalid_icons,
+        has_cleanable_icons: false,
         image_generation: 0,
         readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), snapshot.get_readme_for_locale(&locale))).collect(),
         preview_image: snapshot.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
@@ -641,9 +643,11 @@ fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std
         icons.insert(id, inspected);
     }
     let image_generation = cached.map_or(1, |cache| cache.preview.image_generation.wrapping_add(1));
+    let has_cleanable_icons = directory_has_cleanable_icons(pack).unwrap_or(false);
     let preview = std::sync::Arc::new(ManagerPackPreview {
         coverage,
         invalid_icons,
+        has_cleanable_icons,
         image_generation,
         readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), pack.get_readme_for_locale(&locale))).collect(),
         preview_image: pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
@@ -932,7 +936,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     return;
                 };
                 let pack_preview = manager_archive_preview(ctx, pack).or_else(|| manager_directory_preview(ctx, pack));
-                let folder_source = matches!(&pack.source, PackSource::Directory(_));
+                let folder_source = pack.is_directory();
 
                 egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -1023,7 +1027,10 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 ui.label(egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean"))).color(ui.visuals().selection.bg_fill).small());
                             });
                         }
-                        if folder_source && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-all"))).clicked() {
+                        if folder_source
+                            && pack_preview.as_ref().is_some_and(|preview| preview.has_cleanable_icons)
+                            && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-all"))).clicked()
+                        {
                             match clean_directory_icons(pack) {
                                 Ok(report) => {
                                     let fixed = report.cleaned.len();

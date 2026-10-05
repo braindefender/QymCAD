@@ -368,34 +368,67 @@ fn clean_svg_file(path: &Path) -> Result<CleanIconResult, String> {
 }
 
 pub fn clean_directory_icon(pack: &IconPack, id: IconId) -> Result<CleanIconResult, String> {
+    if !pack.is_directory() {
+        return Err("only editable directory packs can be cleaned".to_string());
+    }
     let super::pack::PackSource::Directory(root) = &pack.source else {
         return Err("only directory packs can be cleaned".to_string());
     };
     clean_svg_file(&root.join("icons").join(format!("{}.svg", id.relative_path())))
 }
 
+fn collect_svg_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(format!("cannot inspect icon directory: {err}")),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("cannot inspect icon entry: {err}"))?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|err| format!("cannot inspect icon file: {err}"))?;
+        if kind.is_dir() {
+            collect_svg_files(&path, files)?;
+        } else if kind.is_file() && path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("svg")) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Whether bulk cleaning can change at least one SVG in an editable directory pack.
+pub fn directory_has_cleanable_icons(pack: &IconPack) -> Result<bool, String> {
+    if !pack.is_directory() {
+        return Ok(false);
+    }
+    let super::pack::PackSource::Directory(root) = &pack.source else {
+        return Ok(false);
+    };
+    let mut files = Vec::new();
+    collect_svg_files(&root.join("icons"), &mut files)?;
+    files.push(root.join("icon.svg"));
+    for path in files {
+        let data = match std::fs::read(&path) {
+            Ok(data) => data,
+            Err(_) => continue,
+        };
+        if data.len() as u64 > super::pack::MAX_ICON_SVG_SIZE || validate_svg(&data).is_ok() {
+            continue;
+        }
+        if clean_svg(&data).is_ok_and(|cleaned| cleaned != data) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String> {
+    if !pack.is_directory() {
+        return Err("only editable directory packs can be cleaned".to_string());
+    }
     let super::pack::PackSource::Directory(root) = &pack.source else {
         return Err("only directory packs can be cleaned".to_string());
     };
-    fn collect_svg_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(err) => return Err(format!("cannot inspect icon directory: {err}")),
-        };
-        for entry in entries {
-            let entry = entry.map_err(|err| format!("cannot inspect icon entry: {err}"))?;
-            let path = entry.path();
-            let kind = entry.file_type().map_err(|err| format!("cannot inspect icon file: {err}"))?;
-            if kind.is_dir() {
-                collect_svg_files(&path, files)?;
-            } else if kind.is_file() && path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("svg")) {
-                files.push(path);
-            }
-        }
-        Ok(())
-    }
     let mut files = Vec::new();
     collect_svg_files(&root.join("icons"), &mut files)?;
     files.push(root.join("icon.svg"));

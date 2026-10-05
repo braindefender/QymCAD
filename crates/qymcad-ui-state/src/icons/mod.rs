@@ -18,8 +18,8 @@ pub mod sha256;
 mod tests;
 
 pub use bundle::{
-    clean_directory_icon, clean_directory_icons, clean_svg, discover_packs_in, find_svg_junk_issues, inspect_pack_directory, package_bundle, package_bundle_to_bytes, package_bundle_to_writer,
-    validate_svg, CleanFileFailure, CleanIconResult, CleanPackReport, ValidationReport,
+    clean_directory_icon, clean_directory_icons, clean_svg, directory_has_cleanable_icons, discover_packs_in, find_svg_junk_issues, inspect_pack_directory, package_bundle, package_bundle_to_bytes,
+    package_bundle_to_writer, validate_svg, CleanFileFailure, CleanIconResult, CleanPackReport, ValidationReport,
 };
 pub use id::{IconId, IconSource, ALL_ICONS};
 pub use manager::{
