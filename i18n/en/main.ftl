@@ -2456,7 +2456,6 @@ icon-mgr-filter-constraint = Constraints
 icon-mgr-filter-part = Part Design
 icon-mgr-filter-assembly = Assembly
 icon-mgr-filter-datum = Datum & View
-icon-mgr-filter-common = Common
 icon-mgr-no-pack-selected = Select a theme from the left panel to inspect details
 icon-mgr-no-icons-found = No icons match this search
 icon-mgr-gallery-present = Included in this theme

@@ -1143,7 +1143,6 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 ("part", "icon-mgr-filter-part"),
                                 ("assembly", "icon-mgr-filter-assembly"),
                                 ("datum", "icon-mgr-filter-datum"),
-                                ("common", "icon-mgr-filter-common"),
                             ];
                             for (val, key) in cats {
                                 ui.selectable_value(&mut state.category_filter, val.to_string(), crate::i18n::tr(key));

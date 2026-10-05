@@ -2456,7 +2456,6 @@ icon-mgr-filter-constraint = Ограничения
 icon-mgr-filter-part = Деталь
 icon-mgr-filter-assembly = Сборка
 icon-mgr-filter-datum = Базы и вид
-icon-mgr-filter-common = Общие
 icon-mgr-no-pack-selected = Выберите тему из левой панели для просмотра информации
 icon-mgr-no-icons-found = По этому запросу иконок нет
 icon-mgr-gallery-present = Есть в этом наборе
