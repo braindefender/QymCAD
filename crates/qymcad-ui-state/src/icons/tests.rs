@@ -574,7 +574,47 @@ fn live_watch_folder_auto_reload_on_svg_change() {
     assert_eq!(res2.data, updated_svg, "resolved icon should have the updated SVG content");
     assert!(res2.revision > rev1, "revision counter should have incremented");
 
+    std::fs::remove_file(&svg_path).expect("remove watched icon");
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    assert!(mgr.check_watched_directories(), "removing an icon must invalidate the cascade");
+    let missing = mgr.resolve(IconId::SketchLine);
+    assert_eq!(missing.pack_id, "default", "an absent icon must use the built-in fallback");
+    assert!(missing.revision > res2.revision);
+
+    std::fs::write(&svg_path, initial_svg).expect("restore watched icon");
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    assert!(mgr.check_watched_directories(), "adding an icon must invalidate the cascade");
+    let restored = mgr.resolve(IconId::SketchLine);
+    assert_eq!(restored.pack_id, "watch-theme");
+    assert_eq!(restored.data, initial_svg);
+    assert!(restored.revision > missing.revision);
+
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn missing_directory_icons_do_not_block_coverage() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_missing_icons_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).expect("create theme directory");
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "missing-icons".to_string(),
+        name: "Missing Icons".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Test".to_string(),
+        license: "MIT".to_string(),
+        description: String::new(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().expect("serialize manifest")).expect("write manifest");
+    let pack = IconPack::from_directory(&temp_dir).expect("load directory pack");
+    let start = std::time::Instant::now();
+    let coverage = pack.coverage();
+    let elapsed = start.elapsed();
+    assert_eq!(coverage, (0, ALL_ICONS.len()));
+    assert!(elapsed < std::time::Duration::from_millis(300), "checking 106 absent SVG files blocked the frame for {elapsed:?}");
+    let _ = std::fs::remove_dir_all(temp_dir);
 }
 
 #[test]
@@ -726,6 +766,12 @@ fn generic_zip_without_manifest_loads_as_archive_with_crash_guard() {
     assert!(line_data.is_none(), "Entity bomb should be filtered out by crash-guard");
     assert!(pack.inspect_svg_for_id(IconId::SketchLine).unwrap_err().contains("ENTITY"), "the gallery needs the archive error instead of a missing status");
     assert_eq!(pack.inspect_svg_for_id(IconId::SketchRect).unwrap(), None, "an absent archive entry is normal");
+
+    let snapshot = pack.archive_snapshot().expect("the manager can read the archive once");
+    assert_eq!(snapshot.format(), pack.format());
+    assert_eq!(snapshot.get_svg_for_id(IconId::SketchCircle), pack.get_svg_for_id(IconId::SketchCircle));
+    assert_eq!(snapshot.get_svg_for_id(IconId::SketchLine), pack.get_svg_for_id(IconId::SketchLine));
+    assert!(snapshot.inspect_svg_for_id(IconId::SketchLine).unwrap_err().contains("ENTITY"));
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

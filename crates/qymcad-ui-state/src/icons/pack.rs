@@ -1,7 +1,7 @@
 //! Icon pack loading from disk directories, archives, or memory.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
@@ -99,6 +99,24 @@ pub fn validate_archive_safety<R: std::io::Read + std::io::Seek>(zip: &mut zip::
     }
 
     Ok(())
+}
+
+fn archive_entries<R: Read + Seek>(zip: &mut zip::ZipArchive<R>) -> Result<HashMap<String, Vec<u8>>, String> {
+    let mut map = HashMap::new();
+    for index in 0..zip.len() {
+        let file = zip.by_index(index).map_err(|err| err.to_string())?;
+        if file.is_dir() {
+            continue;
+        }
+        let name = file.name().to_string();
+        let mut data = Vec::new();
+        file.take(MAX_SINGLE_FILE_UNCOMPRESSED_SIZE + 1).read_to_end(&mut data).map_err(|err| err.to_string())?;
+        if data.len() as u64 > MAX_SINGLE_FILE_UNCOMPRESSED_SIZE {
+            return Err(format!("file {name} exceeds safe memory limit"));
+        }
+        map.insert(name, data);
+    }
+    Ok(map)
 }
 
 /// A loaded icon pack ready for icon retrieval.
@@ -222,6 +240,18 @@ impl IconPack {
         Ok(Self { manifest, source: PackSource::Archive(file_path.to_path_buf()), is_tampered })
     }
 
+    /// Read a validated archive once for manager previews; 106 separate icon reads took about 100 ms on a 248 KB archive.
+    pub fn archive_snapshot(&self) -> Result<Self, String> {
+        let PackSource::Archive(path) = &self.source else {
+            return Ok(self.clone());
+        };
+        let file = std::fs::File::open(path).map_err(|err| err.to_string())?;
+        let mut zip = zip::ZipArchive::new(file).map_err(|err| err.to_string())?;
+        validate_archive_safety(&mut zip)?;
+        let map = archive_entries(&mut zip)?;
+        Ok(Self { manifest: self.manifest.clone(), source: PackSource::Memory(map), is_tampered: self.is_tampered })
+    }
+
     /// Load an icon pack from in-memory ZIP archive bytes (e.g. from `include_bytes!`).
     pub fn from_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
         let trailer_check = super::sha256::verify_qicons_trailer(bytes);
@@ -245,19 +275,7 @@ impl IconPack {
             manifest.verified = true;
         }
 
-        let mut map = HashMap::new();
-        for i in 0..zip.len() {
-            let file = zip.by_index(i).map_err(|e| e.to_string())?;
-            if !file.is_dir() {
-                let name = file.name().to_string();
-                let mut buf = Vec::new();
-                file.take(MAX_SINGLE_FILE_UNCOMPRESSED_SIZE + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
-                if buf.len() as u64 > MAX_SINGLE_FILE_UNCOMPRESSED_SIZE {
-                    return Err(format!("file {name} exceeds safe memory limit"));
-                }
-                map.insert(name, buf);
-            }
-        }
+        let map = archive_entries(&mut zip)?;
 
         Ok(Self { manifest, source: PackSource::Memory(map), is_tampered: trailer_check == super::sha256::TrailerCheck::Tampered })
     }
@@ -296,7 +314,12 @@ impl IconPack {
             }
             PackSource::Memory(map) => {
                 let full_name = format!("icons/{file_subpath}");
-                map.get(&full_name).cloned().or_else(|| map.get(&file_subpath).cloned())
+                let data = map.get(&full_name).or_else(|| map.get(&file_subpath))?.clone();
+                if self.manifest.verified && !self.is_tampered {
+                    Some(data)
+                } else {
+                    sanitize_svg_for_safety(data)
+                }
             }
         }
     }
@@ -358,7 +381,7 @@ impl IconPack {
             return Err("SVG file is empty".to_string());
         }
         super::bundle::validate_svg(&data)?;
-        if matches!(self.source, PackSource::Archive(_)) && self.format() != BundleFormat::VerifiedArchive && sanitize_svg_for_safety(data.clone()).is_none() {
+        if matches!(self.source, PackSource::Archive(_) | PackSource::Memory(_)) && self.format() != BundleFormat::VerifiedArchive && sanitize_svg_for_safety(data.clone()).is_none() {
             return Err("SVG failed archive safety checks (external reference or NUL byte)".to_string());
         }
         Ok(Some(data))
@@ -522,14 +545,15 @@ impl IconPack {
 /// On Windows, graphic editors (Inkscape, Illustrator, VS Code) lock files exclusively
 /// during save or perform atomic rename (delete + rename), and may temporarily truncate to 0 bytes.
 /// Retrying with short delays (~75ms total) avoids ERROR_SHARING_VIOLATION and empty reads.
+/// Missing paths return immediately; 106 absent icons previously took 3.2s to check.
 fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
     for attempt in 0..6 {
-        if let Ok(data) = std::fs::read(path) {
-            if !data.is_empty() {
-                return Some(data);
+        match std::fs::read(path) {
+            Ok(data) if !data.is_empty() => return Some(data),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound || (attempt >= 2 && !path.exists()) => {
+                return None;
             }
-        } else if attempt >= 2 && !path.exists() {
-            return None;
+            _ => {}
         }
         if attempt < 5 {
             std::thread::sleep(std::time::Duration::from_millis(15));
