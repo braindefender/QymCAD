@@ -379,10 +379,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 let source_path = PathBuf::from(state.source_dir.trim());
                 let output_path = PathBuf::from(state.output_file.trim());
 
-                if state.id.trim().is_empty() || state.name.trim().is_empty() {
-                    state.message = Some("Theme ID and Name cannot be empty".into());
-                    state.is_error = true;
-                } else if !source_path.exists() {
+                if !source_path.exists() {
                     state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
                     state.is_error = true;
                 } else if state.output_file.trim().is_empty() {
@@ -403,6 +400,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             translations,
                             verified: true,
                         };
+                        manifest.validate()?;
                         package_bundle(&source_path, &manifest, &output_path)
                     })();
 
@@ -973,10 +971,10 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             draw_pack_icon(ui, pack, 48.0);
                         }
                         ui.vertical(|ui| {
-                            ui.label(egui::RichText::new(pack.manifest.name_for_locale(&locale)).heading().strong());
+                            ui.add(egui::Label::new(egui::RichText::new(pack.manifest.name_for_locale(&locale)).heading().strong()).truncate());
                             let description = pack.manifest.description_for_locale(&locale);
                             if !description.is_empty() {
-                                ui.label(egui::RichText::new(description).small().weak());
+                                ui.add(egui::Label::new(egui::RichText::new(description).small().weak()).wrap());
                             }
                             ui.horizontal(|ui| {
                                 draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
@@ -1274,8 +1272,7 @@ mod tests {
 
     #[test]
     fn test_apply_icon_themes_cascade_logic() {
-        let mut set = Settings::default();
-        set.active_icon_packs = vec!["nonexistent-pack".into()];
+        let set = Settings { active_icon_packs: vec!["nonexistent-pack".into()], ..Default::default() };
         apply_icon_themes(&set);
 
         // Fallback works even when active packs are missing: falls back to built-in default SVG pack
@@ -1428,7 +1425,7 @@ mod tests {
         let ctx = egui::Context::default();
         let empty = manager_directory_preview(&ctx, &pack).expect("initial preview");
         assert_eq!(empty.coverage, 0);
-        assert!(empty.readmes.get("ru").is_some(), "preview must cache text for the Russian interface");
+        assert!(empty.readmes.contains_key("ru"), "preview must cache text for the Russian interface");
         std::fs::write(root.join("README.ru.md"), "# Русское описание").expect("add localized README");
         let localized = manager_directory_preview(&ctx, &pack).expect("preview after adding localized README");
         assert_eq!(localized.readmes.get("ru").map(String::as_str), Some("# Русское описание"));

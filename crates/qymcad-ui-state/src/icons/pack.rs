@@ -182,6 +182,7 @@ impl IconPack {
         }
         let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
         let manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+        manifest.validate().map_err(|e| format!("invalid manifest in {}: {e}", dir.display()))?;
         Ok(Self { manifest, source: PackSource::Directory(dir.to_path_buf()), is_tampered: false })
     }
 
@@ -216,16 +217,22 @@ impl IconPack {
             if content.len() as u64 > MAX_MANIFEST_SIZE {
                 return Err("manifest.ron exceeds maximum allowed size".to_string());
             }
-            IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?
+            let parsed = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+            parsed.validate().map_err(|e| format!("invalid manifest in {}: {e}", file_path.display()))?;
+            parsed
         } else {
             // Missing manifest: allowed for generic .zip community archives.
             // Synthesize a safe fallback manifest from the file name.
             let raw_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("community-icons");
-            let id = raw_stem.to_lowercase().replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "-");
+            let id: String = raw_stem.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' }).take(super::manifest::MAX_MANIFEST_ID_LEN).collect();
+            let trimmed_id = id.trim_matches(|c| c == '-' || c == '_');
+            let id = if trimmed_id.is_empty() { "community-pack".to_string() } else { trimmed_id.to_string() };
+            let name: String = raw_stem.chars().take(super::manifest::MAX_MANIFEST_NAME_LEN).collect();
+            let name = if name.trim().is_empty() { "Community Icons".to_string() } else { name };
             IconManifest {
                 package_type: PackageType::IconTheme,
                 id,
-                name: raw_stem.to_string(),
+                name,
                 version: "1.0.0".to_string(),
                 author: "Community".to_string(),
                 license: "Unknown".to_string(),
@@ -270,7 +277,9 @@ impl IconPack {
             if content.len() as u64 > MAX_MANIFEST_SIZE {
                 return Err("manifest.ron exceeds maximum allowed size".to_string());
             }
-            IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?
+            let parsed = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+            parsed.validate().map_err(|e| format!("invalid manifest: {e}"))?;
+            parsed
         };
         if is_verified || manifest.id == "default" {
             manifest.verified = true;

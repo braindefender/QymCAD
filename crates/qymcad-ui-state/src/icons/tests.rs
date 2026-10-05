@@ -1048,3 +1048,221 @@ fn zip_slip_path_traversal_is_rejected() {
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn manifest_validation_accepts_valid_manifest() {
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-theme-123".into(),
+        name: "Valid Theme Name".into(),
+        version: "1.0.0".into(),
+        author: "Author Person".into(),
+        license: "MIT".into(),
+        description: "A valid short description of this theme.".into(),
+        color_mode: ColorMode::Universal,
+        translations: [("uk".into(), LocalizedThemeText { name: "Тема українською".into(), description: "Короткий опис теми".into() })].into_iter().collect(),
+        verified: false,
+    };
+    assert!(manifest.validate().is_ok());
+}
+
+#[test]
+fn manifest_validation_rejects_invalid_or_oversized_id() {
+    let mut manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-id".into(),
+        name: "Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Desc".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+
+    manifest.id = "".into();
+    assert!(manifest.validate().unwrap_err().contains("empty"));
+
+    manifest.id = "a".repeat(super::manifest::MAX_MANIFEST_ID_LEN + 1);
+    assert!(manifest.validate().unwrap_err().contains("maximum length"));
+
+    manifest.id = "Upper-Case".into();
+    assert!(manifest.validate().unwrap_err().contains("lowercase"));
+
+    manifest.id = "has spaces".into();
+    assert!(manifest.validate().unwrap_err().contains("alphanumeric"));
+
+    manifest.id = "../traversal".into();
+    assert!(manifest.validate().unwrap_err().contains("alphanumeric"));
+
+    manifest.id = "-starts-with-hyphen".into();
+    assert!(manifest.validate().unwrap_err().contains("start and end"));
+
+    manifest.id = "ends-with-hyphen-".into();
+    assert!(manifest.validate().unwrap_err().contains("start and end"));
+
+    manifest.id = "_underscore_start".into();
+    assert!(manifest.validate().unwrap_err().contains("start and end"));
+}
+
+#[test]
+fn manifest_validation_rejects_invalid_or_oversized_name() {
+    let mut manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-id".into(),
+        name: "Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Desc".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+
+    manifest.name = "".into();
+    assert!(manifest.validate().unwrap_err().contains("empty"));
+
+    manifest.name = "   ".into();
+    assert!(manifest.validate().unwrap_err().contains("empty"));
+
+    manifest.name = "a".repeat(super::manifest::MAX_MANIFEST_NAME_LEN + 1);
+    assert!(manifest.validate().unwrap_err().contains("maximum length"));
+
+    manifest.name = "First Line\nSecond Line".into();
+    assert!(manifest.validate().unwrap_err().contains("newlines"));
+}
+
+#[test]
+fn manifest_validation_rejects_oversized_metadata_fields() {
+    let mut manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-id".into(),
+        name: "Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Desc".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+
+    manifest.version = "v".repeat(super::manifest::MAX_MANIFEST_VERSION_LEN + 1);
+    assert!(manifest.validate().unwrap_err().contains("version exceeds maximum length"));
+    manifest.version = "1.0".into();
+
+    manifest.author = "a".repeat(super::manifest::MAX_MANIFEST_AUTHOR_LEN + 1);
+    assert!(manifest.validate().unwrap_err().contains("author exceeds maximum length"));
+    manifest.author = "Author".into();
+
+    manifest.license = "l".repeat(super::manifest::MAX_MANIFEST_LICENSE_LEN + 1);
+    assert!(manifest.validate().unwrap_err().contains("license exceeds maximum length"));
+    manifest.license = "MIT".into();
+
+    manifest.description = "d".repeat(super::manifest::MAX_MANIFEST_DESCRIPTION_LEN + 1);
+    assert!(manifest.validate().unwrap_err().contains("description exceeds maximum length"));
+}
+
+#[test]
+fn manifest_validation_rejects_invalid_or_oversized_translations() {
+    let mut manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-id".into(),
+        name: "Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Desc".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+
+    // Oversized locale tag
+    manifest.translations.insert("too_long_locale_tag".into(), LocalizedThemeText { name: "Name".into(), description: "Desc".into() });
+    assert!(manifest.validate().unwrap_err().contains("locale tag \"too_long_locale_tag\" exceeds maximum length"));
+    manifest.translations.clear();
+
+    // Invalid locale tag
+    manifest.translations.insert("bad-lang!#".into(), LocalizedThemeText { name: "Name".into(), description: "Desc".into() });
+    assert!(manifest.validate().unwrap_err().contains("invalid locale tag"));
+    manifest.translations.clear();
+
+    // Oversized translated name
+    manifest.translations.insert("de".into(), LocalizedThemeText { name: "n".repeat(super::manifest::MAX_MANIFEST_NAME_LEN + 1), description: "Desc".into() });
+    assert!(manifest.validate().unwrap_err().contains("translated name for de exceeds maximum length"));
+    manifest.translations.clear();
+
+    // Newline in translated name
+    manifest.translations.insert("de".into(), LocalizedThemeText { name: "Line1\nLine2".into(), description: "Desc".into() });
+    assert!(manifest.validate().unwrap_err().contains("cannot contain newlines"));
+    manifest.translations.clear();
+
+    // Oversized translated description
+    manifest.translations.insert("de".into(), LocalizedThemeText { name: "Name".into(), description: "d".repeat(super::manifest::MAX_MANIFEST_DESCRIPTION_LEN + 1) });
+    assert!(manifest.validate().unwrap_err().contains("translated description for de exceeds maximum length"));
+}
+
+#[test]
+fn package_bundle_rejects_oversized_manifest_before_writing() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_pkg_val_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let pack_dir = temp_dir.join("pack");
+    std::fs::create_dir_all(pack_dir.join("icons/sketch")).unwrap();
+    std::fs::write(pack_dir.join("icons/sketch/line.svg"), br#"<svg viewBox="0 0 24 24"><line x1="0" y1="0" x2="24" y2="24"/></svg>"#).unwrap();
+
+    let invalid_manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-id".into(),
+        name: "Oversized Theme Name ".repeat(10), // > 64 chars
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Desc".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+
+    let bundle_path = temp_dir.join("out.qicons");
+    let res = package_bundle(&pack_dir, &invalid_manifest, &bundle_path);
+    assert!(res.is_err(), "Packaging must fail for invalid manifest");
+    assert!(res.unwrap_err().contains("maximum length"));
+    assert!(!bundle_path.exists(), "Output file must not be created on validation failure");
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn directory_pack_rejects_manifest_with_oversized_description() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_dir_val_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let pack_dir = temp_dir.join("pack");
+    std::fs::create_dir_all(pack_dir.join("icons/sketch")).unwrap();
+    std::fs::write(pack_dir.join("icons/sketch/line.svg"), br#"<svg viewBox="0 0 24 24"><line x1="0" y1="0" x2="24" y2="24"/></svg>"#).unwrap();
+
+    let invalid_manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-theme".into(),
+        name: "Valid Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "x".repeat(super::manifest::MAX_MANIFEST_DESCRIPTION_LEN + 10),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(pack_dir.join("manifest.ron"), invalid_manifest.to_ron().unwrap()).unwrap();
+
+    // 1. Loading pack directly should fail with descriptive error
+    let load_res = IconPack::from_directory(&pack_dir);
+    assert!(load_res.is_err());
+    assert!(load_res.unwrap_err().contains("description exceeds maximum length"));
+
+    // 2. Inspecting folder should record the manifest error in rejected
+    let rep = inspect_pack_directory_for_mode(&pack_dir, ColorMode::Universal).unwrap();
+    assert!(rep.rejected.iter().any(|(f, e)| f == "manifest.ron" && e.contains("description exceeds maximum length")));
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}

@@ -27,5 +27,8 @@ pub use manager::{
     set_global_dev_watch, set_global_icon_manager, set_global_pack_watching, sync_global_watched_packs, with_global_icon_manager, with_global_icon_manager_mut, IconManager, ResolvedIcon,
     DEFAULT_QICONS,
 };
-pub use manifest::{ColorMode, IconManifest, LocalizedThemeText, PackageType};
+pub use manifest::{
+    ColorMode, IconManifest, LocalizedThemeText, PackageType, MAX_MANIFEST_AUTHOR_LEN, MAX_MANIFEST_DESCRIPTION_LEN, MAX_MANIFEST_ID_LEN, MAX_MANIFEST_LICENSE_LEN, MAX_MANIFEST_LOCALE_LEN,
+    MAX_MANIFEST_NAME_LEN, MAX_MANIFEST_TRANSLATIONS, MAX_MANIFEST_VERSION_LEN,
+};
 pub use pack::{BundleFormat, IconPack, PackSource};

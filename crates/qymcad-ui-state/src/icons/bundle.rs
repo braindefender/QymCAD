@@ -647,6 +647,22 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                     } else if let Err(err) = std::fs::read_to_string(&p) {
                         rejected.push((fname.to_string(), format!("localized README is not readable UTF-8: {err}")));
                     }
+                } else if fname == "manifest.ron" {
+                    if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_MANIFEST_SIZE) {
+                        rejected.push((fname.to_string(), "manifest.ron exceeds maximum manifest size".to_string()));
+                    } else {
+                        match std::fs::read_to_string(&p) {
+                            Ok(content) => match IconManifest::parse_ron(&content) {
+                                Ok(parsed) => {
+                                    if let Err(err) = parsed.validate() {
+                                        rejected.push((fname.to_string(), err));
+                                    }
+                                }
+                                Err(err) => rejected.push((fname.to_string(), format!("manifest parse error: {err}"))),
+                            },
+                            Err(err) => rejected.push((fname.to_string(), format!("read error: {err}"))),
+                        }
+                    }
                 } else if fname == "icon.svg" {
                     if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
                         rejected.push((fname.to_string(), "pack icon exceeds maximum SVG size".to_string()));
@@ -721,6 +737,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
 /// Only valid, verified icons that match a known `IconId` are packaged into the archive.
 /// Extraneous files and invalid SVGs are automatically excluded.
 pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, writer: W) -> Result<ValidationReport, String> {
+    manifest.validate()?;
     let source_dir = source_dir.as_ref();
     let report = inspect_pack_directory_for_mode(source_dir, manifest.color_mode)?;
 
