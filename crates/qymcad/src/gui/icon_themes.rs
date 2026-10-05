@@ -106,11 +106,11 @@ pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat, 
 }
 
 fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, size: f32) {
-    draw_pack_icon_bytes(ui, pack, size, pack.get_pack_icon_svg().into());
+    draw_pack_icon_bytes(ui, pack, size, pack.get_pack_icon_svg().into(), 0);
 }
 
-fn draw_pack_icon_bytes(ui: &mut egui::Ui, pack: &IconPack, size: f32, bytes: egui::load::Bytes) {
-    let uri = format!("bytes://pack-icon/{}/r{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision());
+fn draw_pack_icon_bytes(ui: &mut egui::Ui, pack: &IconPack, size: f32, bytes: egui::load::Bytes, generation: u64) {
+    let uri = format!("bytes://pack-icon/{}/r{}-g{generation}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision());
     ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(egui::vec2(size, size)));
 }
 
@@ -122,7 +122,7 @@ struct GalleryRowResponse {
     path_copied: bool,
 }
 
-fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &ManagerIconPreview, cleanable: bool) -> GalleryRowResponse {
+fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &ManagerIconPreview, cleanable: bool, generation: u64) -> GalleryRowResponse {
     let relative_path = id.relative_path();
     let archive_path = format!("icons/{relative_path}.svg");
     let name = relative_path.rsplit('/').next().unwrap_or(relative_path);
@@ -142,7 +142,7 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                 ui.painter().rect_stroke(preview, 4.0, egui::Stroke::new(1.0, ui.visuals().weak_text_color()), egui::StrokeKind::Inside);
                 match &icon {
                     Ok(Some(svg_data)) => {
-                        let uri = format!("bytes://mgr/{}/r{}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), relative_path,);
+                        let uri = format!("bytes://mgr/{}/r{}-g{generation}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), relative_path);
                         let mut image = egui::Image::from_bytes(uri, svg_data.clone()).fit_to_exact_size(egui::vec2(48.0, 48.0));
                         if pack.manifest.color_mode == ColorMode::Monochrome {
                             image = image.tint(ui.visuals().text_color());
@@ -515,7 +515,15 @@ struct ManagerArchiveCache {
     file_size: u64,
     modified: Option<std::time::SystemTime>,
     revision: u64,
-    preview: std::sync::Arc<ManagerArchivePreview>,
+    preview: std::sync::Arc<ManagerPackPreview>,
+}
+
+#[derive(Clone)]
+struct ManagerDirectoryCache {
+    path: PathBuf,
+    snapshot: std::sync::Arc<std::collections::HashMap<PathBuf, (std::time::SystemTime, u64)>>,
+    revision: u64,
+    preview: std::sync::Arc<ManagerPackPreview>,
 }
 
 #[derive(Clone)]
@@ -524,16 +532,17 @@ struct ManagerPreviewImage {
     extension: &'static str,
 }
 
-struct ManagerArchivePreview {
+struct ManagerPackPreview {
     coverage: usize,
     invalid_icons: usize,
+    image_generation: u64,
     readme: String,
     preview_image: Option<ManagerPreviewImage>,
     pack_icon: egui::load::Bytes,
     icons: std::collections::HashMap<IconId, ManagerIconPreview>,
 }
 
-fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerArchivePreview>> {
+fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerPackPreview>> {
     let PackSource::Archive(path) = &pack.source else {
         return None;
     };
@@ -561,9 +570,10 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
         }
         icons.insert(id, inspected);
     }
-    let preview = std::sync::Arc::new(ManagerArchivePreview {
+    let preview = std::sync::Arc::new(ManagerPackPreview {
         coverage,
         invalid_icons,
+        image_generation: 0,
         readme: snapshot.get_readme(),
         preview_image: snapshot.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
         pack_icon: snapshot.get_pack_icon_svg().into(),
@@ -571,6 +581,56 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
     });
     ctx.data_mut(|data| {
         data.insert_temp(cache_id, ManagerArchiveCache { path: path.clone(), file_size: metadata.len(), modified, revision, preview: preview.clone() });
+    });
+    Some(preview)
+}
+
+fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerPackPreview>> {
+    let PackSource::Directory(path) = &pack.source else {
+        return None;
+    };
+    let mut snapshot = pack.directory_snapshot()?;
+    for name in ["README.md", "readme.md", "README.txt", "description.md", "preview.svg", "preview.png", "preview.webp"] {
+        let file = path.join(name);
+        if let Ok(metadata) = std::fs::metadata(file) {
+            snapshot.insert(PathBuf::from(name), (metadata.modified().unwrap_or(std::time::UNIX_EPOCH), metadata.len()));
+        }
+    }
+    let revision = qymcad_ui_state::icons::get_global_icon_revision();
+    let cache_id = egui::Id::new("icon_manager_directory_cache");
+    let cached = ctx.data(|data| data.get_temp::<ManagerDirectoryCache>(cache_id));
+    if let Some(cache) = &cached {
+        if cache.path == *path && *cache.snapshot == snapshot && cache.revision == revision {
+            return Some(cache.preview.clone());
+        }
+    }
+
+    let mut coverage = 0;
+    let mut invalid_icons = 0;
+    let mut icons = std::collections::HashMap::new();
+    for &id in ALL_ICONS {
+        let icon_path = PathBuf::from(format!("icons/{}.svg", id.relative_path()));
+        if snapshot.get(&icon_path).is_some_and(|(_, len)| *len > 0) {
+            coverage += 1;
+        }
+        let inspected = pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
+        if inspected.is_err() {
+            invalid_icons += 1;
+        }
+        icons.insert(id, inspected);
+    }
+    let image_generation = cached.map_or(1, |cache| cache.preview.image_generation.wrapping_add(1));
+    let preview = std::sync::Arc::new(ManagerPackPreview {
+        coverage,
+        invalid_icons,
+        image_generation,
+        readme: pack.get_readme(),
+        preview_image: pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
+        pack_icon: pack.get_pack_icon_svg().into(),
+        icons,
+    });
+    ctx.data_mut(|data| {
+        data.insert_temp(cache_id, ManagerDirectoryCache { path: path.clone(), snapshot: std::sync::Arc::new(snapshot), revision, preview: preview.clone() });
     });
     Some(preview)
 }
@@ -846,14 +906,14 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     ui.label(crate::i18n::tr("icon-mgr-no-pack-selected"));
                     return;
                 };
-                let archive_preview = manager_archive_preview(ctx, pack);
+                let pack_preview = manager_archive_preview(ctx, pack).or_else(|| manager_directory_preview(ctx, pack));
                 let folder_source = matches!(&pack.source, PackSource::Directory(_));
 
                 egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        if let Some(preview) = archive_preview.as_ref() {
-                            draw_pack_icon_bytes(ui, pack, 48.0, preview.pack_icon.clone());
+                        if let Some(preview) = pack_preview.as_ref() {
+                            draw_pack_icon_bytes(ui, pack, 48.0, preview.pack_icon.clone(), preview.image_generation);
                         } else {
                             draw_pack_icon(ui, pack, 48.0);
                         }
@@ -888,7 +948,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
                     });
 
-                    let (cov, total) = archive_preview.as_ref().map_or_else(|| pack.coverage(), |preview| (preview.coverage, ALL_ICONS.len()));
+                    let (cov, total) = pack_preview.as_ref().map_or_else(|| pack.coverage(), |preview| (preview.coverage, ALL_ICONS.len()));
                     let pct = if total == 0 { 0 } else { (cov * 100) / total };
                     let cov_msg = crate::i18n::trn("icon-mgr-total-icons", &[("count", &cov.to_string()), ("total", &total.to_string()), ("percent", &pct.to_string())]);
                     ui.add_space(8.0);
@@ -918,7 +978,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     // For unverified packs (Archive, Directory), scan for SVG hygiene / validation issues
                     // Verified bundles intentionally skip runtime scans for maximum responsiveness
                     if folder_source || (pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded) {
-                        let invalid_count = archive_preview.as_ref().map_or_else(|| ALL_ICONS.iter().filter(|id| pack.inspect_svg_for_id(**id).is_err()).count(), |preview| preview.invalid_icons);
+                        let invalid_count = pack_preview.as_ref().map_or_else(|| ALL_ICONS.iter().filter(|id| pack.inspect_svg_for_id(**id).is_err()).count(), |preview| preview.invalid_icons);
 
                         ui.add_space(2.0);
                         if invalid_count > 0 {
@@ -1017,7 +1077,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                 match state.active_tab {
                     IconManagerTab::Readme => {
                         egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").auto_shrink([false, false]).show(ui, |ui| {
-                            let preview_image = if let Some(preview) = archive_preview.as_ref() {
+                            let preview_image = if let Some(preview) = pack_preview.as_ref() {
                                 preview.preview_image.clone()
                             } else {
                                 pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension })
@@ -1030,7 +1090,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 ui.separator();
                             }
 
-                            let readme_md = archive_preview.as_ref().map_or_else(|| pack.get_readme(), |preview| preview.readme.clone());
+                            let readme_md = pack_preview.as_ref().map_or_else(|| pack.get_readme(), |preview| preview.readme.clone());
                             crate::gui::help_window::markdown(&wc.scheme.pal, ui, &readme_md);
                         });
                     }
@@ -1072,11 +1132,11 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                     continue;
                                 }
                                 shown += 1;
-                                let row = if let Some(icon) = archive_preview.as_ref().and_then(|preview| preview.icons.get(&id)) {
-                                    draw_gallery_icon_row(ui, pack, id, icon, false)
+                                let row = if let Some(icon) = pack_preview.as_ref().and_then(|preview| preview.icons.get(&id)) {
+                                    draw_gallery_icon_row(ui, pack, id, icon, folder_source, pack_preview.as_ref().map_or(0, |preview| preview.image_generation))
                                 } else {
                                     let icon = pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
-                                    draw_gallery_icon_row(ui, pack, id, &icon, folder_source)
+                                    draw_gallery_icon_row(ui, pack, id, &icon, folder_source, 0)
                                 };
                                 if row.clean_clicked {
                                     ui.scroll_to_rect(row.rect, Some(egui::Align::Center));
@@ -1171,6 +1231,111 @@ mod tests {
         assert_eq!(classic.format(), BundleFormat::Embedded);
         let readme = classic.get_readme();
         assert!(readme.contains("FreeCAD Classic Icon Theme"), "FreeCAD pack should have markdown description");
+    }
+
+    #[test]
+    fn selected_bundled_freecad_redraw_stays_responsive() {
+        use crate::gui::App;
+        let mut app = App::default();
+        app.set.active_icon_packs.clear();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let dirs = [bundled_themes_dir()];
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let mut draw = |events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs))
+        };
+        fn find_sidebar_label(shape: &egui::epaint::Shape, title: &str) -> Option<egui::Pos2> {
+            match shape {
+                egui::epaint::Shape::Text(text) if text.galley.text() == title && text.pos.x < 360.0 => Some(egui::Rect::from_min_size(text.pos, text.galley.size()).center()),
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().find_map(|shape| find_sidebar_label(shape, title)),
+                _ => None,
+            }
+        }
+        let _ = draw(vec![]);
+        let output = draw(vec![]);
+        let base_title = crate::i18n::tr("settings-icon-themes-base");
+        let base = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, &base_title)).expect("base theme card");
+        let base_click = |pressed| egui::Event::PointerButton { pos: base, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let _ = draw(vec![egui::Event::PointerMoved(base)]);
+        let _ = draw(vec![base_click(true)]);
+        let output = draw(vec![base_click(false)]);
+        let at = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, "FreeCAD Classic")).expect("bundled FreeCAD card");
+        let click = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let _ = draw(vec![egui::Event::PointerMoved(at)]);
+        let _ = draw(vec![click(true)]);
+        let _ = draw(vec![click(false)]);
+        let selected = ctx.data(|data| data.get_temp::<IconManagerState>(egui::Id::new("icon_manager_window")).expect("manager state"));
+        assert_eq!(selected.selected_pack_id, "freecad-classic");
+        let start = std::time::Instant::now();
+        for _ in 0..8 {
+            let _ = draw(vec![]);
+        }
+        let elapsed = start.elapsed();
+        eprintln!("selected bundled FreeCAD: eight redraws took {elapsed:?}");
+        assert!(elapsed < std::time::Duration::from_millis(180), "eight redraws of the selected bundled theme took {elapsed:?}");
+        fn find_gallery_tab(shape: &egui::epaint::Shape, title: &str) -> Option<egui::Pos2> {
+            match shape {
+                egui::epaint::Shape::Text(label) if label.galley.text() == title => Some(egui::Rect::from_min_size(label.pos, label.galley.size()).center()),
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().find_map(|shape| find_gallery_tab(shape, title)),
+                _ => None,
+            }
+        }
+        let output = draw(vec![]);
+        let gallery_title = crate::i18n::tr("icon-mgr-tab-gallery");
+        let gallery = output.shapes.iter().find_map(|shape| find_gallery_tab(&shape.shape, &gallery_title)).expect("gallery tab");
+        let gallery_click = |pressed| egui::Event::PointerButton { pos: gallery, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let _ = draw(vec![egui::Event::PointerMoved(gallery)]);
+        let _ = draw(vec![gallery_click(true)]);
+        let _ = draw(vec![gallery_click(false)]);
+        let start = std::time::Instant::now();
+        for _ in 0..8 {
+            let _ = draw(vec![]);
+        }
+        let gallery_elapsed = start.elapsed();
+        eprintln!("selected bundled FreeCAD gallery: eight redraws took {gallery_elapsed:?}");
+        assert!(gallery_elapsed < std::time::Duration::from_millis(180), "eight gallery redraws of the selected bundled theme took {gallery_elapsed:?}");
+        assert!(app.set.active_icon_packs.is_empty(), "selection must not activate the theme");
+    }
+
+    #[test]
+    fn directory_preview_tracks_svg_edits_without_reloading_the_theme() {
+        let root = std::env::temp_dir().join(format!("qymcad_directory_preview_{}", std::process::id()));
+        let icon_dir = root.join("icons/sketch");
+        std::fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let pack = IconPack {
+            manifest: IconManifest {
+                package_type: PackageType::IconTheme,
+                id: "preview-edits".into(),
+                name: "Preview Edits".into(),
+                version: "1.0".into(),
+                author: String::new(),
+                license: "MIT".into(),
+                description: String::new(),
+                color_mode: ColorMode::Universal,
+                verified: false,
+            },
+            source: PackSource::Directory(root.clone()),
+            is_tampered: false,
+        };
+        let ctx = egui::Context::default();
+        let empty = manager_directory_preview(&ctx, &pack).expect("initial preview");
+        assert_eq!(empty.coverage, 0);
+        let file = icon_dir.join("line.svg");
+        std::fs::write(&file, br#"<svg viewBox="0 0 24 24"><path d="M0 0 L24 24"/></svg>"#).expect("add SVG");
+        let added = manager_directory_preview(&ctx, &pack).expect("preview after adding SVG");
+        assert_eq!(added.coverage, 1);
+        assert!(added.image_generation > empty.image_generation, "added SVG must refresh the image key");
+        std::fs::write(&file, br#"<svg viewBox="0 0 24 24"><script>bad()</script><path d="M0 0 L24 24"/></svg>"#).expect("edit SVG");
+        let invalid = manager_directory_preview(&ctx, &pack).expect("preview after editing SVG");
+        assert_eq!(invalid.invalid_icons, 1);
+        std::fs::remove_file(&file).expect("remove SVG");
+        let removed = manager_directory_preview(&ctx, &pack).expect("preview after removing SVG");
+        assert_eq!(removed.coverage, 0);
+        assert_eq!(removed.invalid_icons, 0);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1568,10 +1733,10 @@ mod tests {
             ui.set_width(380.0);
             let line = qymcad_ui_state::icons::IconId::SketchLine;
             let line_icon = pack.inspect_svg_for_id(line).map(|data| data.map(egui::load::Bytes::from));
-            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, line, &line_icon, false).rect);
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, line, &line_icon, false, 0).rect);
             let longest_path = ALL_ICONS.iter().copied().max_by_key(|id| id.relative_path().len()).unwrap();
             let longest_icon = pack.inspect_svg_for_id(longest_path).map(|data| data.map(egui::load::Bytes::from));
-            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path, &longest_icon, false).rect);
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path, &longest_icon, false, 0).rect);
         });
         let rows = rows.borrow();
         assert!(rows[0].width() <= 380.0, "a gallery row expands the panel");
