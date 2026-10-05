@@ -132,29 +132,32 @@ pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
         }
     }
 
-    // Editor metadata & proprietary elements
-    if lower.contains("<sodipodi:") {
-        issues.push("editor metadata (<sodipodi:*>)".to_string());
+    // Editor metadata & proprietary elements or namespaces
+    if lower.contains("<sodipodi:") || lower.contains("sodipodi:") || lower.contains("xmlns:sodipodi") {
+        issues.push("editor metadata (Sodipodi)".to_string());
     }
-    if lower.contains("<inkscape:") {
-        issues.push("editor metadata (<inkscape:*>)".to_string());
+    if lower.contains("<inkscape:") || lower.contains("inkscape:") || lower.contains("xmlns:inkscape") {
+        issues.push("editor metadata (Inkscape)".to_string());
     }
     if lower.contains("<metadata") {
         issues.push("extraneous <metadata> block".to_string());
     }
-    if lower.contains("<rdf:rdf") {
-        issues.push("extraneous <rdf:RDF> block".to_string());
+    if lower.contains("<rdf:rdf") || lower.contains("xmlns:rdf") {
+        issues.push("extraneous <rdf:RDF> block or namespace".to_string());
     }
-    if lower.contains("<i:pgf") {
+    if lower.contains("xmlns:dc") || lower.contains("xmlns:cc") {
+        issues.push("extraneous metadata namespace (dc/cc)".to_string());
+    }
+    if lower.contains("<i:pgf") || lower.contains("i:pgf") {
         issues.push("proprietary Illustrator metadata (<i:pgf>)".to_string());
     }
-    if lower.contains("<adobe:") || lower.contains("<x:xmpmeta") {
+    if lower.contains("<adobe:") || lower.contains("adobe:") || lower.contains("<x:xmpmeta") || lower.contains("x:xmpmeta") {
         issues.push("proprietary Adobe/XMP metadata".to_string());
     }
-    if lower.contains("<sketch:") {
+    if lower.contains("<sketch:") || lower.contains("sketch:") {
         issues.push("proprietary Sketch metadata".to_string());
     }
-    if lower.contains("<figma:") {
+    if lower.contains("<figma:") || lower.contains("figma:") {
         issues.push("proprietary Figma metadata".to_string());
     }
     if lower.contains("<!entity") {
@@ -306,12 +309,16 @@ fn removable_svg_element(name: &[u8]) -> bool {
         || lower.starts_with("adobe:")
         || lower.starts_with("sketch:")
         || lower.starts_with("figma:")
+        || (lower.starts_with("ns") && lower.find(':').is_some_and(|idx| lower[2..idx].chars().all(|c| c.is_ascii_digit())))
         || matches!(lower.as_str(), "rdf:rdf" | "i:pgf" | "x:xmpmeta")
 }
 
-fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, changed: &mut bool) -> Result<quick_xml::events::BytesStart<'static>, String> {
+fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, is_root: bool, has_xlink: bool, changed: &mut bool) -> Result<quick_xml::events::BytesStart<'static>, String> {
     let mut cleaned = start.to_owned();
     cleaned.clear_attributes();
+    let mut has_xmlns = false;
+    let mut has_xmlns_xlink = false;
+
     for attr in start.attributes() {
         let attr = attr.map_err(|err| format!("invalid SVG attribute: {err}"))?;
         let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid SVG attribute name: {err}"))?;
@@ -319,14 +326,58 @@ fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, changed: &mut bo
         let lower_key = key.to_ascii_lowercase();
         let lower_value = value.to_ascii_lowercase();
         let event_handler = lower_key.strip_prefix("on").is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_alphabetic()));
-        let editor_attribute = ["sodipodi:", "inkscape:", "adobe:", "sketch:", "figma:", "i:", "x:"].iter().any(|prefix| lower_key.starts_with(prefix));
+        let editor_attribute = ["sodipodi:", "inkscape:", "adobe:", "sketch:", "figma:", "i:", "x:"].iter().any(|prefix| lower_key.starts_with(prefix))
+            || (lower_key.starts_with("ns") && lower_key.find(':').is_some_and(|idx| lower_key[2..idx].chars().all(|c| c.is_ascii_digit()) && !lower_key.ends_with("href")));
+        let export_attribute = lower_key.starts_with("export-") || lower_key.contains(":export-");
+        let non_standard_xmlns = lower_key.starts_with("xmlns:") && lower_key != "xmlns:xlink";
+        let root_junk = is_root && (lower_key == "id" || lower_key == "width" || lower_key == "height" || lower_key == "version");
         let external_link = lower_key.ends_with("href") && ["http:", "https:", "file:", "javascript:", "//"].iter().any(|prefix| lower_value.trim_start().starts_with(prefix));
-        if event_handler || editor_attribute || lower_value.contains("data:image/") || external_link {
+
+        if event_handler || editor_attribute || export_attribute || non_standard_xmlns || root_junk || lower_value.contains("data:image/") || external_link {
             *changed = true;
+        } else if lower_key.ends_with(":href") && lower_key != "xlink:href" {
+            *changed = true;
+            cleaned.push_attribute(("xlink:href", value.as_ref()));
+        } else if lower_key == "style" && (lower_value.contains("-inkscape-") || lower_value.contains("-sodipodi-") || lower_value.contains("inkscape-")) {
+            *changed = true;
+            let mut cleaned_style = Vec::new();
+            for part in value.split(';') {
+                let part_trimmed = part.trim();
+                if part_trimmed.is_empty() {
+                    continue;
+                }
+                if let Some((prop, _val)) = part_trimmed.split_once(':') {
+                    let prop_lower = prop.trim().to_ascii_lowercase();
+                    if prop_lower.starts_with("-inkscape-") || prop_lower.starts_with("-sodipodi-") || prop_lower.starts_with("inkscape-") {
+                        continue;
+                    }
+                }
+                cleaned_style.push(part_trimmed);
+            }
+            if !cleaned_style.is_empty() {
+                cleaned.push_attribute(("style", cleaned_style.join(";").as_str()));
+            }
         } else {
+            if lower_key == "xmlns" {
+                has_xmlns = true;
+            } else if lower_key == "xmlns:xlink" {
+                has_xmlns_xlink = true;
+            }
             cleaned.push_attribute((key, value.as_ref()));
         }
     }
+
+    if is_root {
+        if !has_xmlns {
+            *changed = true;
+            cleaned.push_attribute(("xmlns", "http://www.w3.org/2000/svg"));
+        }
+        if has_xlink && !has_xmlns_xlink {
+            *changed = true;
+            cleaned.push_attribute(("xmlns:xlink", "http://www.w3.org/1999/xlink"));
+        }
+    }
+
     Ok(cleaned)
 }
 
@@ -337,6 +388,7 @@ pub fn clean_svg(data: &[u8]) -> Result<Vec<u8>, String> {
         return Err("SVG file exceeds the icon size limit".to_string());
     }
     let source = std::str::from_utf8(data).map_err(|err| format!("SVG data is not valid UTF-8: {err}"))?;
+    let has_xlink = source.contains("xlink:href") || source.contains(":href");
     let mut reader = quick_xml::Reader::from_str(source);
     let mut writer = quick_xml::Writer::new(Vec::with_capacity(data.len()));
     let mut skipped_depth = 0usize;
@@ -378,13 +430,25 @@ pub fn clean_svg(data: &[u8]) -> Result<Vec<u8>, String> {
                 skipped_depth = 1;
                 changed = true;
             }
-            Event::Start(start) => writer.write_event(Event::Start(cleaned_svg_start(&start, &mut changed)?)).map_err(|err| err.to_string())?,
+            Event::Start(start) => {
+                let is_root = open_depth == 1 && start.name().as_ref() == b"svg";
+                writer.write_event(Event::Start(cleaned_svg_start(&start, is_root, has_xlink, &mut changed)?)).map_err(|err| err.to_string())?;
+            }
             Event::Empty(_) if skipped_depth > 0 => {}
             Event::Empty(empty) if removable_svg_element(empty.name().as_ref()) => changed = true,
-            Event::Empty(empty) => writer.write_event(Event::Empty(cleaned_svg_start(&empty, &mut changed)?)).map_err(|err| err.to_string())?,
+            Event::Empty(empty) => {
+                let is_root = open_depth == 0 && empty.name().as_ref() == b"svg";
+                writer.write_event(Event::Empty(cleaned_svg_start(&empty, is_root, has_xlink, &mut changed)?)).map_err(|err| err.to_string())?;
+            }
             Event::End(_) if skipped_depth > 0 => skipped_depth -= 1,
-            Event::End(end) => writer.write_event(Event::End(end)).map_err(|err| err.to_string())?,
-            Event::DocType(_) | Event::PI(_) | Event::Comment(_) => changed = true,
+            Event::Text(text) if open_depth == 0 => {
+                let bytes: &[u8] = text.as_ref();
+                if !bytes.iter().all(u8::is_ascii_whitespace) {
+                    return Err("SVG contains text outside its root element".to_string());
+                }
+                changed = true;
+            }
+            Event::Decl(_) | Event::DocType(_) | Event::PI(_) | Event::Comment(_) => changed = true,
             Event::Eof => break,
             _ if skipped_depth > 0 => {}
             Event::GeneralRef(reference) => {
@@ -401,7 +465,10 @@ pub fn clean_svg(data: &[u8]) -> Result<Vec<u8>, String> {
     if !saw_svg_root || open_depth != 0 || skipped_depth != 0 {
         return Err("SVG has an unclosed or missing root element".to_string());
     }
-    let cleaned = writer.into_inner();
+    let mut cleaned = writer.into_inner();
+    if !cleaned.ends_with(b"\n") {
+        cleaned.push(b'\n');
+    }
     if cleaned.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
         return Err("cleaned SVG exceeds the icon size limit".to_string());
     }

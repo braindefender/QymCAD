@@ -56,13 +56,13 @@ fn gallery_inspection_distinguishes_missing_and_invalid_icons() {
 
 #[test]
 fn svg_cleaner_removes_forbidden_content_and_preserves_vector_paths() {
-    let original = br#"<svg viewBox="0 0 24 24" onload="alert(1)" xmlns="http://www.w3.org/2000/svg">
+    let original = br#"<svg viewBox="0 0 24 24" width="24px" height="24px" id="svg1" version="1.1" onload="alert(1)" xmlns="http://www.w3.org/2000/svg" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:dc="http://purl.org/dc/elements/1.1/" sodipodi:docname="test.svg" inkscape:version="1.0">
 <metadata><rdf:RDF><script>alert(1)</script></rdf:RDF></metadata>
 <sodipodi:namedview id="editor"/>
 <foreignObject><p>HTML</p></foreignObject>
 <image href="data:image/png;base64,AA=="/>
-<defs><linearGradient id="paint"><stop offset="0" stop-color="red"/></linearGradient></defs>
-<path id="drawing" d="M1 1 L20 20" fill="url(#paint)" onclick="alert(1)"/>
+<defs><linearGradient id="paint" inkscape:collect="always"><stop offset="0" stop-color="red"/></linearGradient></defs>
+<path id="drawing" d="M1 1 L20 20" fill="url(#paint)" onclick="alert(1)" inkscape:connector-curvature="0"/>
 </svg>"#;
     let cleaned = clean_svg(original).expect("forbidden content can be removed");
     validate_svg(&cleaned).expect("cleaned vector is valid");
@@ -70,7 +70,26 @@ fn svg_cleaner_removes_forbidden_content_and_preserves_vector_paths() {
     assert!(text.contains("id=\"drawing\""));
     assert!(text.contains("M1 1 L20 20"));
     assert!(text.contains("linearGradient") && text.contains("url(#paint)"), "vector paint definitions changed");
-    for forbidden in ["onload", "onclick", "<metadata", "<script", "<sodipodi:", "<foreignObject", "<image", "data:image/"] {
+    for forbidden in [
+        "onload",
+        "onclick",
+        "<metadata",
+        "<script",
+        "<sodipodi:",
+        "<foreignObject",
+        "<image",
+        "data:image/",
+        "xmlns:sodipodi",
+        "xmlns:inkscape",
+        "xmlns:dc",
+        "sodipodi:docname",
+        "inkscape:version",
+        "inkscape:collect",
+        "inkscape:connector-curvature",
+        "id=\"svg1\"",
+        "width=\"24px\"",
+        "height=\"24px\"",
+    ] {
         assert!(!text.contains(forbidden), "{forbidden} remained after cleaning");
     }
 }
