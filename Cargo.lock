@@ -3504,6 +3504,7 @@ dependencies = [
  "bytemuck",
  "egui 0.35.0",
  "egui-phosphor 0.11.0",
+ "quick-xml",
  "qymcad-core",
  "qymcad-i18n",
  "qymcad-kernel",

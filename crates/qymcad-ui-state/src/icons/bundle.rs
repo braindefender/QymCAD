@@ -199,6 +199,213 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn removable_svg_element(name: &[u8]) -> bool {
+    let lower = String::from_utf8_lossy(name).to_ascii_lowercase();
+    let local = lower.rsplit(':').next().unwrap_or(&lower);
+    matches!(local, "script" | "foreignobject" | "applet" | "object" | "embed" | "iframe" | "audio" | "video" | "metadata" | "image")
+        || lower.starts_with("sodipodi:")
+        || lower.starts_with("inkscape:")
+        || lower.starts_with("adobe:")
+        || lower.starts_with("sketch:")
+        || lower.starts_with("figma:")
+        || matches!(lower.as_str(), "rdf:rdf" | "i:pgf" | "x:xmpmeta")
+}
+
+fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, changed: &mut bool) -> Result<quick_xml::events::BytesStart<'static>, String> {
+    let mut cleaned = start.to_owned();
+    cleaned.clear_attributes();
+    for attr in start.attributes() {
+        let attr = attr.map_err(|err| format!("invalid SVG attribute: {err}"))?;
+        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid SVG attribute name: {err}"))?;
+        let value = attr.unescape_value().map_err(|err| format!("invalid SVG attribute value: {err}"))?;
+        let lower_key = key.to_ascii_lowercase();
+        let lower_value = value.to_ascii_lowercase();
+        let event_handler = lower_key.strip_prefix("on").is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_alphabetic()));
+        let editor_attribute = ["sodipodi:", "inkscape:", "adobe:", "sketch:", "figma:", "i:", "x:"].iter().any(|prefix| lower_key.starts_with(prefix));
+        let external_link = lower_key.ends_with("href") && ["http:", "https:", "file:", "javascript:", "//"].iter().any(|prefix| lower_value.trim_start().starts_with(prefix));
+        if event_handler || editor_attribute || lower_value.contains("data:image/") || external_link {
+            *changed = true;
+        } else {
+            cleaned.push_attribute((key, value.as_ref()));
+        }
+    }
+    Ok(cleaned)
+}
+
+/// Remove executable tags, editor metadata, raster content, and event attributes from SVG.
+/// Geometry and viewBox values are retained; validation refuses changes that need manual repair.
+pub fn clean_svg(data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
+        return Err("SVG file exceeds the icon size limit".to_string());
+    }
+    let source = std::str::from_utf8(data).map_err(|err| format!("SVG data is not valid UTF-8: {err}"))?;
+    let mut reader = quick_xml::Reader::from_str(source);
+    let mut writer = quick_xml::Writer::new(Vec::with_capacity(data.len()));
+    let mut skipped_depth = 0usize;
+    let mut open_depth = 0usize;
+    let mut saw_svg_root = false;
+    let mut changed = false;
+    loop {
+        use quick_xml::events::Event;
+        let event = reader.read_event().map_err(|err| format!("cannot parse SVG: {err}"))?;
+        if open_depth == 0 {
+            match &event {
+                Event::Text(text) => {
+                    let bytes: &[u8] = text.as_ref();
+                    if !bytes.iter().all(u8::is_ascii_whitespace) {
+                        return Err("SVG contains text outside its root element".to_string());
+                    }
+                }
+                Event::CData(_) | Event::GeneralRef(_) => return Err("SVG contains content outside its root element".to_string()),
+                _ => {}
+            }
+        }
+        match &event {
+            Event::Start(start) | Event::Empty(start) if open_depth == 0 => {
+                if saw_svg_root || start.name().as_ref() != b"svg" {
+                    return Err("SVG must have one <svg> root element".to_string());
+                }
+                saw_svg_root = true;
+            }
+            _ => {}
+        }
+        match &event {
+            Event::Start(_) => open_depth += 1,
+            Event::End(_) => open_depth = open_depth.checked_sub(1).ok_or_else(|| "SVG has an unmatched closing tag".to_string())?,
+            _ => {}
+        }
+        match event {
+            Event::Start(_) if skipped_depth > 0 => skipped_depth += 1,
+            Event::Start(start) if removable_svg_element(start.name().as_ref()) => {
+                skipped_depth = 1;
+                changed = true;
+            }
+            Event::Start(start) => writer.write_event(Event::Start(cleaned_svg_start(&start, &mut changed)?)).map_err(|err| err.to_string())?,
+            Event::Empty(_) if skipped_depth > 0 => {}
+            Event::Empty(empty) if removable_svg_element(empty.name().as_ref()) => changed = true,
+            Event::Empty(empty) => writer.write_event(Event::Empty(cleaned_svg_start(&empty, &mut changed)?)).map_err(|err| err.to_string())?,
+            Event::End(_) if skipped_depth > 0 => skipped_depth -= 1,
+            Event::End(end) => writer.write_event(Event::End(end)).map_err(|err| err.to_string())?,
+            Event::DocType(_) | Event::PI(_) | Event::Comment(_) => changed = true,
+            Event::Eof => break,
+            _ if skipped_depth > 0 => {}
+            Event::GeneralRef(reference) => {
+                let name: &[u8] = reference.as_ref();
+                if name.starts_with(b"#") || [b"amp".as_slice(), b"lt", b"gt", b"quot", b"apos"].contains(&name) {
+                    writer.write_event(Event::GeneralRef(reference)).map_err(|err| err.to_string())?;
+                } else {
+                    changed = true;
+                }
+            }
+            other => writer.write_event(other).map_err(|err| err.to_string())?,
+        }
+    }
+    if !saw_svg_root || open_depth != 0 || skipped_depth != 0 {
+        return Err("SVG has an unclosed or missing root element".to_string());
+    }
+    let cleaned = writer.into_inner();
+    if cleaned.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
+        return Err("cleaned SVG exceeds the icon size limit".to_string());
+    }
+    validate_svg(&cleaned)?;
+    if !changed && validate_svg(data).is_err() {
+        return Err("SVG needs manual repair".to_string());
+    }
+    Ok(cleaned)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanIconResult {
+    Missing,
+    Unchanged,
+    Cleaned,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CleanPackReport {
+    pub cleaned: Vec<std::path::PathBuf>,
+    pub failed: Vec<CleanFileFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CleanFileFailure {
+    pub path: std::path::PathBuf,
+    pub reason: String,
+}
+
+fn clean_svg_file(path: &Path) -> Result<CleanIconResult, String> {
+    let original = match std::fs::read(path) {
+        Ok(data) => data,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(CleanIconResult::Missing),
+        Err(err) => return Err(format!("cannot read SVG: {err}")),
+    };
+    if original.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
+        return Err("SVG file exceeds the icon size limit".to_string());
+    }
+    if validate_svg(&original).is_ok() {
+        return Ok(CleanIconResult::Unchanged);
+    }
+    let cleaned = clean_svg(&original)?;
+    if cleaned == original {
+        return Err("SVG needs manual repair".to_string());
+    }
+    let temp = path.with_extension(format!("svg.qymcad-{}.tmp", std::process::id()));
+    if let Err(err) = std::fs::write(&temp, &cleaned) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("cannot write cleaned SVG: {err}"));
+    }
+    if let Err(err) = std::fs::rename(&temp, path) {
+        let _ = std::fs::remove_file(temp);
+        return Err(format!("cannot replace SVG: {err}"));
+    }
+    Ok(CleanIconResult::Cleaned)
+}
+
+pub fn clean_directory_icon(pack: &IconPack, id: IconId) -> Result<CleanIconResult, String> {
+    let super::pack::PackSource::Directory(root) = &pack.source else {
+        return Err("only directory packs can be cleaned".to_string());
+    };
+    clean_svg_file(&root.join("icons").join(format!("{}.svg", id.relative_path())))
+}
+
+pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String> {
+    let super::pack::PackSource::Directory(root) = &pack.source else {
+        return Err("only directory packs can be cleaned".to_string());
+    };
+    fn collect_svg_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => return Err(format!("cannot inspect icon directory: {err}")),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|err| format!("cannot inspect icon entry: {err}"))?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|err| format!("cannot inspect icon file: {err}"))?;
+            if kind.is_dir() {
+                collect_svg_files(&path, files)?;
+            } else if kind.is_file() && path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("svg")) {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    collect_svg_files(&root.join("icons"), &mut files)?;
+    files.push(root.join("icon.svg"));
+    files.sort();
+    let mut report = CleanPackReport { cleaned: Vec::new(), failed: Vec::new() };
+    for path in files {
+        let relative = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+        match clean_svg_file(&path) {
+            Ok(CleanIconResult::Cleaned) => report.cleaned.push(relative),
+            Ok(CleanIconResult::Missing | CleanIconResult::Unchanged) => {}
+            Err(reason) => report.failed.push(CleanFileFailure { path: relative, reason }),
+        }
+    }
+    Ok(report)
+}
+
 /// Inspect and validate an icon pack directory, returning a detailed `ValidationReport`.
 /// Checks all SVG viewports, identifies extraneous/unknown files, and lists included vs missing icons.
 pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<ValidationReport, String> {

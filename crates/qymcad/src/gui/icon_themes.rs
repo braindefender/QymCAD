@@ -5,8 +5,8 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat, ColorMode, IconManifest, PackageType, IconPack,
-    IconId, PackSource, ValidationReport, ALL_ICONS,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, discover_packs_in, inspect_pack_directory, load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat,
+    CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::PathBuf;
@@ -116,12 +116,20 @@ fn draw_pack_icon_bytes(ui: &mut egui::Ui, pack: &IconPack, size: f32, bytes: eg
 
 type ManagerIconPreview = Result<Option<egui::load::Bytes>, String>;
 
-fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &ManagerIconPreview) -> egui::Rect {
+struct GalleryRowResponse {
+    rect: egui::Rect,
+    clean_clicked: bool,
+    path_copied: bool,
+}
+
+fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &ManagerIconPreview, cleanable: bool) -> GalleryRowResponse {
     let relative_path = id.relative_path();
     let archive_path = format!("icons/{relative_path}.svg");
     let name = relative_path.rsplit('/').next().unwrap_or(relative_path);
     let row_width = ui.available_width();
-    egui::Frame::NONE
+    let mut clean_clicked = false;
+    let mut path_copied = false;
+    let rect = egui::Frame::NONE
         .fill(ui.visuals().faint_bg_color)
         .corner_radius(6.0)
         .inner_margin(egui::Margin::symmetric(10, 8))
@@ -151,7 +159,15 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                 ui.vertical(|ui| {
                     ui.set_max_width(text_width);
                     ui.label(egui::RichText::new(name).strong());
-                    ui.add(egui::Label::new(egui::RichText::new(&archive_path).monospace().small().weak()).wrap());
+                    if ui
+                        .add(egui::Label::new(egui::RichText::new(&archive_path).monospace().small().weak()).wrap().sense(egui::Sense::click()))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(crate::i18n::tr("icon-mgr-copy-path"))
+                        .clicked()
+                    {
+                        ui.output_mut(|output| output.commands.push(egui::OutputCommand::CopyText(archive_path.clone())));
+                        path_copied = true;
+                    }
                     match &icon {
                         Ok(Some(_)) => {
                             ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-gallery-present")).small().weak());
@@ -162,13 +178,19 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         Err(reason) => {
                             let error = format!("{}: {reason}", crate::i18n::tr("icon-mgr-gallery-invalid"));
                             ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
+                            if cleanable {
+                                if ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-icon"))).clicked() {
+                                    clean_clicked = true;
+                                }
+                            }
                         }
                     }
                 });
             });
         })
         .response
-        .rect
+        .rect;
+    GalleryRowResponse { rect, clean_clicked, path_copied }
 }
 
 /// Developer Packager modal state kept in UI context.
@@ -470,11 +492,20 @@ pub(crate) struct IconManagerState {
     pub active_tab: IconManagerTab,
     pub search_query: String,
     pub category_filter: String,
+    clean_notice: Option<CleanNotice>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CleanNotice {
+    pack_id: String,
+    text: String,
+    is_error: bool,
+    details: Vec<String>,
 }
 
 impl Default for IconManagerState {
     fn default() -> Self {
-        Self { is_open: false, selected_pack_id: "freecad-classic".into(), active_tab: IconManagerTab::Readme, search_query: String::new(), category_filter: "all".into() }
+        Self { is_open: false, selected_pack_id: "freecad-classic".into(), active_tab: IconManagerTab::Readme, search_query: String::new(), category_filter: "all".into(), clean_notice: None }
     }
 }
 
@@ -525,7 +556,7 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
             coverage += 1;
         }
         let inspected = snapshot.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
-        if available && inspected.is_err() {
+        if inspected.is_err() {
             invalid_icons += 1;
         }
         icons.insert(id, inspected);
@@ -568,11 +599,11 @@ fn manager_theme_card(ui: &mut egui::Ui, id: &str, selected: bool, content: impl
 }
 
 fn manager_sidebar_shell(ui: &mut egui::Ui, actions: impl FnOnce(&mut egui::Ui)) -> egui::ScrollArea {
-    egui::Panel::bottom("icon_manager_actions").resizable(false).exact_size(78.0).show(ui, actions);
+    egui::Panel::bottom("icon_manager_actions").resizable(false).exact_size(44.0).show(ui, actions);
     egui::ScrollArea::vertical().id_salt("mgr_sidebar_scroll").auto_shrink([false, false])
 }
 
-fn draw_icon_manager_actions(ctx: &egui::Context, wc: &mut WinCtx, ui: &mut egui::Ui) {
+fn draw_icon_manager_actions(ui: &mut egui::Ui) {
     ui.add_space(6.0);
     if let Some(user_dir) = user_themes_dir() {
         if ui.add_sized([ui.available_width(), 28.0], egui::Button::new(format!("{} {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-icon-open-folder")))).clicked() {
@@ -581,19 +612,24 @@ fn draw_icon_manager_actions(ctx: &egui::Context, wc: &mut WinCtx, ui: &mut egui
             let _ = crate::system::start(bin, &args);
         }
     }
-    ui.horizontal(|ui| {
-        let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-        if ui.add_sized([width, 28.0], egui::Button::new(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("settings-icon-refresh"))).truncate()).clicked() {
-            clear_global_icon_cache();
-            apply_icon_themes(wc.set);
-            *wc.status = crate::i18n::tr("settings-icon-cache-cleared");
-        }
-        if ui.add_sized([width, 28.0], egui::Button::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))).truncate()).clicked() {
-            ctx.data_mut(|d| {
-                let ps = d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"));
-                ps.is_open = true;
-            });
-        }
+}
+
+fn open_packager_for_directory(ctx: &egui::Context, pack: &IconPack, source: &std::path::Path) {
+    ctx.data_mut(|data| {
+        let state = data.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"));
+        state.is_open = true;
+        state.id = pack.manifest.id.clone();
+        state.name = pack.manifest.name.clone();
+        state.version = pack.manifest.version.clone();
+        state.author = pack.manifest.author.clone();
+        state.license = pack.manifest.license.clone();
+        state.description = pack.manifest.description.clone();
+        state.is_monochrome = pack.manifest.color_mode == ColorMode::Monochrome;
+        state.source_dir = source.display().to_string();
+        state.output_file = source.with_extension("qicons").display().to_string();
+        state.message = None;
+        state.report = None;
+        state.is_error = false;
     });
 }
 
@@ -650,7 +686,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
 
             egui::Panel::left("icon_manager_sidebar").resizable(true).default_size(330.0).size_range(300.0..=420.0).show(ui, |ui| {
                 manager_sidebar_shell(ui, |ui| {
-                    draw_icon_manager_actions(ctx, wc, ui);
+                    draw_icon_manager_actions(ui);
                 })
                 .show(ui, |ui| {
                     ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-active-cascade")).strong());
@@ -811,6 +847,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     return;
                 };
                 let archive_preview = manager_archive_preview(ctx, pack);
+                let folder_source = matches!(&pack.source, PackSource::Directory(_));
 
                 egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -822,8 +859,13 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         }
                         ui.vertical(|ui| {
                             ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
-                            ui.horizontal_wrapped(|ui| {
+                            ui.horizontal(|ui| {
                                 draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
+                                if let PackSource::Directory(source) = &pack.source {
+                                    if wc.set.active_icon_packs.contains(&pack.manifest.id) && ui.button(format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))).clicked() {
+                                        open_packager_for_directory(ctx, pack, source);
+                                    }
+                                }
                                 ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).small().weak());
                             });
                         });
@@ -875,11 +917,8 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
 
                     // For unverified packs (Archive, Directory), scan for SVG hygiene / validation issues
                     // Verified bundles intentionally skip runtime scans for maximum responsiveness
-                    if pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded {
-                        let invalid_count = archive_preview.as_ref().map_or_else(
-                            || ALL_ICONS.iter().filter_map(|id| pack.get_svg_for_id(*id)).filter(|svg| qymcad_ui_state::icons::validate_svg(svg).is_err()).count(),
-                            |preview| preview.invalid_icons,
-                        );
+                    if folder_source || (pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded) {
+                        let invalid_count = archive_preview.as_ref().map_or_else(|| ALL_ICONS.iter().filter(|id| pack.inspect_svg_for_id(**id).is_err()).count(), |preview| preview.invalid_icons);
 
                         ui.add_space(2.0);
                         if invalid_count > 0 {
@@ -895,6 +934,33 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean"))).color(ui.visuals().selection.bg_fill).small());
                             });
+                        }
+                        if folder_source && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-all"))).clicked() {
+                            match clean_directory_icons(pack) {
+                                Ok(report) => {
+                                    let fixed = report.cleaned.len();
+                                    let failed = report.failed.len();
+                                    let text = if fixed == 0 && failed == 0 {
+                                        crate::i18n::tr("icon-mgr-clean-none")
+                                    } else {
+                                        crate::i18n::trn("icon-mgr-clean-summary", &[("count", &fixed.to_string()), ("failed", &failed.to_string())])
+                                    };
+                                    let details = report.failed.iter().map(|failure| format!("{}: {}", failure.path.display(), failure.reason)).collect();
+                                    state.clean_notice = Some(CleanNotice { pack_id: pack.manifest.id.clone(), text, is_error: failed > 0, details });
+                                    if fixed > 0 {
+                                        changed = true;
+                                        ctx.request_repaint();
+                                    }
+                                }
+                                Err(reason) => {
+                                    state.clean_notice = Some(CleanNotice {
+                                        pack_id: pack.manifest.id.clone(),
+                                        text: crate::i18n::tr1("icon-mgr-clean-failed", "reason", &reason),
+                                        is_error: true,
+                                        details: Vec::new(),
+                                    });
+                                }
+                            }
                         }
                     }
 
@@ -934,6 +1000,19 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     ui.selectable_value(&mut state.active_tab, IconManagerTab::Gallery, crate::i18n::tr("icon-mgr-tab-gallery"));
                 });
                 ui.separator();
+                if let Some(notice) = state.clean_notice.as_ref().filter(|notice| notice.pack_id == pack.manifest.id) {
+                    let color = if notice.is_error { ui.visuals().warn_fg_color } else { ui.visuals().text_color() };
+                    ui.label(egui::RichText::new(&notice.text).small().color(color));
+                    if !notice.details.is_empty() {
+                        egui::CollapsingHeader::new(crate::i18n::tr("icon-mgr-clean-details")).show(ui, |ui| {
+                            egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+                                for detail in &notice.details {
+                                    ui.add(egui::Label::new(egui::RichText::new(detail).small().monospace()).wrap());
+                                }
+                            });
+                        });
+                    }
+                }
 
                 match state.active_tab {
                     IconManagerTab::Readme => {
@@ -993,11 +1072,37 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                     continue;
                                 }
                                 shown += 1;
-                                if let Some(icon) = archive_preview.as_ref().and_then(|preview| preview.icons.get(&id)) {
-                                    draw_gallery_icon_row(ui, pack, id, icon);
+                                let row = if let Some(icon) = archive_preview.as_ref().and_then(|preview| preview.icons.get(&id)) {
+                                    draw_gallery_icon_row(ui, pack, id, icon, false)
                                 } else {
                                     let icon = pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
-                                    draw_gallery_icon_row(ui, pack, id, &icon);
+                                    draw_gallery_icon_row(ui, pack, id, &icon, folder_source)
+                                };
+                                if row.clean_clicked {
+                                    ui.scroll_to_rect(row.rect, Some(egui::Align::Center));
+                                    match clean_directory_icon(pack, id) {
+                                        Ok(CleanIconResult::Cleaned) => {
+                                            state.clean_notice =
+                                                Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icon-mgr-cleaned-one"), is_error: false, details: Vec::new() });
+                                            changed = true;
+                                            ctx.request_repaint();
+                                        }
+                                        Ok(CleanIconResult::Unchanged | CleanIconResult::Missing) => {
+                                            state.clean_notice =
+                                                Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icon-mgr-clean-none"), is_error: false, details: Vec::new() });
+                                        }
+                                        Err(reason) => {
+                                            state.clean_notice = Some(CleanNotice {
+                                                pack_id: pack.manifest.id.clone(),
+                                                text: crate::i18n::tr1("icon-mgr-clean-failed", "reason", &reason),
+                                                is_error: true,
+                                                details: Vec::new(),
+                                            });
+                                        }
+                                    }
+                                }
+                                if row.path_copied {
+                                    state.clean_notice = Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icon-mgr-path-copied"), is_error: false, details: Vec::new() });
                                 }
                                 ui.add_space(4.0);
                             }
@@ -1013,6 +1118,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
     if changed {
         clear_global_icon_cache();
         apply_icon_themes(wc.set);
+        ctx.request_repaint();
     }
 
     state.is_open = open;
@@ -1294,6 +1400,11 @@ mod tests {
         let _ = draw(vec![click(false)]);
         let selected = ctx.data(|data| data.get_temp::<IconManagerState>(egui::Id::new("icon_manager_window")).expect("manager state"));
         assert_eq!(selected.selected_pack_id, sample_pack.manifest.id, "the bundle was not selected");
+        let output = draw(vec![]);
+        let package_label = format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"));
+        let clean_label = format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-all"));
+        assert!(output.shapes.iter().all(|shape| find_label(&shape.shape, &package_label).is_none()), "archive must not offer packaging");
+        assert!(output.shapes.iter().all(|shape| find_label(&shape.shape, &clean_label).is_none()), "archive must not offer SVG cleaning");
 
         let start = std::time::Instant::now();
         for _ in 0..3 {
@@ -1320,6 +1431,113 @@ mod tests {
         eprintln!("unverified archive gallery: three redraws took {elapsed:?}");
         assert!(elapsed < std::time::Duration::from_millis(450), "three gallery redraws took {elapsed:?}");
         assert_eq!(app.set.active_icon_packs, active_before, "selection must not activate the bundle");
+    }
+
+    #[test]
+    fn cleaning_a_gallery_icon_updates_its_file_and_preview() {
+        use crate::gui::App;
+        let root = std::env::temp_dir().join(format!("qymcad_gallery_clean_{}", std::process::id()));
+        let theme = root.join("repairable");
+        let icons = theme.join("icons/sketch");
+        std::fs::create_dir_all(&icons).expect("create theme icons");
+        let manifest = IconManifest {
+            package_type: PackageType::IconTheme,
+            id: "repairable".into(),
+            name: "Repairable Theme".into(),
+            version: "1.0".into(),
+            author: "Test".into(),
+            license: "MIT".into(),
+            description: String::new(),
+            color_mode: ColorMode::Universal,
+            verified: false,
+        };
+        std::fs::write(theme.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+        let path = icons.join("line.svg");
+        std::fs::write(&path, br#"<svg viewBox="0 0 24 24"><script>bad()</script><path d="M0 0 L24 24"/></svg>"#).unwrap();
+        let second = icons.join("circle.svg");
+        std::fs::write(&second, br#"<svg viewBox="0 0 24 24"><metadata>editor</metadata><circle cx="12" cy="12" r="8"/></svg>"#).unwrap();
+        let unrepairable = icons.join("rect.svg");
+        let bad_viewbox = br#"<svg viewBox="0 0 32 16"><rect width="32" height="16"/></svg>"#;
+        std::fs::write(&unrepairable, bad_viewbox).unwrap();
+        let dirs = [root.clone()];
+        let mut app = App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let mut draw = |events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs))
+        };
+        fn find_text(shapes: &[egui::epaint::ClippedShape], needle: &str) -> Option<egui::Rect> {
+            fn in_shape(shape: &egui::epaint::Shape, needle: &str) -> Option<egui::Rect> {
+                match shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text().contains(needle) => Some(egui::Rect::from_min_size(text.pos, text.galley.size())),
+                    egui::epaint::Shape::Vec(shapes) => shapes.iter().find_map(|shape| in_shape(shape, needle)),
+                    _ => None,
+                }
+            }
+            shapes.iter().find_map(|shape| in_shape(&shape.shape, needle))
+        }
+        let click = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let _ = draw(vec![]);
+        let output = draw(vec![]);
+        let tab = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-tab-gallery")).expect("gallery tab").center();
+        let _ = draw(vec![egui::Event::PointerMoved(tab)]);
+        let _ = draw(vec![click(tab, true)]);
+        let output = draw(vec![click(tab, false)]);
+        assert!(find_text(&output.shapes, &crate::i18n::tr("settings-icon-package-btn")).is_none(), "inactive folder must not offer packaging");
+        assert!(find_text(&output.shapes, &crate::i18n::tr("settings-icon-refresh")).is_none(), "the sidebar must not show a refresh button");
+        let archive_path = "icons/sketch/line.svg";
+        let path_at = find_text(&output.shapes, archive_path).expect("gallery icon path").center();
+        let _ = draw(vec![egui::Event::PointerMoved(path_at)]);
+        let _ = draw(vec![click(path_at, true)]);
+        let copy_output = draw(vec![click(path_at, false)]);
+        assert!(copy_output.platform_output.commands.iter().any(|command| matches!(command, egui::OutputCommand::CopyText(text) if text == archive_path)), "clicking the icon path must copy it");
+        let output = draw(vec![]);
+        assert!(find_text(&output.shapes, &crate::i18n::tr("icon-mgr-path-copied")).is_some(), "copying a path needs visible confirmation");
+        let button = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-clean-icon")).expect("clean button beside invalid SVG").center();
+        let before = qymcad_ui_state::icons::get_global_icon_revision();
+        let _ = draw(vec![egui::Event::PointerMoved(button)]);
+        let _ = draw(vec![click(button, true)]);
+        let _ = draw(vec![click(button, false)]);
+        qymcad_ui_state::icons::validate_svg(&std::fs::read(&path).unwrap()).expect("button cleaned the SVG on disk");
+        assert!(qymcad_ui_state::icons::get_global_icon_revision() > before, "cleaning did not invalidate rendered icon textures");
+        let output = draw(vec![]);
+        assert!(find_text(&output.shapes, &crate::i18n::tr("icon-mgr-gallery-present")).is_some(), "the refreshed gallery does not show the cleaned icon");
+
+        let clean_all = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-clean-all")).expect("bulk clean button").center();
+        let before_bulk = qymcad_ui_state::icons::get_global_icon_revision();
+        let _ = draw(vec![egui::Event::PointerMoved(clean_all)]);
+        let _ = draw(vec![click(clean_all, true)]);
+        let _ = draw(vec![click(clean_all, false)]);
+        qymcad_ui_state::icons::validate_svg(&std::fs::read(&second).unwrap()).expect("bulk button cleaned another icon");
+        assert_eq!(std::fs::read(&unrepairable).unwrap(), bad_viewbox, "bulk clean must leave geometry needing manual repair alone");
+        assert!(qymcad_ui_state::icons::get_global_icon_revision() > before_bulk, "bulk cleaning did not refresh icon textures");
+        let output = draw(vec![]);
+        let activate = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-activate-btn")).expect("folder activation button").center();
+        let _ = draw(vec![egui::Event::PointerMoved(activate)]);
+        let _ = draw(vec![click(activate, true)]);
+        let _ = draw(vec![click(activate, false)]);
+        let output = draw(vec![]);
+        let package_rect = find_text(&output.shapes, &crate::i18n::tr("settings-icon-package-btn")).expect("active folder packaging button");
+        let version_rect = find_text(&output.shapes, "v1.0").expect("selected folder version");
+        assert!((package_rect.center().y - version_rect.center().y).abs() < 16.0, "packaging button must share the folder badge row");
+        let meta_label = crate::i18n::tr1("icon-mgr-meta-id", "value", &manifest.id);
+        let metadata_rect = find_text(&output.shapes, &meta_label).expect("folder metadata must be visible below the header");
+        assert!(metadata_rect.top() - package_rect.bottom() < 100.0, "packaging button must not stretch the folder header");
+        assert!(find_text(&output.shapes, archive_path).is_some(), "folder gallery must remain visible after activation");
+        let package = package_rect.center();
+        let _ = draw(vec![egui::Event::PointerMoved(package)]);
+        let _ = draw(vec![click(package, true)]);
+        let _ = draw(vec![click(package, false)]);
+        let packager = ctx.data(|data| data.get_temp::<PackagerDialogState>(egui::Id::new("icon_packager_dialog")).expect("packager state"));
+        assert!(packager.is_open, "packager did not open");
+        assert_eq!(packager.source_dir, theme.display().to_string(), "packager must use the selected folder");
+        assert_eq!(packager.id, manifest.id);
+        assert_eq!(packager.output_file, theme.with_extension("qicons").display().to_string());
+        assert!(app.set.active_icon_packs.contains(&manifest.id), "the folder was not activated");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1350,10 +1568,10 @@ mod tests {
             ui.set_width(380.0);
             let line = qymcad_ui_state::icons::IconId::SketchLine;
             let line_icon = pack.inspect_svg_for_id(line).map(|data| data.map(egui::load::Bytes::from));
-            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, line, &line_icon));
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, line, &line_icon, false).rect);
             let longest_path = ALL_ICONS.iter().copied().max_by_key(|id| id.relative_path().len()).unwrap();
             let longest_icon = pack.inspect_svg_for_id(longest_path).map(|data| data.map(egui::load::Bytes::from));
-            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path, &longest_icon));
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path, &longest_icon, false).rect);
         });
         let rows = rows.borrow();
         assert!(rows[0].width() <= 380.0, "a gallery row expands the panel");
@@ -1379,6 +1597,7 @@ mod tests {
         assert!(labels.iter().any(|text| text.contains("icons/sketch/line.svg")), "the archive path is not visible");
         assert!(labels.iter().any(|text| text.contains(&format!("icons/{longest_path}.svg"))), "a missing icon needs its expected archive path");
         assert!(labels.iter().any(|text| text.contains("non-square viewBox")), "the specific SVG error is not visible");
+        assert!(!labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-clean-icon"))), "archive icons must not show cleaning controls");
         assert!(labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-gallery-missing"))), "missing icons need a neutral status");
         assert_eq!(preview_frames, 2, "every icon needs a visible 56 px preview frame");
     }

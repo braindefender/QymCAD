@@ -54,6 +54,88 @@ fn gallery_inspection_distinguishes_missing_and_invalid_icons() {
 }
 
 #[test]
+fn svg_cleaner_removes_forbidden_content_and_preserves_vector_paths() {
+    let original = br#"<svg viewBox="0 0 24 24" onload="alert(1)" xmlns="http://www.w3.org/2000/svg">
+<metadata><rdf:RDF><script>alert(1)</script></rdf:RDF></metadata>
+<sodipodi:namedview id="editor"/>
+<foreignObject><p>HTML</p></foreignObject>
+<image href="data:image/png;base64,AA=="/>
+<defs><linearGradient id="paint"><stop offset="0" stop-color="red"/></linearGradient></defs>
+<path id="drawing" d="M1 1 L20 20" fill="url(#paint)" onclick="alert(1)"/>
+</svg>"#;
+    let cleaned = clean_svg(original).expect("forbidden content can be removed");
+    validate_svg(&cleaned).expect("cleaned vector is valid");
+    let text = std::str::from_utf8(&cleaned).unwrap();
+    assert!(text.contains("id=\"drawing\""));
+    assert!(text.contains("M1 1 L20 20"));
+    assert!(text.contains("linearGradient") && text.contains("url(#paint)"), "vector paint definitions changed");
+    for forbidden in ["onload", "onclick", "<metadata", "<script", "<sodipodi:", "<foreignObject", "<image", "data:image/"] {
+        assert!(!text.contains(forbidden), "{forbidden} remained after cleaning");
+    }
+}
+
+#[test]
+fn svg_cleaner_refuses_geometry_it_cannot_repair() {
+    let original = br#"<svg viewBox="0 0 32 16"><path d="M0 0 L20 10"/></svg>"#;
+    assert!(clean_svg(original).is_err(), "a non-square viewBox needs a decision from the artist");
+    let malformed = br#"<svg viewBox="0 0 24 24"><metadata>editor</metadata><path d="M0 0 L20 20"/>"#;
+    assert!(clean_svg(malformed).is_err(), "cleaning must not write an unclosed SVG");
+}
+
+#[test]
+fn svg_cleaner_removes_custom_xml_entities_without_leaving_references() {
+    let original = br#"<!DOCTYPE svg [<!ENTITY payload "untrusted">]><svg viewBox="0 0 24 24"><text>&payload;</text><path d="M0 0 L24 24"/></svg>"#;
+    let cleaned = clean_svg(original).expect("entity declaration can be removed");
+    let text = std::str::from_utf8(&cleaned).unwrap();
+    assert!(!text.contains("DOCTYPE") && !text.contains("ENTITY") && !text.contains("&payload;"));
+    assert!(text.contains("M0 0 L24 24"));
+    validate_svg(&cleaned).unwrap();
+}
+
+#[test]
+fn directory_cleaner_updates_single_and_all_repairable_icons() {
+    let root = std::env::temp_dir().join(format!("qymcad_clean_icons_{}", std::process::id()));
+    let icons = root.join("icons/sketch");
+    std::fs::create_dir_all(&icons).expect("create icons directory");
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "clean-icons".into(),
+        name: "Clean Icons".into(),
+        version: "1.0".into(),
+        author: "Test".into(),
+        license: "MIT".into(),
+        description: String::new(),
+        color_mode: ColorMode::Universal,
+        verified: false,
+    };
+    std::fs::write(root.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+    let dirty = br#"<svg viewBox="0 0 24 24"><metadata>editor</metadata><path d="M0 0L24 24"/></svg>"#;
+    let bad_geometry = br#"<svg viewBox="0 0 32 16"><path d="M0 0L20 10"/></svg>"#;
+    std::fs::write(icons.join("line.svg"), dirty).unwrap();
+    std::fs::write(icons.join("circle.svg"), dirty).unwrap();
+    std::fs::write(icons.join("rect.svg"), bad_geometry).unwrap();
+    std::fs::write(icons.join("custom.svg"), dirty).unwrap();
+    std::fs::write(root.join("icon.svg"), dirty).unwrap();
+    let pack = IconPack::from_directory(&root).unwrap();
+
+    assert_eq!(clean_directory_icon(&pack, IconId::SketchLine).unwrap(), CleanIconResult::Cleaned);
+    validate_svg(&std::fs::read(icons.join("line.svg")).unwrap()).unwrap();
+    assert_eq!(clean_directory_icon(&pack, IconId::SketchLine).unwrap(), CleanIconResult::Unchanged);
+    let report = clean_directory_icons(&pack).unwrap();
+    assert_eq!(report.cleaned.len(), 3);
+    for path in ["icons/sketch/circle.svg", "icons/sketch/custom.svg", "icon.svg"] {
+        assert!(report.cleaned.contains(&std::path::PathBuf::from(path)), "bulk clean omitted {path}");
+    }
+    assert_eq!(report.failed.len(), 1);
+    assert_eq!(report.failed[0].path, std::path::PathBuf::from("icons/sketch/rect.svg"));
+    assert_eq!(std::fs::read(icons.join("rect.svg")).unwrap(), bad_geometry);
+    validate_svg(&std::fs::read(icons.join("circle.svg")).unwrap()).unwrap();
+    validate_svg(&std::fs::read(icons.join("custom.svg")).unwrap()).expect("bulk clean includes custom SVG files");
+    validate_svg(&std::fs::read(root.join("icon.svg")).unwrap()).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn manifest_ron_roundtrip() {
     let manifest = IconManifest {
         package_type: PackageType::IconTheme,
