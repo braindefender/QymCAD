@@ -6,5 +6,11 @@
     author: "FreeCAD Project & Community",
     license: "LGPL-2.1-or-later",
     description: "Classic full-color vector icons from FreeCAD",
+    translations: {
+        "ru": (
+            name: "FreeCAD: классические иконки",
+            description: "Классические цветные векторные иконки из FreeCAD",
+        ),
+    },
     color_mode: Universal,
 )

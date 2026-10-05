@@ -6,6 +6,12 @@ use super::id::{IconId, ALL_ICONS};
 use super::manifest::IconManifest;
 use super::pack::IconPack;
 
+fn localized_readme_tag(name: &str) -> Option<&str> {
+    let tag = name.strip_prefix("README.")?.strip_suffix(".md")?;
+    tag.parse::<unic_langid::LanguageIdentifier>().ok()?;
+    Some(tag)
+}
+
 /// Detailed diagnostic report of an icon theme directory or archive.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ValidationReport {
@@ -428,12 +434,20 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
                 let allowed = fname == "manifest.ron"
                     || fname == "icon.svg"
                     || fname.starts_with("LICENSE")
-                    || fname.starts_with("README")
+                    || fname == "README.md"
+                    || fname == "README.txt"
+                    || localized_readme_tag(fname).is_some()
                     || fname.starts_with("preview.")
                     || fname.ends_with(".qicons")
                     || fname.ends_with(".zip");
                 if !allowed {
                     extraneous.push(format!("extra root file: {fname}"));
+                } else if localized_readme_tag(fname).is_some() {
+                    if std::fs::metadata(&p).ok().is_some_and(|metadata| metadata.len() > super::pack::MAX_TEXT_FILE_SIZE) {
+                        rejected.push((fname.to_string(), "localized README exceeds maximum text size".to_string()));
+                    } else if let Err(err) = std::fs::read_to_string(&p) {
+                        rejected.push((fname.to_string(), format!("localized README is not readable UTF-8: {err}")));
+                    }
                 } else if fname == "icon.svg" {
                     if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
                         rejected.push((fname.to_string(), "pack icon exceeds maximum SVG size".to_string()));
@@ -540,6 +554,26 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
                 let _ = std::io::Write::write_all(&mut zip, &content);
             }
         }
+    }
+
+    let mut localized_readmes = std::fs::read_dir(source_dir)
+        .map_err(|err| format!("cannot list localized READMEs: {err}"))?
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            (entry.path().is_file() && localized_readme_tag(&name).is_some()).then_some(name)
+        })
+        .collect::<Vec<_>>();
+    localized_readmes.sort();
+    for name in localized_readmes {
+        let path = source_dir.join(&name);
+        let metadata = std::fs::metadata(&path).map_err(|err| format!("cannot inspect {name}: {err}"))?;
+        if metadata.len() > super::pack::MAX_TEXT_FILE_SIZE {
+            return Err(format!("{name} exceeds maximum text size"));
+        }
+        let content = std::fs::read_to_string(&path).map_err(|err| format!("cannot read {name} as UTF-8: {err}"))?;
+        zip.start_file(&name, options).map_err(|err| err.to_string())?;
+        std::io::Write::write_all(&mut zip, content.as_bytes()).map_err(|err| err.to_string())?;
     }
 
     // 3. Write ONLY the validated icons

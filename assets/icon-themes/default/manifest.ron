@@ -6,5 +6,11 @@
     author: "Phosphor Icons & QymCAD Team",
     license: "MIT",
     description: "Built-in default monochrome SVG vector icons based on Phosphor",
+    translations: {
+        "ru": (
+            name: "QymCAD: стандартные иконки",
+            description: "Встроенные монохромные векторные иконки на основе Phosphor",
+        ),
+    },
     color_mode: Monochrome,
 )

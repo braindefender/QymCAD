@@ -5,7 +5,7 @@ use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
-use super::manifest::{ColorMode, IconManifest, PackageType};
+use super::manifest::{locale_fallbacks, ColorMode, IconManifest, PackageType};
 
 const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes/default/icon.svg"));
 
@@ -231,6 +231,7 @@ impl IconPack {
                 license: "Unknown".to_string(),
                 description: "Imported ZIP archive (unverified)".to_string(),
                 color_mode: ColorMode::Universal,
+                translations: Default::default(),
                 verified: false,
             }
         };
@@ -428,10 +429,18 @@ impl IconPack {
 
     /// Retrieve README markdown text for this icon pack, or fallback to a formatted manifest description.
     pub fn get_readme(&self) -> String {
+        self.get_readme_for_locale("")
+    }
+
+    /// Retrieve the requested language's README, then the base README or manifest text.
+    pub fn get_readme_for_locale(&self, locale: &str) -> String {
         let try_file = |name: &str| -> Option<String> {
             match &self.source {
                 PackSource::Directory(base) => {
                     let p = base.join(name);
+                    if std::fs::metadata(&p).ok()?.len() > MAX_TEXT_FILE_SIZE {
+                        return None;
+                    }
                     std::fs::read_to_string(p).ok()
                 }
                 PackSource::Archive(archive_path) => {
@@ -448,9 +457,16 @@ impl IconPack {
                     }
                     Some(s)
                 }
-                PackSource::Memory(map) => map.get(name).and_then(|bytes| String::from_utf8(bytes.clone()).ok()),
+                PackSource::Memory(map) => map.get(name).filter(|bytes| bytes.len() as u64 <= MAX_TEXT_FILE_SIZE).and_then(|bytes| String::from_utf8(bytes.clone()).ok()),
             }
         };
+
+        for tag in locale_fallbacks(locale) {
+            let candidate = format!("README.{tag}.md");
+            if let Some(text) = try_file(&candidate).filter(|text| !text.trim().is_empty()) {
+                return text;
+            }
+        }
 
         for candidate in &["README.md", "readme.md", "README.txt", "description.md"] {
             if let Some(text) = try_file(candidate) {
@@ -461,9 +477,10 @@ impl IconPack {
         }
 
         // Fallback: build markdown text from manifest
-        let mut out = format!("# {}\n\n", self.manifest.name);
-        if !self.manifest.description.is_empty() {
-            out.push_str(&self.manifest.description);
+        let mut out = format!("# {}\n\n", self.manifest.name_for_locale(locale));
+        let description = self.manifest.description_for_locale(locale);
+        if !description.is_empty() {
+            out.push_str(description);
             out.push_str("\n\n");
         }
         out.push_str(&format!(

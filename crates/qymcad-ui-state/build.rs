@@ -172,12 +172,20 @@ fn main() {
     zip.start_file("icon.svg", options).expect("writes pack icon into zip");
     zip.write_all(&pack_icon).expect("writes pack icon bytes");
 
-    // Write README.md if present
-    let readme_path = default_theme_dir.join("README.md");
-    if readme_path.is_file() {
-        let readme_content = fs::read(&readme_path).expect("readme reads");
-        zip.start_file("README.md", options).expect("writes readme into zip");
-        zip.write_all(&readme_content).expect("writes readme bytes");
+    // Include the base and localized descriptions in the embedded archive.
+    let mut readmes = fs::read_dir(&default_theme_dir)
+        .expect("lists default theme files")
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            (entry.path().is_file() && (name == "README.md" || (name.starts_with("README.") && name.ends_with(".md")))).then_some((name, entry.path()))
+        })
+        .collect::<Vec<_>>();
+    readmes.sort_by(|left, right| left.0.cmp(&right.0));
+    for (name, path) in readmes {
+        let content = fs::read(&path).expect("localized readme reads");
+        zip.start_file(name, options).expect("writes localized readme into zip");
+        zip.write_all(&content).expect("writes localized readme bytes");
     }
 
     // Walk and write all SVGs

@@ -26,6 +26,8 @@ An icon theme is either a directory on disk or a ZIP archive renamed with the `.
 my-theme.qicons (or directory my-theme/)
 ├── manifest.ron
 ├── icon.svg
+├── README.md
+├── README.ru.md
 └── icons/
     ├── sketch/
     │   ├── line.svg
@@ -84,6 +86,14 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
     // Short summary describing the theme
     description: "Classic multi-color CAD tool icons from FreeCAD",
 
+    // Optional translated display text, keyed by language tag
+    translations: {
+        "ru": (
+            name: "FreeCAD: классические иконки",
+            description: "Классические цветные иконки инструментов CAD",
+        ),
+    },
+
     // Color rendering mode: Universal (full-color) | Monochrome
     color_mode: Universal,
 )
@@ -100,7 +110,18 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
 | `author` | `String` | No | Author, maintainer, or contributing community. |
 | `license` | `String` | No | SPDX license identifier or license name. |
 | `description` | `String` | No | Concise description of the pack. |
+| `translations` | map of language tags to `(name, description)` | No | Translated display text. Either translated field may be omitted. |
 | `color_mode` | `ColorMode` | No (default `Universal`) | Color rendering behavior (see below). |
+
+---
+
+### Localized names and documentation
+
+Keep `name` and `description` as the base text in `manifest.ron`. Add translations under BCP 47 language tags such as `ru` or `pt-BR`. The manager displays a matching translation for the current interface language. If there is no exact match, it tries the primary language (`pt-BR` -> `pt`), then the base field. Missing translated fields also fall back separately.
+
+Place a full description in `README.md` and optional translations beside it, named `README.<language-tag>.md`, for example `README.ru.md` or `README.pt-BR.md`. The same language fallback applies to README files. If no README is available, the manager builds a short description from the localized manifest text. Localized README files are included by the built-in packager.
+
+The package ID, author, license, version and color mode are shared across languages. Existing themes without translations continue to use their base text.
 
 ---
 
@@ -301,7 +322,7 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 A `.qicons` file is simply a standard ZIP archive compressed with Deflate:
 ```bash
 cd my-custom-theme/
-zip -r ../my-custom-theme.qicons manifest.ron icons/
+zip -r ../my-custom-theme.qicons manifest.ron README*.md icons/
 ```
 You can also use the built-in Packager UI directly inside QymCAD (**Settings -> Icon Themes -> Package Theme**).
 

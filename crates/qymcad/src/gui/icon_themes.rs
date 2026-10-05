@@ -251,7 +251,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
 
         for id in &wc.set.active_icon_packs {
             if let Some(pack) = all_packs.iter().find(|p| &p.manifest.id == id) {
-                ui.label(egui::RichText::new(&pack.manifest.name).strong());
+                ui.label(egui::RichText::new(pack.manifest.name_for_locale(&crate::i18n::language())).strong());
                 draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
                 ui.label(egui::RichText::new(ph::ARROW_RIGHT).weak());
             } else {
@@ -261,7 +261,12 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
         }
 
         // Base fallback is always the built-in SVG bundle
-        ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-base")).strong());
+        let base_name = all_packs
+            .iter()
+            .find(|pack| pack.manifest.id == "default")
+            .map(|pack| pack.manifest.name_for_locale(&crate::i18n::language()).to_string())
+            .unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base"));
+        ui.label(egui::RichText::new(base_name).strong());
         draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
     });
 
@@ -367,19 +372,24 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                     state.message = Some("Output .qicons path cannot be empty".into());
                     state.is_error = true;
                 } else {
-                    let manifest = IconManifest {
-                        package_type: PackageType::IconTheme,
-                        id: state.id.trim().to_string(),
-                        name: state.name.trim().to_string(),
-                        version: state.version.trim().to_string(),
-                        author: state.author.trim().to_string(),
-                        license: state.license.trim().to_string(),
-                        description: state.description.trim().to_string(),
-                        color_mode: if state.is_monochrome { ColorMode::Monochrome } else { ColorMode::Universal },
-                        verified: true,
-                    };
+                    let result = (|| {
+                        let translations = if source_path.join("manifest.ron").exists() { IconPack::from_directory(&source_path)?.manifest.translations } else { Default::default() };
+                        let manifest = IconManifest {
+                            package_type: PackageType::IconTheme,
+                            id: state.id.trim().to_string(),
+                            name: state.name.trim().to_string(),
+                            version: state.version.trim().to_string(),
+                            author: state.author.trim().to_string(),
+                            license: state.license.trim().to_string(),
+                            description: state.description.trim().to_string(),
+                            color_mode: if state.is_monochrome { ColorMode::Monochrome } else { ColorMode::Universal },
+                            translations,
+                            verified: true,
+                        };
+                        package_bundle(&source_path, &manifest, &output_path)
+                    })();
 
-                    match package_bundle(&source_path, &manifest, &output_path) {
+                    match result {
                         Ok(rep) => {
                             if rep.included.is_empty() {
                                 state.message = Some(crate::i18n::tr("icon-packager-no-icons"));
@@ -536,7 +546,7 @@ struct ManagerPackPreview {
     coverage: usize,
     invalid_icons: usize,
     image_generation: u64,
-    readme: String,
+    readmes: std::collections::HashMap<String, String>,
     preview_image: Option<ManagerPreviewImage>,
     pack_icon: egui::load::Bytes,
     icons: std::collections::HashMap<IconId, ManagerIconPreview>,
@@ -574,7 +584,7 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
         coverage,
         invalid_icons,
         image_generation: 0,
-        readme: snapshot.get_readme(),
+        readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), snapshot.get_readme_for_locale(&locale))).collect(),
         preview_image: snapshot.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
         pack_icon: snapshot.get_pack_icon_svg().into(),
         icons,
@@ -594,6 +604,17 @@ fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std
         let file = path.join(name);
         if let Ok(metadata) = std::fs::metadata(file) {
             snapshot.insert(PathBuf::from(name), (metadata.modified().unwrap_or(std::time::UNIX_EPOCH), metadata.len()));
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("README.") && name.ends_with(".md") {
+                if let Ok(metadata) = entry.metadata() {
+                    snapshot.insert(PathBuf::from(name.as_ref()), (metadata.modified().unwrap_or(std::time::UNIX_EPOCH), metadata.len()));
+                }
+            }
         }
     }
     let revision = qymcad_ui_state::icons::get_global_icon_revision();
@@ -624,7 +645,7 @@ fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std
         coverage,
         invalid_icons,
         image_generation,
-        readme: pack.get_readme(),
+        readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), pack.get_readme_for_locale(&locale))).collect(),
         preview_image: pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
         pack_icon: pack.get_pack_icon_svg().into(),
         icons,
@@ -699,6 +720,7 @@ pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
 }
 
 fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: &[PathBuf]) {
+    let locale = crate::i18n::language();
     let mut state = ctx.data_mut(|d| d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window")).clone());
 
     let mut packager_state = ctx.data_mut(|d| d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog")).clone());
@@ -769,7 +791,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                     ui.add_sized([36.0, 36.0], egui::Label::new(ph::PACKAGE));
                                 }
                                 ui.vertical(|ui| {
-                                    let name = pack_opt.map(|p| p.manifest.name.as_str()).unwrap_or(id.as_str());
+                                    let name = pack_opt.map(|p| p.manifest.name_for_locale(&locale)).unwrap_or(id.as_str());
                                     let title = format!("{:02}  {name}", idx + 1);
                                     ui.add_sized([text_width, 26.0], egui::Label::new(title).truncate()).on_hover_text(name);
                                     if let Some(p) = pack_opt {
@@ -811,13 +833,15 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     // Base fallback
                     let (clicked, _) = manager_theme_card(ui, "default", state.selected_pack_id == "default", |ui| {
                         let text_width = (ui.available_width() - 44.0).max(110.0);
+                        let base_pack = all_packs.iter().find(|pack| pack.manifest.id == "default");
                         ui.horizontal(|ui| {
-                            if let Some(pack) = all_packs.iter().find(|p| p.manifest.id == "default") {
+                            if let Some(pack) = base_pack {
                                 draw_pack_icon(ui, pack, 36.0);
                             }
                             ui.vertical(|ui| {
-                                ui.add_sized([text_width, 26.0], egui::Label::new(crate::i18n::tr("settings-icon-themes-base")).truncate())
-                                    .on_hover_text(crate::i18n::tr("settings-icon-themes-base-desc"));
+                                let name = base_pack.map(|pack| pack.manifest.name_for_locale(&locale).to_string()).unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base"));
+                                let description = base_pack.map(|pack| pack.manifest.description_for_locale(&locale).to_string()).unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base-desc"));
+                                ui.add_sized([text_width, 26.0], egui::Label::new(name).truncate()).on_hover_text(description);
                                 draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
                             });
                         });
@@ -849,7 +873,8 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             ui.horizontal(|ui| {
                                 draw_pack_icon(ui, p, 36.0);
                                 ui.vertical(|ui| {
-                                    ui.add_sized([text_width, 26.0], egui::Label::new(&p.manifest.name).truncate()).on_hover_text(&p.manifest.name);
+                                    let name = p.manifest.name_for_locale(&locale);
+                                    ui.add_sized([text_width, 26.0], egui::Label::new(name).truncate()).on_hover_text(name);
                                     ui.horizontal(|ui| {
                                         draw_bundle_format_badge(ui, p.format(), p.is_tampered);
                                         if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
@@ -918,7 +943,11 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             draw_pack_icon(ui, pack, 48.0);
                         }
                         ui.vertical(|ui| {
-                            ui.label(egui::RichText::new(&pack.manifest.name).heading().strong());
+                            ui.label(egui::RichText::new(pack.manifest.name_for_locale(&locale)).heading().strong());
+                            let description = pack.manifest.description_for_locale(&locale);
+                            if !description.is_empty() {
+                                ui.label(egui::RichText::new(description).small().weak());
+                            }
                             ui.horizontal(|ui| {
                                 draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
                                 if let PackSource::Directory(source) = &pack.source {
@@ -1089,7 +1118,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 ui.separator();
                             }
 
-                            let readme_md = pack_preview.as_ref().map_or_else(|| pack.get_readme(), |preview| preview.readme.clone());
+                            let readme_md = pack_preview.as_ref().and_then(|preview| preview.readmes.get(&locale)).cloned().unwrap_or_else(|| pack.get_readme_for_locale(&locale));
                             crate::gui::help_window::markdown(&wc.scheme.pal, ui, &readme_md);
                         });
                     }
@@ -1221,6 +1250,37 @@ mod tests {
     }
 
     #[test]
+    fn default_theme_card_uses_the_bundle_translation() {
+        use crate::gui::App;
+
+        let previous_language = crate::i18n::language();
+        crate::i18n::set_language("ru");
+        let mut app = App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let dirs = [bundled_themes_dir()];
+        let mut draw = || {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs))
+        };
+        let _ = draw();
+        let output = draw();
+        fn has_sidebar_text(shape: &egui::epaint::Shape, expected: &str) -> bool {
+            match shape {
+                egui::epaint::Shape::Text(text) => text.pos.x < 360.0 && text.galley.text() == expected,
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().any(|shape| has_sidebar_text(shape, expected)),
+                _ => false,
+            }
+        }
+        let default = load_default_pack().expect("embedded default theme");
+        let translated = default.manifest.name_for_locale("ru");
+        assert!(output.shapes.iter().any(|shape| has_sidebar_text(&shape.shape, translated)), "base card must show its bundle's Russian name");
+        crate::i18n::set_language(&previous_language);
+    }
+
+    #[test]
     fn test_bundled_freecad_classic_pack_discovered() {
         let bundled = bundled_themes_dir();
         let packs = discover_packs_in(&bundled);
@@ -1255,13 +1315,15 @@ mod tests {
         }
         let _ = draw(vec![]);
         let output = draw(vec![]);
-        let base_title = crate::i18n::tr("settings-icon-themes-base");
+        let base_title = load_default_pack().expect("embedded default theme").manifest.name_for_locale(&crate::i18n::language()).to_string();
         let base = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, &base_title)).expect("base theme card");
         let base_click = |pressed| egui::Event::PointerButton { pos: base, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let _ = draw(vec![egui::Event::PointerMoved(base)]);
         let _ = draw(vec![base_click(true)]);
         let output = draw(vec![base_click(false)]);
-        let at = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, "FreeCAD Classic")).expect("bundled FreeCAD card");
+        let freecad = IconPack::from_directory(bundled_themes_dir().join("freecad")).expect("bundled FreeCAD theme");
+        let name = freecad.manifest.name_for_locale(&crate::i18n::language());
+        let at = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, name)).expect("bundled FreeCAD card");
         let click = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let _ = draw(vec![egui::Event::PointerMoved(at)]);
         let _ = draw(vec![click(true)]);
@@ -1314,6 +1376,7 @@ mod tests {
                 license: "MIT".into(),
                 description: String::new(),
                 color_mode: ColorMode::Universal,
+                translations: Default::default(),
                 verified: false,
             },
             source: PackSource::Directory(root.clone()),
@@ -1322,6 +1385,11 @@ mod tests {
         let ctx = egui::Context::default();
         let empty = manager_directory_preview(&ctx, &pack).expect("initial preview");
         assert_eq!(empty.coverage, 0);
+        assert!(empty.readmes.get("ru").is_some(), "preview must cache text for the Russian interface");
+        std::fs::write(root.join("README.ru.md"), "# Русское описание").expect("add localized README");
+        let localized = manager_directory_preview(&ctx, &pack).expect("preview after adding localized README");
+        assert_eq!(localized.readmes.get("ru").map(String::as_str), Some("# Русское описание"));
+        assert!(!std::sync::Arc::ptr_eq(&empty, &localized), "new localized text must refresh the preview cache");
         let file = icon_dir.join("line.svg");
         std::fs::write(&file, br#"<svg viewBox="0 0 24 24"><path d="M0 0 L24 24"/></svg>"#).expect("add SVG");
         let added = manager_directory_preview(&ctx, &pack).expect("preview after adding SVG");
@@ -1519,7 +1587,9 @@ mod tests {
         for shape in &output.shapes {
             labels_in(&shape.shape, &mut labels);
         }
-        let available_copies = labels.iter().filter(|label| label.rect.left() < 300.0 && label.rect.top() > 300.0 && label.text == "FreeCAD Classic").count();
+        let freecad = IconPack::from_directory(bundled_themes_dir().join("freecad")).expect("bundled FreeCAD theme");
+        let name = freecad.manifest.name_for_locale(&crate::i18n::language());
+        let available_copies = labels.iter().filter(|label| label.rect.left() < 300.0 && label.rect.top() > 300.0 && label.text == name).count();
         assert_eq!(available_copies, 0, "deactivation paints the new card before the next frame");
     }
 
@@ -1613,6 +1683,7 @@ mod tests {
             license: "MIT".into(),
             description: String::new(),
             color_mode: ColorMode::Universal,
+            translations: Default::default(),
             verified: false,
         };
         std::fs::write(theme.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
@@ -1721,6 +1792,7 @@ mod tests {
                 license: "MIT".into(),
                 description: String::new(),
                 color_mode: ColorMode::Universal,
+                translations: Default::default(),
                 verified: false,
             },
             source: qymcad_ui_state::icons::PackSource::Memory(icons),

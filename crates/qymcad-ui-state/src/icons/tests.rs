@@ -42,6 +42,7 @@ fn gallery_inspection_distinguishes_missing_and_invalid_icons() {
             license: "MIT".to_string(),
             description: String::new(),
             color_mode: ColorMode::Universal,
+            translations: Default::default(),
             verified: false,
         },
         source: PackSource::Memory(icons),
@@ -106,6 +107,7 @@ fn directory_cleaner_updates_single_and_all_repairable_icons() {
         license: "MIT".into(),
         description: String::new(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(root.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
@@ -146,6 +148,7 @@ fn manifest_ron_roundtrip() {
         license: "LGPL-2.1-or-later".to_string(),
         description: "Classic colored tool icons".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
 
@@ -160,6 +163,44 @@ fn manifest_ron_roundtrip() {
     monochrome.color_mode = ColorMode::Monochrome;
     let parsed = IconManifest::parse_ron(&monochrome.to_ron().expect("monochrome manifest serializes")).expect("monochrome manifest parses");
     assert_eq!(parsed.color_mode, ColorMode::Monochrome);
+}
+
+#[test]
+fn localized_bundle_text_survives_packaging() {
+    let root = std::env::temp_dir().join(format!("qymcad_localized_bundle_{}", std::process::id()));
+    let icons = root.join("icons/sketch");
+    std::fs::create_dir_all(&icons).expect("create icon folder");
+    std::fs::write(icons.join("line.svg"), br#"<svg viewBox="0 0 24 24"><path d="M0 0 L24 24"/></svg>"#).expect("write SVG");
+    let manifest = r#"(
+        id: "localized-test",
+        name: "Color Icons",
+        description: "Base description",
+        color_mode: Universal,
+        translations: {
+            "ru": (name: "Цветные иконки", description: "Русское описание"),
+        },
+    )"#;
+    std::fs::write(root.join("manifest.ron"), manifest).expect("write manifest");
+    std::fs::write(root.join("README.md"), "# Base documentation").expect("write base README");
+    std::fs::write(root.join("README.ru.md"), "# Русская документация").expect("write Russian README");
+    let folder = IconPack::from_directory(&root).expect("localized folder loads");
+    assert_eq!(folder.manifest.name_for_locale("ru"), "Цветные иконки");
+    assert_eq!(folder.manifest.description_for_locale("ru-RU"), "Русское описание");
+    assert_eq!(folder.manifest.name_for_locale("de"), "Color Icons");
+    assert_eq!(folder.get_readme_for_locale("ru"), "# Русская документация");
+    assert_eq!(folder.get_readme_for_locale("ru-RU"), "# Русская документация");
+    assert_eq!(folder.get_readme_for_locale("de"), "# Base documentation");
+    let no_readme = IconPack { manifest: folder.manifest.clone(), source: PackSource::Memory(HashMap::new()), is_tampered: false };
+    let generated = no_readme.get_readme_for_locale("ru-RU");
+    assert!(generated.starts_with("# Цветные иконки\n\nРусское описание"), "missing README uses localized manifest text");
+
+    let archive = root.join("localized-test.qicons");
+    package_bundle(&root, &folder.manifest, &archive).expect("package localized folder");
+    let packed = IconPack::from_archive(&archive).expect("localized archive loads");
+    assert_eq!(packed.manifest.name_for_locale("ru"), "Цветные иконки");
+    assert_eq!(packed.get_readme_for_locale("ru-RU"), "# Русская документация");
+    assert_eq!(packed.get_readme_for_locale("de"), "# Base documentation");
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -185,6 +226,7 @@ fn cascade_fallback_chain() {
             license: "MIT".to_string(),
             description: "".to_string(),
             color_mode: ColorMode::Monochrome,
+            translations: Default::default(),
             verified: false,
         },
         source: PackSource::Memory(map_a),
@@ -204,6 +246,7 @@ fn cascade_fallback_chain() {
             license: "MIT".to_string(),
             description: "".to_string(),
             color_mode: ColorMode::Universal,
+            translations: Default::default(),
             verified: false,
         },
         source: PackSource::Memory(map_b),
@@ -282,6 +325,7 @@ fn package_bundle_and_load_from_archive() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().expect("manifest serializes")).expect("writes manifest");
@@ -324,6 +368,7 @@ fn missing_or_invalid_pack_icon_uses_default() {
         license: "MIT".into(),
         description: String::new(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(dir.join("manifest.ron"), manifest.to_ron().expect("manifest serializes")).expect("writes manifest");
@@ -398,6 +443,7 @@ fn inspect_and_package_excludes_problematic_files() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
 
@@ -432,6 +478,8 @@ fn inspect_and_package_excludes_problematic_files() {
 fn default_embedded_pack_is_valid_and_complete() {
     let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
     assert_eq!(pack.manifest.id, "default");
+    assert_eq!(pack.manifest.name_for_locale("ru"), "QymCAD: стандартные иконки");
+    assert!(pack.get_readme_for_locale("ru").starts_with("# Стандартная тема векторных иконок"), "embedded bundle must include its localized README");
     assert_eq!(pack.manifest.color_mode, ColorMode::Monochrome);
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
     assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
@@ -477,6 +525,7 @@ fn global_icon_manager_cascade() {
             license: "MIT".to_string(),
             description: "Test".to_string(),
             color_mode: ColorMode::Universal,
+            translations: Default::default(),
             verified: false,
         },
         source: PackSource::Memory(map),
@@ -515,6 +564,7 @@ fn discover_packs_in_directory() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(theme_a.join("manifest.ron"), manifest_a.to_ron().unwrap()).unwrap();
@@ -542,6 +592,8 @@ fn freecad_theme_is_complete_and_valid() {
 
     let pack = IconPack::from_directory(&freecad_dir).expect("FreeCAD theme must load from directory");
     assert_eq!(pack.manifest.id, "freecad-classic");
+    assert_eq!(pack.manifest.name_for_locale("ru"), "FreeCAD: классические иконки");
+    assert!(pack.get_readme_for_locale("ru").starts_with("# Классическая тема иконок FreeCAD"), "FreeCAD theme must include its localized README");
     assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
     assert_eq!(pack.format(), BundleFormat::Embedded);
     assert!(!pack.is_directory());
@@ -590,6 +642,7 @@ fn bundle_format_and_provenance_detection() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(folder_pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
@@ -627,6 +680,7 @@ fn live_watch_folder_auto_reload_on_svg_change() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
@@ -698,6 +752,7 @@ fn missing_directory_icons_do_not_block_coverage() {
         license: "MIT".to_string(),
         description: String::new(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().expect("serialize manifest")).expect("write manifest");
@@ -725,6 +780,7 @@ fn test_successive_folder_live_reloads_do_not_stop_after_3_times() {
         license: "MIT".to_string(),
         description: "Testing continuous updates".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
@@ -784,6 +840,7 @@ fn qicons_valid_trailer_and_tampered_downgrade() {
         license: "MIT".to_string(),
         description: "Test".to_string(),
         color_mode: ColorMode::Universal,
+        translations: Default::default(),
         verified: false,
     };
     std::fs::write(pack_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
