@@ -122,13 +122,14 @@ struct GalleryRowResponse {
     path_copied: bool,
 }
 
-fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &ManagerIconPreview, cleanable: bool, generation: u64) -> GalleryRowResponse {
+fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &ManagerIconPreview, cleanable: bool, generation: u64, copied_path: Option<&str>) -> GalleryRowResponse {
     let relative_path = id.relative_path();
     let archive_path = format!("icons/{relative_path}.svg");
     let name = relative_path.rsplit('/').next().unwrap_or(relative_path);
     let row_width = ui.available_width();
     let mut clean_clicked = false;
     let mut path_copied = false;
+    let is_copied = copied_path == Some(archive_path.as_str());
     let rect = egui::Frame::NONE
         .fill(ui.visuals().faint_bg_color)
         .corner_radius(6.0)
@@ -159,15 +160,32 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                 ui.vertical(|ui| {
                     ui.set_max_width(text_width);
                     ui.label(egui::RichText::new(name).strong());
-                    if ui
-                        .add(egui::Label::new(egui::RichText::new(&archive_path).monospace().small().weak()).wrap().sense(egui::Sense::click()))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text(crate::i18n::tr("icon-mgr-copy-path"))
-                        .clicked()
-                    {
-                        ui.output_mut(|output| output.commands.push(egui::OutputCommand::CopyText(archive_path.clone())));
-                        path_copied = true;
-                    }
+
+                    let path_text = egui::RichText::new(&archive_path).monospace().small();
+                    let path_label = if is_copied { path_text.color(ui.visuals().hyperlink_color) } else { path_text.weak() };
+                    ui.horizontal_wrapped(|ui| {
+                        let resp = ui.add(egui::Label::new(path_label).sense(egui::Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if is_copied {
+                            crate::i18n::tr("icon-mgr-path-copied")
+                        } else {
+                            crate::i18n::tr("icon-mgr-copy-path")
+                        });
+
+                        if resp.clicked() {
+                            ui.output_mut(|output| output.commands.push(egui::OutputCommand::CopyText(archive_path.clone())));
+                            path_copied = true;
+                        }
+
+                        if is_copied {
+                            egui::Frame::NONE
+                                .fill(ui.visuals().window_fill())
+                                .stroke(egui::Stroke::new(1.0, ui.visuals().hyperlink_color))
+                                .corner_radius(4.0)
+                                .inner_margin(egui::Margin::symmetric(6, 2))
+                                .show(ui, |ui| {
+                                    ui.label(egui::RichText::new(format!("{} {}", ph::CHECK, crate::i18n::tr("icon-mgr-path-copied"))).small().color(ui.visuals().hyperlink_color));
+                                });
+                        }
+                    });
                     match &icon {
                         Ok(Some(_)) => {
                             ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-gallery-present")).small().weak());
@@ -502,6 +520,7 @@ pub(crate) struct IconManagerState {
     pub search_query: String,
     pub category_filter: String,
     clean_notice: Option<CleanNotice>,
+    copied_path: Option<(String, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -514,7 +533,15 @@ struct CleanNotice {
 
 impl Default for IconManagerState {
     fn default() -> Self {
-        Self { is_open: false, selected_pack_id: "freecad-classic".into(), active_tab: IconManagerTab::Readme, search_query: String::new(), category_filter: "all".into(), clean_notice: None }
+        Self {
+            is_open: false,
+            selected_pack_id: "freecad-classic".into(),
+            active_tab: IconManagerTab::Readme,
+            search_query: String::new(),
+            category_filter: "all".into(),
+            clean_notice: None,
+            copied_path: None,
+        }
     }
 }
 
@@ -1154,6 +1181,16 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         let q = state.search_query.trim().to_lowercase();
                         let cat_filter = state.category_filter.as_str();
 
+                        let now = ui.input(|i| i.time);
+                        if let Some((_, copied_at)) = state.copied_path {
+                            if now - copied_at >= 2.0 {
+                                state.copied_path = None;
+                            } else {
+                                ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                            }
+                        }
+                        let active_copied_path = state.copied_path.as_ref().map(|(p, _)| p.clone());
+
                         egui::ScrollArea::vertical().id_salt("mgr_gallery_scroll").auto_shrink([false, false]).show(ui, |ui| {
                             let mut shown = 0;
                             for &id in ALL_ICONS {
@@ -1166,10 +1203,10 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 }
                                 shown += 1;
                                 let row = if let Some(icon) = pack_preview.as_ref().and_then(|preview| preview.icons.get(&id)) {
-                                    draw_gallery_icon_row(ui, pack, id, icon, folder_source, pack_preview.as_ref().map_or(0, |preview| preview.image_generation))
+                                    draw_gallery_icon_row(ui, pack, id, icon, folder_source, pack_preview.as_ref().map_or(0, |preview| preview.image_generation), active_copied_path.as_deref())
                                 } else {
                                     let icon = pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
-                                    draw_gallery_icon_row(ui, pack, id, &icon, folder_source, 0)
+                                    draw_gallery_icon_row(ui, pack, id, &icon, folder_source, 0, active_copied_path.as_deref())
                                 };
                                 if row.clean_clicked {
                                     ui.scroll_to_rect(row.rect, Some(egui::Align::Center));
@@ -1195,7 +1232,8 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                     }
                                 }
                                 if row.path_copied {
-                                    state.clean_notice = Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icon-mgr-path-copied"), is_error: false, details: Vec::new() });
+                                    state.copied_path = Some((format!("icons/{}.svg", id.relative_path()), now));
+                                    ctx.request_repaint();
                                 }
                                 ui.add_space(4.0);
                             }
@@ -1809,10 +1847,10 @@ mod tests {
             ui.set_width(380.0);
             let line = qymcad_ui_state::icons::IconId::SketchLine;
             let line_icon = pack.inspect_svg_for_id(line).map(|data| data.map(egui::load::Bytes::from));
-            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, line, &line_icon, false, 0).rect);
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, line, &line_icon, false, 0, None).rect);
             let longest_path = ALL_ICONS.iter().copied().max_by_key(|id| id.relative_path().len()).unwrap();
             let longest_icon = pack.inspect_svg_for_id(longest_path).map(|data| data.map(egui::load::Bytes::from));
-            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path, &longest_icon, false, 0).rect);
+            rows.borrow_mut().push(draw_gallery_icon_row(ui, &pack, longest_path, &longest_icon, false, 0, None).rect);
         });
         let rows = rows.borrow();
         assert!(rows[0].width() <= 380.0, "a gallery row expands the panel");
