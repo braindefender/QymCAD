@@ -2408,7 +2408,6 @@ settings-icon-themes-base-desc = Built-in 100% complete vector fallback bundle
 settings-icon-open-folder = Open Theme Folder
 settings-icon-refresh = Reload Themes
 settings-icon-active-chain = Active cascade:
-settings-icon-watch-folder = Watch folder for changes (Live reload)
 settings-icon-watch-folder-only = Live reload is available only for folder-based themes
 settings-icon-reload-now = Reload Now
 icon-mgr-watch-this-pack = Watch this folder for live changes (Live reload)

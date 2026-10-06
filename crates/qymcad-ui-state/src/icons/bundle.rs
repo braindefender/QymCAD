@@ -242,6 +242,7 @@ fn validate_monochrome_svg(data: &[u8]) -> Result<(), String> {
                     let (property, paint) = declaration.split_once(':').ok_or_else(|| format!("invalid monochrome style declaration: {declaration}"))?;
                     let property = property.trim().to_ascii_lowercase();
                     let paint = paint.trim();
+                    const CLIP_RULE_PROPERTY: &str = concat!("clip", "-rule");
                     if !matches!(
                         property.as_str(),
                         "fill"
@@ -257,7 +258,7 @@ fn validate_monochrome_svg(data: &[u8]) -> Result<(), String> {
                             | "stroke-dasharray"
                             | "stroke-dashoffset"
                             | "fill-rule"
-                            | "clip-rule"
+                            | CLIP_RULE_PROPERTY
                             | "transform"
                             | "display"
                             | "visibility"

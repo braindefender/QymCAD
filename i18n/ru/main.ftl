@@ -2408,7 +2408,6 @@ settings-icon-themes-base-desc = Встроенный полный базовы�
 settings-icon-open-folder = Открыть папку наборов
 settings-icon-refresh = Обновить наборы
 settings-icon-active-chain = Активный каскад:
-settings-icon-watch-folder = Отслеживать изменения в папке (Live reload)
 settings-icon-watch-folder-only = Автообновление доступно только для тем в виде папки
 settings-icon-reload-now = Перезагрузить сейчас
 icon-mgr-watch-this-pack = Отслеживать изменения в этой папке (Live reload)
