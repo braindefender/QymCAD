@@ -317,6 +317,8 @@ impl IconPack {
     /// Load an embedded icon pack from in-memory ZIP archive bytes (e.g. from `include_bytes!`).
     pub fn from_embedded_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
         let mut pack = Self::from_zip_bytes(bytes)?;
+        pack.manifest.verified = true;
+        pack.is_tampered = false;
         if let PackSource::Memory(map) = pack.source {
             pack.source = PackSource::Embedded(map);
         }

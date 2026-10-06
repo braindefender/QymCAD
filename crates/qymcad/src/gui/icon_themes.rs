@@ -5,8 +5,9 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory_for_mode, load_default_pack, package_bundle,
-    reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport, ALL_ICONS,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory_for_mode, load_builtin_packs,
+    load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport,
+    ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::{Path, PathBuf};
@@ -202,6 +203,34 @@ fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> DiscoveredThemes {
     }
 
     themes
+}
+
+/// Discovers all icon theme packs across given directories. Any theme matching a built-in ID
+/// is loaded from the binary as an embedded pack (preventing loose disk directories from exposing
+/// folder-only development controls), and all remaining built-in themes are guaranteed to be present.
+fn discover_all_theme_packs(dirs: &[PathBuf]) -> DiscoveredThemes {
+    let discovered = discover_theme_packs_in_dirs(dirs);
+    let builtin_packs = load_builtin_packs();
+    let mut packs = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for pack in discovered.packs {
+        if let Some(builtin) = builtin_packs.iter().find(|b| b.manifest.id == pack.manifest.id) {
+            if seen_ids.insert(builtin.manifest.id.clone()) {
+                packs.push(builtin.clone());
+            }
+        } else if seen_ids.insert(pack.manifest.id.clone()) {
+            packs.push(pack);
+        }
+    }
+
+    for builtin in builtin_packs {
+        if seen_ids.insert(builtin.manifest.id.clone()) {
+            packs.push(builtin);
+        }
+    }
+
+    DiscoveredThemes { packs, errors: discovered.errors }
 }
 
 /// Apply the active icon packs from settings into the global icon manager.
@@ -412,7 +441,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
     ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-desc")).small().weak());
     ui.add_space(4.0);
 
-    let mut all_packs = discover_theme_packs_in_dirs(&all_theme_dirs()).packs;
+    let mut all_packs = discover_all_theme_packs(&all_theme_dirs()).packs;
     if !all_packs.iter().any(|p| p.manifest.id == "default") {
         if let Some(def) = load_default_pack() {
             all_packs.push(def);
@@ -697,15 +726,7 @@ struct CleanNotice {
 
 impl Default for IconManagerState {
     fn default() -> Self {
-        Self {
-            is_open: false,
-            selected_pack_id: "freecad-classic".into(),
-            active_tab: IconManagerTab::Readme,
-            search_query: String::new(),
-            category_filter: "all".into(),
-            clean_notice: None,
-            copied_path: None,
-        }
+        Self { is_open: false, selected_pack_id: String::new(), active_tab: IconManagerTab::Readme, search_query: String::new(), category_filter: "all".into(), clean_notice: None, copied_path: None }
     }
 }
 
@@ -741,6 +762,44 @@ struct ManagerPackPreview {
     preview_image: Option<ManagerPreviewImage>,
     pack_icon: egui::load::Bytes,
     icons: std::collections::HashMap<IconId, ManagerIconPreview>,
+}
+
+fn manager_embedded_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerPackPreview>> {
+    let PackSource::Embedded(_) = &pack.source else {
+        return None;
+    };
+    let cache_id = egui::Id::new("icon_manager_embedded_cache").with(&pack.manifest.id);
+    if let Some(cached) = ctx.data(|data| data.get_temp::<std::sync::Arc<ManagerPackPreview>>(cache_id)) {
+        return Some(cached);
+    }
+    let mut coverage = 0;
+    let mut invalid_icons = 0;
+    let mut icons = std::collections::HashMap::new();
+    for &id in ALL_ICONS {
+        let available = pack.get_svg_for_id(id).is_some();
+        if available {
+            coverage += 1;
+        }
+        let inspected = pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
+        if inspected.is_err() {
+            invalid_icons += 1;
+        }
+        icons.insert(id, inspected);
+    }
+    let preview = std::sync::Arc::new(ManagerPackPreview {
+        coverage,
+        invalid_icons,
+        has_cleanable_icons: false,
+        image_generation: 0,
+        readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), pack.get_readme_for_locale(&locale))).collect(),
+        preview_image: pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
+        pack_icon: pack.get_pack_icon_svg().into(),
+        icons,
+    });
+    ctx.data_mut(|data| {
+        data.insert_temp(cache_id, preview.clone());
+    });
+    Some(preview)
 }
 
 fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerPackPreview>> {
@@ -946,8 +1005,11 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
     let mut open = state.is_open;
     let mut changed = false;
 
-    let discovered = discover_theme_packs_in_dirs(dirs);
+    let discovered = discover_all_theme_packs(dirs);
     let mut all_packs = discovered.packs;
+
+    // Retain only directory packs in watched list
+    wc.set.watched_icon_packs.retain(|id| all_packs.iter().find(|p| &p.manifest.id == id).is_some_and(|p| p.is_directory()));
 
     // Ensure the built-in default pack is always represented if discovered or from embedded
     if !all_packs.iter().any(|p| p.manifest.id == "default") {
@@ -1155,7 +1217,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     ui.label(crate::i18n::tr("icon-mgr-no-pack-selected"));
                     return;
                 };
-                let pack_preview = manager_archive_preview(ctx, pack).or_else(|| manager_directory_preview(ctx, pack));
+                let pack_preview = manager_embedded_preview(ctx, pack).or_else(|| manager_archive_preview(ctx, pack)).or_else(|| manager_directory_preview(ctx, pack));
                 let folder_source = pack.is_directory();
 
                 egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
@@ -1303,7 +1365,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 *wc.status = crate::i18n::tr("icon-mgr-reloaded");
                             }
                         });
-                    } else {
+                    } else if pack.format() != BundleFormat::Embedded {
                         ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-watch-folder-only")).small().weak());
                     }
                 });
@@ -1552,6 +1614,22 @@ mod tests {
         assert!(classic.is_directory());
         let readme = classic.get_readme();
         assert!(readme.contains("FreeCAD Classic Icon Theme"), "FreeCAD pack should have markdown description");
+    }
+
+    #[test]
+    fn test_all_bundled_themes_are_embedded_in_manager() {
+        let packs = discover_all_theme_packs(&all_theme_dirs()).packs;
+        let freecad = packs.iter().find(|p| p.manifest.id == "freecad-classic").expect("freecad-classic must be present");
+        assert_eq!(freecad.format(), BundleFormat::Embedded, "FreeCAD Classic must be marked Embedded in manager");
+        assert!(!freecad.is_directory(), "FreeCAD Classic must not be marked directory");
+
+        let shapr = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike must be present");
+        assert_eq!(shapr.format(), BundleFormat::Embedded, "Shapr-Alike must be marked Embedded in manager");
+        assert!(!shapr.is_directory(), "Shapr-Alike must not be marked directory");
+
+        let default_pack = packs.iter().find(|p| p.manifest.id == "default").expect("default must be present");
+        assert_eq!(default_pack.format(), BundleFormat::Embedded, "Default must be marked Embedded in manager");
+        assert!(!default_pack.is_directory(), "Default must not be marked directory");
     }
 
     #[test]

@@ -39,11 +39,21 @@ pub struct IconManager {
     pub revision: u64,
 }
 
-pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/default.qicons"));
+pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_QICONS};
+
+/// Load all built-in icon themes embedded into the binary.
+pub fn load_builtin_packs() -> Vec<IconPack> {
+    BUILTIN_ICON_THEMES.iter().filter_map(|(_id, bytes)| IconPack::from_embedded_zip_bytes(bytes).ok()).collect()
+}
+
+/// Load a specific built-in icon pack by its manifest ID.
+pub fn load_builtin_pack(id: &str) -> Option<IconPack> {
+    load_builtin_packs().into_iter().find(|p| p.manifest.id == id)
+}
 
 /// Load the built-in default icon pack embedded into the binary.
 pub fn load_default_pack() -> Option<IconPack> {
-    IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok()
+    load_builtin_pack("default").or_else(|| IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok())
 }
 
 impl IconManager {
@@ -272,7 +282,7 @@ pub fn clear_global_icon_cache() {
 
 /// Reload the global icon manager using the user's active theme IDs and known theme directories.
 pub fn reload_active_icon_themes(active_ids: &[String], search_dirs: &[std::path::PathBuf]) {
-    let mut all_packs = Vec::new();
+    let mut all_packs = load_builtin_packs();
     for d in search_dirs {
         for p in super::bundle::discover_packs_in(d) {
             if !all_packs.iter().any(|existing: &IconPack| existing.manifest.id == p.manifest.id) {

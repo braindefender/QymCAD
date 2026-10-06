@@ -2,8 +2,10 @@
 // 1. Reads the clean `IconId` enum variants from `src/icons/id.rs`.
 // 2. Maps each variant to its canonical `icons/<category>/<name>.svg` path.
 // 3. Validates all default icons in `assets/icon-themes/default/` (SVG validity, viewBox, no raster images).
-// 4. Generates `OUT_DIR/icon_generated.rs` implementing `relative_path(&self)`, `from_id_str(s)`, and `ALL_ICONS`.
-// 5. Packages the default icon theme into a compressed `.qicons` bundle written to `OUT_DIR/default.qicons`.
+// 4. Discovers all icon theme folders in `assets/icon-themes/` containing `manifest.ron`.
+// 5. Packages all discovered themes into compressed `.qicons` bundles written to `OUT_DIR/<theme>.qicons`.
+// 6. Generates `OUT_DIR/icon_generated.rs` implementing `relative_path(&self)`, `from_id_str(s)`, `ALL_ICONS`,
+//    `DEFAULT_QICONS`, and `BUILTIN_ICON_THEMES`.
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -33,23 +35,131 @@ fn variant_to_relative_path(var: &str) -> String {
     panic!("Unknown icon variant category for: {}", var);
 }
 
+fn extract_manifest_id(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("id:") {
+            let part = trimmed.strip_prefix("id:")?.trim();
+            let id = part.trim_matches(|c| c == '"' || c == ',' || c == ' ');
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
+struct DiscoveredTheme {
+    dir_name: String,
+    dir_path: PathBuf,
+    manifest_id: String,
+}
+
+fn package_theme_archive(theme_dir: &Path, out_archive: &Path) {
+    let manifest_path = theme_dir.join("manifest.ron");
+    let manifest_content = fs::read_to_string(&manifest_path).expect("manifest.ron reads");
+
+    let out_file = fs::File::create(out_archive).expect("creates output zip in OUT_DIR");
+    let mut zip = zip::ZipWriter::new(out_file);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    // Write manifest.ron
+    zip.start_file("manifest.ron", options).expect("writes manifest into zip");
+    zip.write_all(manifest_content.as_bytes()).expect("writes manifest bytes");
+
+    // Write icon.svg if present
+    let icon_path = theme_dir.join("icon.svg");
+    if icon_path.is_file() {
+        let pack_icon = fs::read(&icon_path).expect("pack icon reads");
+        zip.start_file("icon.svg", options).expect("writes pack icon into zip");
+        zip.write_all(&pack_icon).expect("writes pack icon bytes");
+    }
+
+    // Include the base and localized descriptions, license, preview in the embedded archive.
+    if let Ok(entries) = fs::read_dir(theme_dir) {
+        let mut readmes = Vec::new();
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                    if name == "README.md" || (name.starts_with("README.") && name.ends_with(".md")) || name == "description.md" || name.starts_with("LICENSE") || name.starts_with("preview.") {
+                        readmes.push((name.to_string(), p));
+                    }
+                }
+            }
+        }
+        readmes.sort_by(|left, right| left.0.cmp(&right.0));
+        for (name, path) in readmes {
+            let content = fs::read(&path).expect("theme file reads");
+            zip.start_file(name, options).expect("writes localized readme into zip");
+            zip.write_all(&content).expect("writes localized readme bytes");
+        }
+    }
+
+    // Walk and write all SVGs in icons/
+    let icons_dir = theme_dir.join("icons");
+    if icons_dir.is_dir() {
+        walk_dir(&icons_dir, &icons_dir, &mut zip, options);
+    }
+
+    zip.finish().expect("finishes zip archive");
+}
+
+fn walk_dir(base: &Path, current: &Path, zip: &mut zip::ZipWriter<fs::File>, options: zip::write::SimpleFileOptions) {
+    let mut entries: Vec<_> = fs::read_dir(current).expect("reads dir").flatten().collect();
+    entries.sort_by_key(|e| e.path());
+    for entry in entries {
+        let p = entry.path();
+        if p.is_dir() {
+            walk_dir(base, &p, zip, options);
+        } else if p.extension().is_some_and(|e| e == "svg") {
+            let rel = p.strip_prefix(base).expect("strip prefix");
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            let data = fs::read(&p).expect("read file");
+            zip.start_file(format!("icons/{rel_str}"), options).expect("zip start file");
+            zip.write_all(&data).expect("zip write file");
+        }
+    }
+}
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repo_root = manifest_dir.join("../..");
-    let default_theme_dir = repo_root.join("assets/icon-themes/default");
+    let icon_themes_dir = repo_root.join("assets/icon-themes");
 
-    println!("cargo:rerun-if-changed={}", default_theme_dir.display());
+    println!("cargo:rerun-if-changed={}", icon_themes_dir.display());
 
-    if !default_theme_dir.is_dir() {
-        panic!("Default icon theme directory not found at: {}", default_theme_dir.display());
+    if !icon_themes_dir.is_dir() {
+        panic!("Icon themes root directory not found at: {}", icon_themes_dir.display());
     }
 
-    // 1. Read and validate manifest.ron
-    let manifest_path = default_theme_dir.join("manifest.ron");
-    if !manifest_path.is_file() {
-        panic!("Missing manifest.ron in default icon theme: {}", manifest_path.display());
+    // 1. Discover all theme subdirectories containing manifest.ron
+    let mut theme_entries = Vec::new();
+    for entry in fs::read_dir(&icon_themes_dir).expect("icon themes dir reads").flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            let manifest_path = p.join("manifest.ron");
+            if manifest_path.is_file() {
+                println!("cargo:rerun-if-changed={}", p.display());
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                let manifest_content = fs::read_to_string(&manifest_path).expect("manifest.ron reads");
+                let _: ron::Value = ron::from_str(&manifest_content).expect("manifest.ron is valid RON");
+                let manifest_id = extract_manifest_id(&manifest_content).expect("manifest has id field");
+                theme_entries.push(DiscoveredTheme { dir_name, dir_path: p, manifest_id });
+            }
+        }
     }
-    let manifest_content = fs::read_to_string(&manifest_path).expect("manifest.ron reads");
+
+    // Sort themes: ensure "default" is first, others sorted alphabetically by directory name
+    theme_entries.sort_by(|a, b| {
+        if a.manifest_id == "default" {
+            std::cmp::Ordering::Less
+        } else if b.manifest_id == "default" {
+            std::cmp::Ordering::Greater
+        } else {
+            a.dir_name.cmp(&b.dir_name)
+        }
+    });
+
+    let default_theme = theme_entries.iter().find(|t| t.manifest_id == "default").expect("Default icon theme with id 'default' must exist");
 
     // 2. Extract variants from `src/icons/id.rs`
     let id_rs_path = manifest_dir.join("src/icons/id.rs");
@@ -94,10 +204,10 @@ fn main() {
         expected_icons.insert(format!("{rel_path}.svg"));
     }
 
-    // 4. Verify all expected icons exist and pass SVG validation
-    let icons_dir = default_theme_dir.join("icons");
+    // 4. Verify all expected default icons exist and pass SVG validation
+    let default_icons_dir = default_theme.dir_path.join("icons");
     for rel_path in &expected_icons {
-        let full_path = icons_dir.join(rel_path);
+        let full_path = default_icons_dir.join(rel_path);
         if !full_path.is_file() {
             panic!("COMPILE ERROR: Missing default vector SVG icon: {}\nExpected at: {}", rel_path, full_path.display());
         }
@@ -153,59 +263,27 @@ fn main() {
     for v in &variants {
         gen.push_str(&format!("    IconId::{v},\n"));
     }
+    gen.push_str("];\n\n");
+
+    gen.push_str("/// The default icon theme bundle embedded into the binary.\n");
+    gen.push_str("pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/default.qicons\"));\n\n");
+
+    gen.push_str("/// All built-in icon themes embedded into the binary.\n");
+    gen.push_str("/// Array of (manifest_id, archive_bytes).\n");
+    gen.push_str("pub const BUILTIN_ICON_THEMES: &[(&str, &[u8])] = &[\n");
+    for theme in &theme_entries {
+        gen.push_str(&format!("    (\"{}\", include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}.qicons\"))),\n", theme.manifest_id, theme.dir_name));
+    }
     gen.push_str("];\n");
 
     let gen_path = out_dir.join("icon_generated.rs");
     fs::write(&gen_path, gen).expect("writes icon_generated.rs");
 
-    // 6. Package default theme into OUT_DIR/default.qicons
-    let out_archive = out_dir.join("default.qicons");
-    let out_file = fs::File::create(&out_archive).expect("creates output zip in OUT_DIR");
-    let mut zip = zip::ZipWriter::new(out_file);
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-    // Write manifest.ron
-    zip.start_file("manifest.ron", options).expect("writes manifest into zip");
-    zip.write_all(manifest_content.as_bytes()).expect("writes manifest bytes");
-
-    let pack_icon = fs::read(default_theme_dir.join("icon.svg")).expect("default pack icon reads");
-    zip.start_file("icon.svg", options).expect("writes pack icon into zip");
-    zip.write_all(&pack_icon).expect("writes pack icon bytes");
-
-    // Include the base and localized descriptions in the embedded archive.
-    let mut readmes = fs::read_dir(&default_theme_dir)
-        .expect("lists default theme files")
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().into_string().ok()?;
-            (entry.path().is_file() && (name == "README.md" || (name.starts_with("README.") && name.ends_with(".md")))).then_some((name, entry.path()))
-        })
-        .collect::<Vec<_>>();
-    readmes.sort_by(|left, right| left.0.cmp(&right.0));
-    for (name, path) in readmes {
-        let content = fs::read(&path).expect("localized readme reads");
-        zip.start_file(name, options).expect("writes localized readme into zip");
-        zip.write_all(&content).expect("writes localized readme bytes");
+    // 6. Package all discovered themes into OUT_DIR/<theme_dir_name>.qicons
+    for theme in &theme_entries {
+        let out_archive = out_dir.join(format!("{}.qicons", theme.dir_name));
+        package_theme_archive(&theme.dir_path, &out_archive);
     }
 
-    // Walk and write all SVGs
-    fn walk_dir(base: &Path, current: &Path, zip: &mut zip::ZipWriter<fs::File>, options: zip::write::SimpleFileOptions) {
-        for entry in fs::read_dir(current).expect("reads dir").flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                walk_dir(base, &p, zip, options);
-            } else if p.extension().is_some_and(|e| e == "svg") {
-                let rel = p.strip_prefix(base).expect("strip prefix");
-                let rel_str = rel.to_string_lossy().replace('\\', "/");
-                let data = fs::read(&p).expect("read file");
-                zip.start_file(format!("icons/{rel_str}"), options).expect("zip start file");
-                zip.write_all(&data).expect("zip write file");
-            }
-        }
-    }
-
-    walk_dir(&icons_dir, &icons_dir, &mut zip, options);
-    zip.finish().expect("finishes zip archive");
-
-    println!("cargo:info=Successfully validated {} icons and packaged default.qicons", variants.len());
+    println!("cargo:info=Successfully validated {} default icons and packaged {} built-in themes", variants.len(), theme_entries.len());
 }

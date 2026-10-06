@@ -24,9 +24,9 @@ pub use bundle::{
 };
 pub use id::{IconId, IconSource, ALL_ICONS};
 pub use manager::{
-    clear_global_icon_cache, get_global_icon_revision, has_watched_icon_packs, is_global_pack_watched, load_default_pack, poll_watched_icon_packs, prepare_monochrome_svg, reload_active_icon_themes,
-    resolve_global_icon, set_global_dev_watch, set_global_icon_manager, set_global_pack_watching, sync_global_watched_packs, with_global_icon_manager, with_global_icon_manager_mut, IconManager,
-    ResolvedIcon, DEFAULT_QICONS,
+    clear_global_icon_cache, get_global_icon_revision, has_watched_icon_packs, is_global_pack_watched, load_builtin_pack, load_builtin_packs, load_default_pack, poll_watched_icon_packs,
+    prepare_monochrome_svg, reload_active_icon_themes, resolve_global_icon, set_global_dev_watch, set_global_icon_manager, set_global_pack_watching, sync_global_watched_packs,
+    with_global_icon_manager, with_global_icon_manager_mut, IconManager, ResolvedIcon, BUILTIN_ICON_THEMES, DEFAULT_QICONS,
 };
 pub use manifest::{
     has_zalgo, is_combining_mark, ColorMode, IconManifest, LocalizedThemeText, PackageType, MAX_MANIFEST_AUTHOR_LEN, MAX_MANIFEST_DESCRIPTION_LEN, MAX_MANIFEST_ID_LEN, MAX_MANIFEST_LICENSE_LEN,

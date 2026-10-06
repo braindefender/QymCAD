@@ -526,6 +526,39 @@ fn default_embedded_pack_is_valid_and_complete() {
 }
 
 #[test]
+fn all_embedded_packs_are_valid_and_complete() {
+    let packs = load_builtin_packs();
+    assert!(packs.len() >= 3, "must load at least default, freecad-classic, and shapr-alike; got {}", packs.len());
+
+    let default_pack = packs.iter().find(|p| p.manifest.id == "default").expect("default pack exists");
+    assert_eq!(default_pack.format(), BundleFormat::Embedded);
+    assert!(!default_pack.is_directory());
+    assert!(default_pack.is_verified());
+
+    let freecad_pack = packs.iter().find(|p| p.manifest.id == "freecad-classic").expect("freecad-classic pack exists");
+    assert_eq!(freecad_pack.format(), BundleFormat::Embedded);
+    assert!(!freecad_pack.is_directory());
+    assert!(freecad_pack.is_verified());
+    let (freecad_cov, total) = freecad_pack.coverage();
+    assert_eq!(freecad_cov, total, "embedded FreeCAD pack must cover all icons");
+
+    let shapr_pack = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike pack exists");
+    assert_eq!(shapr_pack.format(), BundleFormat::Embedded);
+    assert!(!shapr_pack.is_directory());
+    assert!(shapr_pack.is_verified());
+    let (shapr_cov, total) = shapr_pack.coverage();
+    assert_eq!(shapr_cov, total, "embedded Shapr-Alike pack must cover all icons");
+
+    for pack in &packs {
+        assert_eq!(pack.format(), BundleFormat::Embedded, "every built-in pack must have Embedded format");
+        assert!(!pack.is_directory(), "embedded pack must not be reported as a directory");
+        assert!(pack.is_verified(), "embedded pack must be marked verified");
+        assert!(!pack.is_tampered, "embedded pack must not be marked tampered");
+        validate_svg(&pack.get_pack_icon_svg()).expect("embedded pack icon is valid SVG");
+    }
+}
+
+#[test]
 fn monochrome_inspection_and_packaging_share_color_validation() {
     let root = std::env::temp_dir().join(format!("qymcad_mono_validation_{}", std::process::id()));
     let icons = root.join("icons/sketch");
@@ -619,6 +652,10 @@ fn global_icon_manager_cascade() {
     assert_eq!(resolved.data, custom_svg);
     assert_eq!(resolved.color_mode, ColorMode::Universal);
     assert_eq!(resolved.pack_id, "pack-custom");
+
+    // Reset global icon manager state so it does not affect other tests
+    set_global_icon_manager(IconManager::new());
+    clear_global_icon_cache();
 }
 
 #[test]
