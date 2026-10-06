@@ -1,0 +1,16 @@
+(
+    package_type: IconTheme,
+    id: "shapr-alike",
+    name: "Shapr-Alike",
+    version: "1.0.0",
+    author: "braindefender",
+    license: "AGPL-3.0-or-later",
+    description: "QymCAD icons inspired by Shapr3D",
+    translations: {
+        "ru": (
+            name: "Shapr-Alike",
+            description: "Иконки QymCAD, вдохновлённые Shapr3D",
+        ),
+    },
+    color_mode: Universal,
+)

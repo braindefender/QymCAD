@@ -237,7 +237,6 @@ Below is the complete dictionary of all **95 icons** across the 5 categories:
 | `part/shell.svg` | **Shell:** Hollow out a solid body leaving walls of specified thickness and opening selected faces. |
 | `part/hole.svg` | **Hole:** Create parametric simple, counterbored, countersunk, or tapped holes on solid faces. |
 | `part/draft.svg` | **Draft Angle:** Taper selected planar faces relative to a mold pull direction for casting. |
-| `part/section.svg` | **Section View:** Cut a live interactive clipping cross-section through the 3D model. |
 | `part/thread.svg` | **Thread:** Generate cosmetic or modeled helical screw threads on cylindrical solid faces. |
 | `part/push_face.svg` | **Push/Pull Face:** Direct modeling: offset or move a solid face along its normal vector. |
 | `part/remove_face.svg` | **Remove Face:** Direct modeling: delete a solid face and extend neighbouring faces to heal the gap. |
@@ -262,6 +261,8 @@ Below is the complete dictionary of all **95 icons** across the 5 categories:
 | `part/array_linear.svg` | **3D Linear Pattern:** Replicate 3D features or solid bodies along linear directions. |
 | `part/array_circular.svg` | **3D Circular Pattern:** Replicate 3D features or solid bodies rotationally around an axis. |
 | `part/mirror.svg` | **3D Mirror:** Mirror 3D features or bodies across a planar symmetry datum. |
+| `part/measure.svg` | **Measure 3D:** Interactive inspection ruler: measure distances, coordinates, and angles in 3D space. |
+| `part/section.svg` | **Section View:** Cut a live interactive clipping cross-section through the 3D model. |
 
 ---
 
@@ -289,9 +290,9 @@ Below is the complete dictionary of all **95 icons** across the 5 categories:
 
 | Icon Path | Function & Description |
 | :--- | :--- |
+| `datum/axis.svg` | **Datum Axis:** Construct a parametric reference axis (cylinder centerline, line, face normal). |
 | `datum/plane.svg` | **Datum Plane:** Construct an auxiliary reference plane (offset, angled, 3-point, tangent). |
 | `datum/point.svg` | **Datum Point:** Construct a parametric reference point in 3D space. |
-| `datum/axis.svg` | **Datum Axis:** Construct a parametric reference axis (cylinder centerline, line, face normal). |
 | `datum/sketch_pick_plane.svg` | **New Sketch Plane:** Select a planar face or datum plane to begin drawing a new 2D sketch. |
 
 ---
