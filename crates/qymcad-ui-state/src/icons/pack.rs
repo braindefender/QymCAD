@@ -44,6 +44,8 @@ impl BundleFormat {
     }
 }
 
+/// Maximum file size permitted for an icon archive file on disk (16 MB).
+pub const MAX_ARCHIVE_FILE_SIZE: u64 = 16 * 1024 * 1024;
 /// Maximum number of file entries permitted in an icon archive (prevents zip bomb exhaustion).
 pub const MAX_ARCHIVE_ENTRIES: usize = 1_000;
 /// Maximum cumulative uncompressed size of all files across an entire icon archive (32 MB).
@@ -191,10 +193,14 @@ impl IconPack {
     /// - `.zip`: Unverified community archive (can omit manifest.ron, crash-guarded).
     pub fn from_archive(file_path: impl AsRef<Path>) -> Result<Self, String> {
         let file_path = file_path.as_ref();
-        let file_bytes = std::fs::read(file_path).map_err(|e| e.to_string())?;
+        let metadata = std::fs::metadata(file_path).map_err(|e| e.to_string())?;
+        if metadata.len() > MAX_ARCHIVE_FILE_SIZE {
+            return Err(format!("archive file size exceeds limit: {} bytes (limit is {MAX_ARCHIVE_FILE_SIZE})", metadata.len()));
+        }
 
         let is_qicons = file_path.extension().is_some_and(|e| e == "qicons");
-        let trailer_check = super::sha256::verify_qicons_trailer(&file_bytes);
+        let mut file = std::fs::File::open(file_path).map_err(|e| e.to_string())?;
+        let trailer_check = super::sha256::verify_qicons_trailer_stream(&mut file, metadata.len()).map_err(|e| e.to_string())?;
 
         let (is_verified, is_tampered) = match trailer_check {
             super::sha256::TrailerCheck::Verified => (true, false),
@@ -205,8 +211,8 @@ impl IconPack {
             }
         };
 
-        let cursor = std::io::Cursor::new(&file_bytes);
-        let mut zip = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+        file.seek(std::io::SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
 
         // Guard against decompression bombs (Zip Bombs), excessive file counts, and zip-slip
         validate_archive_safety(&mut zip)?;
@@ -574,8 +580,16 @@ impl IconPack {
 /// Missing paths return immediately; 106 absent icons previously took 3.2s to check.
 fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
     for attempt in 0..6 {
-        match std::fs::read(path) {
-            Ok(data) if !data.is_empty() => return Some(data),
+        match std::fs::metadata(path) {
+            Ok(m) if m.len() > MAX_ICON_SVG_SIZE => return None,
+            Ok(m) if m.len() > 0 => {
+                if let Ok(mut file) = std::fs::File::open(path) {
+                    let mut buf = Vec::with_capacity(m.len() as usize);
+                    if file.by_ref().take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut buf).is_ok() && buf.len() as u64 <= MAX_ICON_SVG_SIZE && !buf.is_empty() {
+                        return Some(buf);
+                    }
+                }
+            }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound || (attempt >= 2 && !path.exists()) => {
                 return None;
             }
@@ -585,12 +599,7 @@ fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
             std::thread::sleep(std::time::Duration::from_millis(15));
         }
     }
-    let data = std::fs::read(path).ok()?;
-    if !data.is_empty() {
-        Some(data)
-    } else {
-        None
-    }
+    None
 }
 
 /// Recursively collect all .svg files in a directory, ignoring temporary and editor swap files.

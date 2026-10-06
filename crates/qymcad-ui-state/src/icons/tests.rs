@@ -1339,3 +1339,52 @@ fn manifest_validation_rejects_zalgo_in_all_fields() {
     m.translations.insert("de".into(), LocalizedThemeText { name: "Name".into(), description: zalgo_sample.into() });
     assert!(m.validate().unwrap_err().contains("Zalgo"));
 }
+
+#[test]
+fn archive_exceeding_max_file_size_is_rejected_without_reading() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_size_limit_test_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    let file_path = temp_dir.join("oversized.zip");
+    let file = std::fs::File::create(&file_path).unwrap();
+    // Sparse file with 17 MB size (limit is 16 MB)
+    file.set_len(17 * 1024 * 1024).unwrap();
+
+    let res = IconPack::from_archive(&file_path);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(res.is_err(), "expected error for oversized archive");
+    let err = res.err().unwrap();
+    assert!(err.contains("exceeds limit"), "expected size limit error, got: {err}");
+}
+
+#[test]
+fn directory_icon_exceeding_max_svg_size_is_not_loaded() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_svg_size_test_{}", std::process::id()));
+    let icons_dir = temp_dir.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "oversized-svg-theme".into(),
+        name: "Oversized SVG Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    // Create a file larger than MAX_ICON_SVG_SIZE (512 KB)
+    let file_path = icons_dir.join("line.svg");
+    let file = std::fs::File::create(&file_path).unwrap();
+    file.set_len(MAX_ICON_SVG_SIZE + 1024).unwrap();
+
+    let pack = IconPack::from_directory(&temp_dir).unwrap();
+    let loaded = pack.get_svg("sketch/line");
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(loaded.is_none(), "SVG exceeding MAX_ICON_SVG_SIZE should not be loaded");
+}
