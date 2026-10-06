@@ -224,6 +224,19 @@ fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, size: f32) {
 
 fn draw_pack_icon_bytes(ui: &mut egui::Ui, pack: &IconPack, size: f32, bytes: egui::load::Bytes, generation: u64) {
     let uri = format!("bytes://pack-icon/{}/r{}-g{generation}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision());
+    let id_key = egui::Id::new("pack_icon_prev_uri").with(&pack.manifest.id);
+    let to_forget = ui.data_mut(|d| {
+        let prev = d.get_temp::<String>(id_key);
+        if prev.as_ref() != Some(&uri) {
+            d.insert_temp(id_key, uri.clone());
+            prev
+        } else {
+            None
+        }
+    });
+    if let Some(prev) = to_forget {
+        ui.ctx().forget_image(&prev);
+    }
     ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(egui::vec2(size, size)));
 }
 
@@ -257,6 +270,19 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                 match &icon {
                     Ok(Some(svg_data)) => {
                         let uri = format!("bytes://mgr/{}/r{}-g{generation}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), relative_path);
+                        let id_key = egui::Id::new("gallery_icon_prev_uri").with((&pack.manifest.id, id));
+                        let to_forget = ui.data_mut(|d| {
+                            let prev = d.get_temp::<String>(id_key);
+                            if prev.as_ref() != Some(&uri) {
+                                d.insert_temp(id_key, uri.clone());
+                                prev
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(prev) = to_forget {
+                            ui.ctx().forget_image(&prev);
+                        }
                         let mut image = egui::Image::from_bytes(uri, svg_data.clone()).fit_to_exact_size(egui::vec2(48.0, 48.0));
                         if pack.manifest.color_mode == ColorMode::Monochrome {
                             image = image.tint(ui.visuals().text_color());

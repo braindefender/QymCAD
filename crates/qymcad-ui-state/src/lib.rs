@@ -13428,6 +13428,19 @@ pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bo
 pub fn icon_image(ui: &egui::Ui, icon: IconId, size: f32) -> egui::Image<'static> {
     let resolved = icons::resolve_global_icon(icon);
     let uri = format!("bytes://qicons/{}/r{}/{}.svg", resolved.pack_id, resolved.revision, icon.relative_path());
+    let id_key = egui::Id::new("icon_image_prev_uri").with(icon);
+    let to_forget = ui.data_mut(|d| {
+        let prev = d.get_temp::<String>(id_key);
+        if prev.as_ref() != Some(&uri) {
+            d.insert_temp(id_key, uri.clone());
+            prev
+        } else {
+            None
+        }
+    });
+    if let Some(prev) = to_forget {
+        ui.ctx().forget_image(&prev);
+    }
     let mut img = egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(size, size));
     if resolved.color_mode == icons::ColorMode::Monochrome {
         let text_color = ui.visuals().text_color();

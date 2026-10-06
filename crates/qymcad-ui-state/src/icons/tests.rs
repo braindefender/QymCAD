@@ -1639,3 +1639,24 @@ fn discover_packs_detailed_reports_errors_for_corrupt_or_invalid_archives() {
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn icon_image_forgets_previous_revision_uri() {
+    let ctx = egui::Context::default();
+    let id_key = egui::Id::new("icon_image_prev_uri").with(IconId::SketchLine);
+
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _ = crate::icon_image(ui, IconId::SketchLine, 22.0);
+    });
+
+    let first_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("first URI tracked");
+
+    clear_global_icon_cache();
+
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _ = crate::icon_image(ui, IconId::SketchLine, 22.0);
+    });
+
+    let second_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("second URI tracked");
+    assert_ne!(first_uri, second_uri);
+}
