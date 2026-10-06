@@ -1400,3 +1400,41 @@ fn svg_validation_rejects_malformed_xml_tags() {
     let multiple_roots = br#"<svg viewBox="0 0 24 24"></svg><svg viewBox="0 0 24 24"></svg>"#;
     assert!(validate_svg(multiple_roots).is_err(), "multiple roots should be rejected");
 }
+
+#[test]
+fn invalid_icon_in_custom_pack_continues_fallback_to_default() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_invalid_svg_fallback_{}", std::process::id()));
+    let icons_dir = temp_dir.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "invalid-svg-theme".into(),
+        name: "Invalid SVG Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    // Write invalid SVG content
+    std::fs::write(icons_dir.join("line.svg"), b"not SVG at all").unwrap();
+
+    let pack = IconPack::from_directory(&temp_dir).unwrap();
+
+    // 1. Pack itself must not return invalid SVG
+    assert_eq!(pack.get_svg_for_id(IconId::SketchLine), None);
+
+    // 2. Cascade in manager must fall back to default embedded theme
+    let mut mgr = IconManager::new();
+    mgr.set_active_stack(vec![pack]);
+    let resolved = mgr.resolve(IconId::SketchLine);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert_eq!(resolved.pack_id, "default");
+    assert!(resolved.data.starts_with(b"<svg"));
+}

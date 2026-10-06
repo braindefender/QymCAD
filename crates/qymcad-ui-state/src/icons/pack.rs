@@ -301,10 +301,10 @@ impl IconPack {
         let clean = rel_path.trim_start_matches('/');
         let file_subpath = if clean.ends_with(".svg") { clean.to_string() } else { format!("{clean}.svg") };
 
-        match &self.source {
+        let data = match &self.source {
             PackSource::Directory(base) => {
                 let p = base.join("icons").join(&file_subpath);
-                read_svg_with_retry(&p)
+                read_svg_with_retry(&p)?
             }
             PackSource::Archive(archive_path) => {
                 let file = std::fs::File::open(archive_path).ok()?;
@@ -320,23 +320,24 @@ impl IconPack {
                 if buf.len() as u64 > MAX_ICON_SVG_SIZE {
                     return None;
                 }
-                if self.format() == BundleFormat::VerifiedArchive {
-                    // Fast path: Verified QymCAD bundle, trusted pre-validated content, zero overhead
-                    Some(buf)
-                } else {
-                    // Archive path: Crash-guard against entity bombs or non-renderable byte sequences
-                    sanitize_svg_for_safety(buf)
-                }
+                buf
             }
             PackSource::Memory(map) => {
                 let full_name = format!("icons/{file_subpath}");
-                let data = map.get(&full_name).or_else(|| map.get(&file_subpath))?.clone();
-                if self.manifest.verified && !self.is_tampered {
-                    Some(data)
-                } else {
-                    sanitize_svg_for_safety(data)
-                }
+                map.get(&full_name).or_else(|| map.get(&file_subpath))?.clone()
             }
+        };
+
+        if self.format() == BundleFormat::VerifiedArchive || self.format() == BundleFormat::Embedded {
+            // Fast path: Verified QymCAD bundle or built-in embedded pack
+            Some(data)
+        } else {
+            // Unverified pack (folder, community zip, or raw memory): must pass SVG validation to prevent corrupting UI or blocking fallback
+            sanitize_svg_for_safety(data.clone())?;
+            if super::bundle::validate_icon_svg(&data, self.manifest.color_mode).is_err() {
+                return None;
+            }
+            Some(data)
         }
     }
 
