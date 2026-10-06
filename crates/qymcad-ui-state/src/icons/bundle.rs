@@ -77,16 +77,8 @@ pub fn discover_packs_in(dir: &Path) -> Vec<IconPack> {
     packs
 }
 
-/// Parse width and height from an SVG viewBox attribute.
-fn parse_viewbox_dimensions(text: &str) -> Option<(f32, f32)> {
-    let idx = text.find("viewBox")?;
-    let rest = &text[idx + 7..];
-    let quote_start = rest.find(['"', '\''])?;
-    let quote_char = rest.as_bytes()[quote_start] as char;
-    let content = &rest[quote_start + 1..];
-    let quote_end = content.find(quote_char)?;
-    let val_str = &content[..quote_end];
-
+///// Parse width and height from an SVG viewBox attribute value.
+fn parse_viewbox_values(val_str: &str) -> Option<(f32, f32)> {
     let parts: Vec<&str> = val_str.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).collect();
     if parts.len() == 4 {
         let x: f32 = parts[0].parse().ok()?;
@@ -168,31 +160,107 @@ pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
 }
 
 /// Validate SVG data according to the theme specification:
-/// - Must contain a valid root `<svg>` element.
+/// - Must be well-formed XML with properly nested tags.
+/// - Must contain a single valid root `<svg>` element.
 /// - Must contain a valid square `viewBox` attribute (1:1 aspect ratio, e.g. `viewBox="0 0 64 64"`).
 /// - Must NOT contain embedded raster images (`<image>` or `data:image/`).
 /// - Must NOT contain junk tags, editor metadata, or executable elements.
 pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(data).map_err(|_| "SVG data is not valid UTF-8".to_string())?;
 
-    if !text.contains("<svg") {
+    let mut reader = quick_xml::Reader::from_str(text);
+    reader.config_mut().check_end_names = true;
+
+    let mut depth: usize = 0;
+    let mut root_svg_found = false;
+    let mut viewbox_attr: Option<String> = None;
+
+    loop {
+        use quick_xml::events::Event;
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
+
+                if depth == 0 {
+                    if root_svg_found {
+                        return Err("multiple root elements in SVG".to_string());
+                    }
+                    if name != "svg" {
+                        return Err(format!("expected root element <svg>, found <{name}>"));
+                    }
+                    root_svg_found = true;
+                    for attr in element.attributes() {
+                        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
+                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
+                        if key == "viewbox" {
+                            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
+                            viewbox_attr = Some(val.into_owned());
+                        }
+                    }
+                }
+                if name == "image" {
+                    return Err("embedded raster images (<image>) are prohibited".to_string());
+                }
+                depth += 1;
+            }
+            Ok(Event::Empty(element)) => {
+                let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
+
+                if depth == 0 {
+                    if root_svg_found {
+                        return Err("multiple root elements in SVG".to_string());
+                    }
+                    if name != "svg" {
+                        return Err(format!("expected root element <svg>, found <{name}>"));
+                    }
+                    root_svg_found = true;
+                    for attr in element.attributes() {
+                        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
+                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
+                        if key == "viewbox" {
+                            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
+                            viewbox_attr = Some(val.into_owned());
+                        }
+                    }
+                }
+                if name == "image" {
+                    return Err("embedded raster images (<image>) are prohibited".to_string());
+                }
+            }
+            Ok(Event::End(_)) => {
+                if depth == 0 {
+                    return Err("unexpected closing tag".to_string());
+                }
+                depth -= 1;
+            }
+            Ok(Event::DocType(_) | Event::Decl(_) | Event::Comment(_) | Event::Text(_)) => {}
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(format!("XML syntax error: {e}")),
+            _ => {}
+        }
+    }
+
+    if !root_svg_found {
         return Err("missing <svg> root element".to_string());
     }
-
-    if !text.contains("viewBox") {
-        return Err("missing viewBox attribute (expected 1:1, e.g. viewBox=\"0 0 64 64\")".to_string());
+    if depth != 0 {
+        return Err("unclosed XML tags in SVG".to_string());
     }
 
-    let (w, h) = parse_viewbox_dimensions(text).ok_or_else(|| "invalid viewBox attribute (expected four finite numbers)".to_string())?;
+    let Some(viewbox_str) = viewbox_attr else {
+        return Err("missing viewBox attribute (expected 1:1, e.g. viewBox=\"0 0 64 64\")".to_string());
+    };
+
+    let (w, h) = parse_viewbox_values(&viewbox_str).ok_or_else(|| "invalid viewBox attribute (expected four finite numbers)".to_string())?;
     if w <= 0.0 || h <= 0.0 {
         return Err(format!("non-positive viewBox dimensions: {w}x{h}"));
     }
     let ratio = w / h;
-    if ratio < 0.95 || ratio > 1.05 {
+    if !(0.95..=1.05).contains(&ratio) {
         return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
     }
 
-    if text.contains("<image") || text.contains("data:image/") {
+    if text.contains("data:image/") {
         return Err("embedded raster images (<image>) are prohibited".to_string());
     }
 

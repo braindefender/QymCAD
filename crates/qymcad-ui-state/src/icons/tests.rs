@@ -1388,3 +1388,15 @@ fn directory_icon_exceeding_max_svg_size_is_not_loaded() {
 
     assert!(loaded.is_none(), "SVG exceeding MAX_ICON_SVG_SIZE should not be loaded");
 }
+
+#[test]
+fn svg_validation_rejects_malformed_xml_tags() {
+    let malformed = br#"<svg viewBox="0 0 24 24"><path></svg>"#;
+    assert!(validate_svg(malformed).is_err(), "malformed XML with unclosed <path> should be rejected");
+
+    let unclosed = br#"<svg viewBox="0 0 24 24"><g>"#;
+    assert!(validate_svg(unclosed).is_err(), "unclosed tags should be rejected");
+
+    let multiple_roots = br#"<svg viewBox="0 0 24 24"></svg><svg viewBox="0 0 24 24"></svg>"#;
+    assert!(validate_svg(multiple_roots).is_err(), "multiple roots should be rejected");
+}
