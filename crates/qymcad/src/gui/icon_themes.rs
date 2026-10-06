@@ -18,15 +18,30 @@ pub(crate) fn user_themes_dir() -> Option<PathBuf> {
 
 /// The directory for bundled icon themes.
 pub(crate) fn bundled_themes_dir() -> PathBuf {
-    let dev = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes"));
-    if dev.exists() {
-        return dev;
+    bundled_themes_dir_with(Some(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes"))), std::env::current_exe().ok().as_deref())
+}
+
+pub(crate) fn bundled_themes_dir_with(dev_candidate: Option<&Path>, exe_path: Option<&Path>) -> PathBuf {
+    if let Some(dev) = dev_candidate {
+        if dev.exists() {
+            return dev.to_path_buf();
+        }
     }
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = exe_path {
         if let Some(parent) = exe.parent() {
             let beside = parent.join("assets/icon-themes");
             if beside.exists() {
                 return beside;
+            }
+            if let Some(contents) = parent.parent() {
+                let mac_resources = contents.join("Resources/assets/icon-themes");
+                if mac_resources.exists() {
+                    return mac_resources;
+                }
+                let mac_resources_flat = contents.join("Resources/icon-themes");
+                if mac_resources_flat.exists() {
+                    return mac_resources_flat;
+                }
             }
         }
     }
@@ -2357,5 +2372,33 @@ mod tests {
         let joined = texts.join(" ");
         assert!(joined.contains("Ідентифікатор теми:"), "Theme ID label must be localized in Ukrainian, got texts: {joined}");
         assert!(joined.contains("Вихідна тека:"), "Source Folder label must be localized in Ukrainian, got texts: {joined}");
+    }
+
+    #[test]
+    fn bundled_themes_dir_finds_themes_in_macos_and_portable_layouts() {
+        let temp = std::env::temp_dir().join(format!("qymcad_bundled_themes_layout_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+
+        // Layout A: Windows / Portable Linux
+        let portable_root = temp.join("portable");
+        let portable_exe = portable_root.join("bin").join("qymcad");
+        let portable_themes = portable_root.join("bin").join("assets").join("icon-themes");
+        std::fs::create_dir_all(&portable_themes).unwrap();
+        std::fs::write(portable_themes.join("marker.txt"), "portable").unwrap();
+
+        let resolved_portable = bundled_themes_dir_with(None, Some(&portable_exe));
+        assert_eq!(resolved_portable, portable_themes, "portable layout should locate assets/icon-themes beside binary");
+
+        // Layout B: macOS .app bundle
+        let app_root = temp.join("QymCAD.app");
+        let mac_exe = app_root.join("Contents").join("MacOS").join("qymcad");
+        let mac_themes = app_root.join("Contents").join("Resources").join("assets").join("icon-themes");
+        std::fs::create_dir_all(&mac_themes).unwrap();
+        std::fs::write(mac_themes.join("marker.txt"), "macos").unwrap();
+
+        let resolved_mac = bundled_themes_dir_with(None, Some(&mac_exe));
+        assert_eq!(resolved_mac, mac_themes, "macOS bundle layout should locate Resources/assets/icon-themes");
+
+        let _ = std::fs::remove_dir_all(&temp);
     }
 }
