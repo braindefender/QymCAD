@@ -16,8 +16,10 @@ pub enum PackSource {
     Directory(PathBuf),
     /// Zip archive containing `manifest.ron` and `icons/` strictly at root level.
     Archive(PathBuf),
-    /// In-memory map (used for tests and baked-in virtual bundles).
+    /// In-memory map (used for tests and virtual bundles).
     Memory(HashMap<String, Vec<u8>>),
+    /// Embedded in the application executable binary.
+    Embedded(HashMap<String, Vec<u8>>),
 }
 
 /// The underlying format and provenance of an icon bundle.
@@ -133,9 +135,6 @@ pub struct IconPack {
 impl IconPack {
     /// The provenance and format of this icon pack.
     pub fn format(&self) -> BundleFormat {
-        if self.manifest.id == "default" || self.manifest.id == "freecad-classic" {
-            return BundleFormat::Embedded;
-        }
         match &self.source {
             PackSource::Directory(_) => BundleFormat::Directory,
             PackSource::Archive(_) | PackSource::Memory(_) => {
@@ -145,12 +144,13 @@ impl IconPack {
                     BundleFormat::Archive
                 }
             }
+            PackSource::Embedded(_) => BundleFormat::Embedded,
         }
     }
 
     /// Whether this pack is a folder on disk that supports live file editing.
     pub fn is_directory(&self) -> bool {
-        self.format() == BundleFormat::Directory
+        matches!(self.source, PackSource::Directory(_))
     }
 
     /// Whether an icon file exists on disk in a directory pack (even if temporarily locked).
@@ -296,6 +296,15 @@ impl IconPack {
         Ok(Self { manifest, source: PackSource::Memory(map), is_tampered: trailer_check == super::sha256::TrailerCheck::Tampered })
     }
 
+    /// Load an embedded icon pack from in-memory ZIP archive bytes (e.g. from `include_bytes!`).
+    pub fn from_embedded_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let mut pack = Self::from_zip_bytes(bytes)?;
+        if let PackSource::Memory(map) = pack.source {
+            pack.source = PackSource::Embedded(map);
+        }
+        Ok(pack)
+    }
+
     /// Retrieve raw SVG bytes for a relative path inside `icons/` (e.g. `"sketch/line.svg"`).
     pub fn get_svg(&self, rel_path: &str) -> Option<Vec<u8>> {
         let clean = rel_path.trim_start_matches('/');
@@ -322,7 +331,7 @@ impl IconPack {
                 }
                 buf
             }
-            PackSource::Memory(map) => {
+            PackSource::Memory(map) | PackSource::Embedded(map) => {
                 let full_name = format!("icons/{file_subpath}");
                 map.get(&full_name).or_else(|| map.get(&file_subpath))?.clone()
             }
@@ -383,7 +392,7 @@ impl IconPack {
                 entry.take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut data).map_err(|err| format!("cannot read SVG entry: {err}"))?;
                 data
             }
-            PackSource::Memory(map) => {
+            PackSource::Memory(map) | PackSource::Embedded(map) => {
                 let Some(data) = map.get(&full_name).or_else(|| map.get(&file_subpath)) else {
                     return Ok(None);
                 };
@@ -427,7 +436,7 @@ impl IconPack {
                     (data.len() as u64 <= MAX_ICON_SVG_SIZE).then_some(data)
                 })
             }
-            PackSource::Memory(map) => map.get("icon.svg").cloned(),
+            PackSource::Memory(map) | PackSource::Embedded(map) => map.get("icon.svg").cloned(),
         };
         data.and_then(sanitize_svg_for_safety).filter(|svg| super::bundle::validate_svg(svg).is_ok()).unwrap_or_else(|| DEFAULT_PACK_ICON_SVG.to_vec())
     }
@@ -473,7 +482,7 @@ impl IconPack {
                     }
                     Some(s)
                 }
-                PackSource::Memory(map) => map.get(name).filter(|bytes| bytes.len() as u64 <= MAX_TEXT_FILE_SIZE).and_then(|bytes| String::from_utf8(bytes.clone()).ok()),
+                PackSource::Memory(map) | PackSource::Embedded(map) => map.get(name).filter(|bytes| bytes.len() as u64 <= MAX_TEXT_FILE_SIZE).and_then(|bytes| String::from_utf8(bytes.clone()).ok()),
             }
         };
 
@@ -528,7 +537,7 @@ impl IconPack {
                     }
                     Some(buf)
                 }
-                PackSource::Memory(map) => map.get(candidate).cloned(),
+                PackSource::Memory(map) | PackSource::Embedded(map) => map.get(candidate).cloned(),
             }
         };
 

@@ -43,7 +43,7 @@ pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/defa
 
 /// Load the built-in default icon pack embedded into the binary.
 pub fn load_default_pack() -> Option<IconPack> {
-    IconPack::from_zip_bytes(DEFAULT_QICONS).ok()
+    IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok()
 }
 
 impl IconManager {

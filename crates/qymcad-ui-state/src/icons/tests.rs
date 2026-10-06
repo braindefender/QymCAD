@@ -678,8 +678,8 @@ fn freecad_theme_is_complete_and_valid() {
     assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
     assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
-    assert_eq!(pack.format(), BundleFormat::Embedded);
-    assert!(!pack.is_directory());
+    assert_eq!(pack.format(), BundleFormat::Directory);
+    assert!(pack.is_directory());
     validate_svg(&pack.get_pack_icon_svg()).expect("FreeCAD pack icon is a valid SVG");
     assert_ne!(pack.get_pack_icon_svg(), load_default_pack().expect("default loads").get_pack_icon_svg());
 
@@ -1477,4 +1477,32 @@ fn packager_rejects_icon_with_excessive_compression_ratio() {
     let _ = std::fs::remove_dir_all(&temp_dir);
 
     assert!(res.is_err(), "package_bundle must fail for directory with only bomb icons");
+}
+
+#[test]
+fn custom_folder_with_special_id_is_still_directory_format() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_special_id_test_{}", std::process::id()));
+    std::fs::create_dir_all(temp_dir.join("icons").join("sketch")).unwrap();
+
+    // Create a directory pack that uses id: "freecad-classic"
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "freecad-classic".into(),
+        name: "My Custom FreeCAD".into(),
+        version: "1.0".into(),
+        author: "Me".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    let pack = IconPack::from_directory(&temp_dir).unwrap();
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    // Provenance must reflect physical source (Directory), NOT the theme ID
+    assert_eq!(pack.format(), BundleFormat::Directory);
+    assert!(pack.is_directory(), "a directory on disk must be recognized as directory even if ID is freecad-classic");
 }

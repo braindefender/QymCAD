@@ -1327,7 +1327,8 @@ mod tests {
         assert!(packs.iter().any(|p| p.manifest.id == "freecad-classic"), "bundled freecad-classic pack must be found");
         let classic = packs.iter().find(|p| p.manifest.id == "freecad-classic").unwrap();
         assert!(classic.coverage().0 >= 5);
-        assert_eq!(classic.format(), BundleFormat::Embedded);
+        assert_eq!(classic.format(), BundleFormat::Directory);
+        assert!(classic.is_directory());
         let readme = classic.get_readme();
         assert!(readme.contains("FreeCAD Classic Icon Theme"), "FreeCAD pack should have markdown description");
     }
