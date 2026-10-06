@@ -2437,7 +2437,6 @@ icon-packager-all-valid = All checked icons are valid and ready to be packaged.
 icon-packager-success = Successfully validated and packaged { $count } icons into { $path }
 icon-packager-no-icons = No valid CAD icons found in the icons/ folder
 settings-open-icon-manager = Open Icon Manager...
-win-icon-manager = Icon Theme Manager
 icon-mgr-title = CAD Icon Theme Manager
 icon-mgr-desc = Manage active theme cascades, inspect pack details, preview icons, and package new themes
 icon-mgr-tab-readme = Overview & Documentation

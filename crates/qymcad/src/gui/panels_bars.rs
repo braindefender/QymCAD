@@ -202,10 +202,6 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.ask.push(qymcad_ui_state::BarAsk::ToggleLibrary);
                 ui.close();
             }
-            if ui.button(format!("{}  {}", ph::PALETTE, qymcad_i18n::tr("win-icon-manager"))).clicked() {
-                crate::gui::icon_themes::open_icon_manager(ctx);
-                ui.close();
-            }
             if ui.button(format!("{}  {}", ph::HOUSE, qymcad_i18n::tr("win-start"))).clicked() {
                 bc.win.start_asked = true; // it was ASKED for rather than raising itself - see `start_screen_visible`
                 ui.close();

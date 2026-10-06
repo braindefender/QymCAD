@@ -2437,7 +2437,6 @@ icon-packager-all-valid = Все проверенные иконки корре�
 icon-packager-success = Успешно проверено и упаковано { $count } иконок в { $path }
 icon-packager-no-icons = В папке icons/ не найдено ни одной корректной CAD иконки
 settings-open-icon-manager = Открыть менеджер иконок...
-win-icon-manager = Менеджер тем иконок
 icon-mgr-title = Менеджер тем иконок CAD
 icon-mgr-desc = Управление каскадом тем, просмотр описания, предпросмотр иконок и упаковка новых тем
 icon-mgr-tab-readme = Обзор и документация

@@ -1425,10 +1425,10 @@ mod tests {
         let ctx = egui::Context::default();
         let empty = manager_directory_preview(&ctx, &pack).expect("initial preview");
         assert_eq!(empty.coverage, 0);
-        assert!(empty.readmes.contains_key("ru"), "preview must cache text for the Russian interface");
-        std::fs::write(root.join("README.ru.md"), "# Русское описание").expect("add localized README");
+        assert!(empty.readmes.contains_key("en"), "preview must cache text for the interface");
+        std::fs::write(root.join("README.en.md"), "# Custom English").expect("add localized README");
         let localized = manager_directory_preview(&ctx, &pack).expect("preview after adding localized README");
-        assert_eq!(localized.readmes.get("ru").map(String::as_str), Some("# Русское описание"));
+        assert_eq!(localized.readmes.get("en").map(String::as_str), Some("# Custom English"));
         assert!(!std::sync::Arc::ptr_eq(&empty, &localized), "new localized text must refresh the preview cache");
         let file = icon_dir.join("line.svg");
         std::fs::write(&file, br#"<svg viewBox="0 0 24 24"><path d="M0 0 L24 24"/></svg>"#).expect("add SVG");

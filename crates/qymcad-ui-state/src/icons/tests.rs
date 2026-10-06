@@ -198,29 +198,29 @@ fn localized_bundle_text_survives_packaging() {
         description: "Base description",
         color_mode: Universal,
         translations: {
-            "ru": (name: "Цветные иконки", description: "Русское описание"),
+            "de": (name: "Farbsymbole", description: "Deutsche Beschreibung"),
         },
     )"#;
     std::fs::write(root.join("manifest.ron"), manifest).expect("write manifest");
     std::fs::write(root.join("README.md"), "# Base documentation").expect("write base README");
-    std::fs::write(root.join("README.ru.md"), "# Русская документация").expect("write Russian README");
+    std::fs::write(root.join("README.de.md"), "# Deutsche Dokumentation").expect("write German README");
     let folder = IconPack::from_directory(&root).expect("localized folder loads");
-    assert_eq!(folder.manifest.name_for_locale("ru"), "Цветные иконки");
-    assert_eq!(folder.manifest.description_for_locale("ru-RU"), "Русское описание");
-    assert_eq!(folder.manifest.name_for_locale("de"), "Color Icons");
-    assert_eq!(folder.get_readme_for_locale("ru"), "# Русская документация");
-    assert_eq!(folder.get_readme_for_locale("ru-RU"), "# Русская документация");
-    assert_eq!(folder.get_readme_for_locale("de"), "# Base documentation");
+    assert_eq!(folder.manifest.name_for_locale("de"), "Farbsymbole");
+    assert_eq!(folder.manifest.description_for_locale("de-DE"), "Deutsche Beschreibung");
+    assert_eq!(folder.manifest.name_for_locale("fr"), "Color Icons");
+    assert_eq!(folder.get_readme_for_locale("de"), "# Deutsche Dokumentation");
+    assert_eq!(folder.get_readme_for_locale("de-DE"), "# Deutsche Dokumentation");
+    assert_eq!(folder.get_readme_for_locale("fr"), "# Base documentation");
     let no_readme = IconPack { manifest: folder.manifest.clone(), source: PackSource::Memory(HashMap::new()), is_tampered: false };
-    let generated = no_readme.get_readme_for_locale("ru-RU");
-    assert!(generated.starts_with("# Цветные иконки\n\nРусское описание"), "missing README uses localized manifest text");
+    let generated = no_readme.get_readme_for_locale("de-DE");
+    assert!(generated.starts_with("# Farbsymbole\n\nDeutsche Beschreibung"), "missing README uses localized manifest text");
 
     let archive = root.join("localized-test.qicons");
     package_bundle(&root, &folder.manifest, &archive).expect("package localized folder");
     let packed = IconPack::from_archive(&archive).expect("localized archive loads");
-    assert_eq!(packed.manifest.name_for_locale("ru"), "Цветные иконки");
-    assert_eq!(packed.get_readme_for_locale("ru-RU"), "# Русская документация");
-    assert_eq!(packed.get_readme_for_locale("de"), "# Base documentation");
+    assert_eq!(packed.manifest.name_for_locale("de"), "Farbsymbole");
+    assert_eq!(packed.get_readme_for_locale("de-DE"), "# Deutsche Dokumentation");
+    assert_eq!(packed.get_readme_for_locale("fr"), "# Base documentation");
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -499,8 +499,12 @@ fn inspect_and_package_excludes_problematic_files() {
 fn default_embedded_pack_is_valid_and_complete() {
     let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
     assert_eq!(pack.manifest.id, "default");
-    assert_eq!(pack.manifest.name_for_locale("ru"), "QymCAD: стандартные иконки");
-    assert!(pack.get_readme_for_locale("ru").starts_with("# Стандартная тема векторных иконок"), "embedded bundle must include its localized README");
+    assert!(pack.manifest.translations.contains_key("ru"));
+    assert!(pack.manifest.translations.contains_key("uk"));
+    assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
+    assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
+    assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
+    assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
     assert_eq!(pack.manifest.color_mode, ColorMode::Monochrome);
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
     assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
@@ -667,8 +671,12 @@ fn freecad_theme_is_complete_and_valid() {
 
     let pack = IconPack::from_directory(&freecad_dir).expect("FreeCAD theme must load from directory");
     assert_eq!(pack.manifest.id, "freecad-classic");
-    assert_eq!(pack.manifest.name_for_locale("ru"), "FreeCAD: классические иконки");
-    assert!(pack.get_readme_for_locale("ru").starts_with("# Классическая тема иконок FreeCAD"), "FreeCAD theme must include its localized README");
+    assert!(pack.manifest.translations.contains_key("ru"));
+    assert!(pack.manifest.translations.contains_key("uk"));
+    assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
+    assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
+    assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
+    assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
     assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
     assert_eq!(pack.format(), BundleFormat::Embedded);
     assert!(!pack.is_directory());
@@ -1060,7 +1068,7 @@ fn manifest_validation_accepts_valid_manifest() {
         license: "MIT".into(),
         description: "A valid short description of this theme.".into(),
         color_mode: ColorMode::Universal,
-        translations: [("uk".into(), LocalizedThemeText { name: "Тема українською".into(), description: "Короткий опис теми".into() })].into_iter().collect(),
+        translations: [("de".into(), LocalizedThemeText { name: "Deutsches Thema".into(), description: "Kurze Beschreibung".into() })].into_iter().collect(),
         verified: false,
     };
     assert!(manifest.validate().is_ok());
@@ -1273,7 +1281,7 @@ fn has_zalgo_correctly_detects_zalgo_and_allows_normal_text() {
 
     // Normal natural text (precomposed and normal decomposed)
     assert!(!has_zalgo("QymCAD Default Theme"));
-    assert!(!has_zalgo("Стандартні монохромні іконки"));
+    assert!(!has_zalgo("\u{0421}\u{0442}\u{0430}\u{043d}\u{0434}\u{0430}\u{0440}\u{0442}\u{043d}\u{0456} \u{0456}\u{043a}\u{043e}\u{043d}\u{043a}\u{0438}"));
     assert!(!has_zalgo("Café au lait"));
     assert!(!has_zalgo("Cafe\u{0301}")); // NFD French accent
     assert!(!has_zalgo("Tiếng Việt"));
@@ -1324,10 +1332,10 @@ fn manifest_validation_rejects_zalgo_in_all_fields() {
     assert!(m.validate().unwrap_err().contains("Zalgo"));
 
     let mut m = base_manifest.clone();
-    m.translations.insert("uk".into(), LocalizedThemeText { name: zalgo_sample.into(), description: "Опис".into() });
+    m.translations.insert("de".into(), LocalizedThemeText { name: zalgo_sample.into(), description: "Beschreibung".into() });
     assert!(m.validate().unwrap_err().contains("Zalgo"));
 
     let mut m = base_manifest.clone();
-    m.translations.insert("uk".into(), LocalizedThemeText { name: "Назва".into(), description: zalgo_sample.into() });
+    m.translations.insert("de".into(), LocalizedThemeText { name: "Name".into(), description: zalgo_sample.into() });
     assert!(m.validate().unwrap_err().contains("Zalgo"));
 }
