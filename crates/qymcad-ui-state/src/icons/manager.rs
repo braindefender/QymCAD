@@ -43,7 +43,7 @@ pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/defa
 
 /// Load the built-in default icon pack embedded into the binary.
 pub fn load_default_pack() -> Option<IconPack> {
-    IconPack::from_zip_bytes(DEFAULT_QICONS).ok()
+    IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok()
 }
 
 impl IconManager {
@@ -156,13 +156,14 @@ impl IconManager {
         self.last_poll_time = Some(now);
 
         let mut any_changed = false;
-        for pack in &self.active_stack {
+        for pack in &mut self.active_stack {
             if pack.is_directory() && (self.dev_watch_enabled || self.watched_pack_ids.iter().any(|id| id == &pack.manifest.id)) {
                 if let Some(snap) = pack.directory_snapshot() {
                     if let Some(prev) = self.last_seen_snapshots.get(&pack.manifest.id) {
                         if prev != &snap {
                             any_changed = true;
                             self.last_seen_snapshots.insert(pack.manifest.id.clone(), snap);
+                            let _ = pack.reload_manifest();
                         }
                     } else {
                         // First observation of this pack's directory
@@ -192,22 +193,12 @@ impl IconManager {
         for pack in &self.active_stack {
             if let Some(mut data) = pack.get_svg_for_id(id) {
                 if pack.manifest.color_mode == ColorMode::Monochrome {
-                    match String::from_utf8(data) {
-                        Ok(text) => {
-                            if text.contains("currentColor") || text.contains("fill=\"#000000\"") || text.contains("fill=\"black\"") {
-                                let replaced = text.replace("currentColor", "white").replace("fill=\"#000000\"", "fill=\"white\"").replace("fill=\"black\"", "fill=\"white\"");
-                                data = replaced.into_bytes();
-                            } else {
-                                data = text.into_bytes();
-                            }
-                        }
-                        Err(e) => {
-                            data = e.into_bytes();
-                        }
-                    }
+                    data = prepare_monochrome_svg(&data);
                 }
                 let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision };
-                self.cache.insert(id, res.clone());
+                if !had_transient_read_failure {
+                    self.cache.insert(id, res.clone());
+                }
                 return res;
             } else if pack.has_icon_on_disk(id) {
                 // The icon file exists on disk in this custom folder pack, but reading it failed
@@ -232,7 +223,7 @@ impl IconManager {
     }
 }
 
-static GLOBAL_ICON_MANAGER: RwLock<Option<IconManager>> = RwLock::new(None);
+pub(crate) static GLOBAL_ICON_MANAGER: RwLock<Option<IconManager>> = RwLock::new(None);
 
 /// Set or replace the global icon manager instance.
 pub fn set_global_icon_manager(mgr: IconManager) {
@@ -254,9 +245,8 @@ pub fn with_global_icon_manager_mut<R>(f: impl FnOnce(&mut IconManager) -> R) ->
 /// Resolve an `IconId` using the global priority stack.
 pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
-        if let Some(mgr) = g.as_mut() {
-            return mgr.resolve(id);
-        }
+        let mgr = g.get_or_insert_with(IconManager::new);
+        return mgr.resolve(id);
     }
     if let Some(def) = load_default_pack() {
         if let Some(data) = def.get_svg_for_id(id) {
@@ -393,4 +383,19 @@ pub fn get_global_icon_revision() -> u64 {
         }
     }
     0
+}
+
+/// Prepares monochrome SVG bytes for tinting by replacing `currentColor` and black fills with white.
+pub fn prepare_monochrome_svg(data: &[u8]) -> Vec<u8> {
+    match std::str::from_utf8(data) {
+        Ok(text) => {
+            if text.contains("currentColor") || text.contains("fill=\"#000000\"") || text.contains("fill=\"black\"") {
+                let replaced = text.replace("currentColor", "white").replace("fill=\"#000000\"", "fill=\"white\"").replace("fill=\"black\"", "fill=\"white\"");
+                replaced.into_bytes()
+            } else {
+                data.to_vec()
+            }
+        }
+        Err(_) => data.to_vec(),
+    }
 }

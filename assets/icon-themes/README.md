@@ -6,7 +6,7 @@ QymCAD features a modular, dynamic vector icon theme engine. It supports both bu
 
 ## 1. Important: Partial Packs & Fallback Cascade
 
-> **A theme does NOT need to provide all 92 icons!**
+> **A theme does NOT need to provide all 95 icons!**
 >
 > Theme packs can be **partial** and contain only a subset of icons (for example, only sketch tools, only custom constraint badges, or only specific 3D solid operations).
 >
@@ -159,14 +159,14 @@ All SVG files are validated at compile-time and load-time by `validate_svg`. An 
 
 ---
 
-## 6. Directory Naming & Icon Catalogue (All 92 Icons)
+## 6. Directory Naming & Icon Catalogue (All 95 Icons)
 
 Icon paths are resolved by combining category subdirectories with the icon name:
 `icons/<category>/<name>.svg`
 
-Below is the complete dictionary of all **92 icons** across the 5 categories:
+Below is the complete dictionary of all **95 icons** across the 5 categories:
 
-### 6.1. Category `sketch/` — 2D Sketch Creation, Modification & Dimensions (31 icons)
+### 6.1. Category `sketch/` — 2D Sketch Creation, Modification & Dimensions (32 icons)
 
 | Icon Path | Function & Description |
 | :--- | :--- |
@@ -224,7 +224,7 @@ Below is the complete dictionary of all **92 icons** across the 5 categories:
 
 ---
 
-### 6.3. Category `part/` — 3D Modeling, Primitives, Booleans & Surfaces (38 icons)
+### 6.3. Category `part/` — 3D Modeling, Primitives, Booleans & Surfaces (34 icons)
 
 | Icon Path | Function & Description |
 | :--- | :--- |
@@ -244,6 +244,7 @@ Below is the complete dictionary of all **92 icons** across the 5 categories:
 | `part/split_face.svg` | **Split Face:** Divide a solid face into multiple sub-faces using an intersecting wire or face. |
 | `part/thicken.svg` | **Thicken:** Add thickness to an open surface sheet to convert it into a solid 3D body. |
 | `part/face_copy.svg` | **Extract Face:** Copy an existing solid face as an independent parametric sheet surface. |
+| `part/measure.svg` | **Measure 3D:** Interactive inspection ruler: measure distances, coordinates, and angles in 3D space. |
 | `part/box.svg` | **Box Primitive:** Create a parametric box solid (length, width, height). |
 | `part/cylinder.svg` | **Cylinder Primitive:** Create a parametric cylinder solid (radius, height). |
 | `part/sphere.svg` | **Sphere Primitive:** Create a parametric sphere solid (radius). |
@@ -265,7 +266,7 @@ Below is the complete dictionary of all **92 icons** across the 5 categories:
 
 ---
 
-### 6.4. Category `assembly/` — Components, Mates & Mechanisms (12 icons)
+### 6.4. Category `assembly/` — Components, Mates & Mechanisms (13 icons)
 
 | Icon Path | Function & Description |
 | :--- | :--- |
@@ -278,7 +279,10 @@ Below is the complete dictionary of all **92 icons** across the 5 categories:
 | `assembly/width.svg` | **Width Mate:** Center a component midway between two opposing parallel boundary walls. |
 | `assembly/tangent.svg` | **Tangent Mate:** Mate a cylindrical or curved face in tangent contact with a plane. |
 | `assembly/relation.svg` | **Gear / Rack Relation:** Couple kinematic degrees of freedom between two joints (gear ratios, linear racks). |
-| `assembly/array.svg` | **Component Pattern:** Replicate components in linear or circular assembly patterns. |
+| `assembly/array_linear.svg` | **Linear Component Pattern:** Replicate components in linear assembly patterns. |
+| `assembly/array_circular.svg` | **Circular Component Pattern:** Replicate components in circular assembly patterns. |
+| `assembly/mirror.svg` | **Mirror Component:** Mirror parts or subassemblies across a planar symmetry datum. |
+| `assembly/section.svg` | **Assembly Section View:** Toggle parametric cross-section cut plane view of the assembly. |
 
 ---
 
@@ -296,12 +300,20 @@ Below is the complete dictionary of all **92 icons** across the 5 categories:
 ## 7. Packaging & Installation
 
 ### 7.1. Packaging into `.qicons`
-A `.qicons` file is simply a standard ZIP archive compressed with Deflate:
-```bash
-cd my-custom-theme/
-zip -r ../my-custom-theme.qicons manifest.ron README*.md icons/
-```
-You can also use the built-in Packager UI directly inside QymCAD (**Settings -> Icon Themes -> Package Theme**).
+
+A `.qicons` bundle can be prepared in two ways:
+
+1. **In-App Packager (Recommended — Verified Archive):**
+   Use the built-in Packager UI inside QymCAD (**Settings -> Icon Themes -> Package Theme**).
+   The Packager validates SVG elements, enforces square viewBox ratios, builds a clean ZIP archive, and appends a SHA-256 integrity trailer (`QYMICON1`). Bundles packaged with this trailer load with **Verified Archive** status for maximum speed.
+
+2. **Standard ZIP Archive (Community Archive):**
+   You can also create a plain ZIP archive using standard command-line tools:
+   ```bash
+   cd my-custom-theme/
+   zip -r ../my-custom-theme.qicons manifest.ron README*.md icons/
+   ```
+   *Note:* Archives packaged with standard `zip` do not include the cryptographic trailer and will be loaded in community **Archive** mode with runtime crash-guards.
 
 ### 7.2. User Installation Paths
 Place your unpacked theme folder or `.qicons` archive into the user configuration directory:

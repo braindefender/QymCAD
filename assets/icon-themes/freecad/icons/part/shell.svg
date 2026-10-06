@@ -16,7 +16,7 @@
       <stop style="stop-color:#00aff9;stop-opacity:1;" offset="0" id="stop3595"/>
       <stop style="stop-color:#001ccc;stop-opacity:1;" offset="1" id="stop3597"/>
     </linearGradient>
-    
+
     <radialGradient xlink:href="#linearGradient3864" id="radialGradient2998" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1.6696601,0.63911498,-0.09121381,0.31244488,-540.88725,-258.46199)" cx="342.58258" cy="27.256668" fx="342.58258" fy="27.256668" r="19.571428"/>
     <radialGradient xlink:href="#linearGradient3593-0" id="radialGradient3004-8" gradientUnits="userSpaceOnUse" gradientTransform="translate(-320.59978,-6.63068)" cx="330.63791" cy="39.962704" fx="330.63791" fy="39.962704" r="19.571428"/>
     <linearGradient id="linearGradient3593-0">
@@ -65,7 +65,7 @@
       <stop style="stop-color:#cc0000;stop-opacity:1" offset="1" id="stop3781-8"/>
     </linearGradient>
   </defs>
-  
+
   <g id="layer1">
     <g id="g3780" transform="matrix(0.82780005,0,0,0.83717425,-0.2499405,9.0601524)">
       <path style="fill:#729fcf;stroke:#0b1521;stroke-width:2.4024775;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 13.590163,-0.07185242 52.246847,11.873093 73.99123,2.3171365 37.750592,-7.2388191 z" id="path2993"/>

@@ -11,75 +11,131 @@ const K: [u32; 64] = [
     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+fn process_chunk(h: &mut [u32; 8], chunk: &[u8; 64]) {
+    let mut w = [0u32; 64];
+    for (i, slot) in w.iter_mut().take(16).enumerate() {
+        *slot = u32::from_be_bytes(chunk[i * 4..i * 4 + 4].try_into().unwrap());
+    }
+    for i in 16..64 {
+        let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+        let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+    }
+
+    let mut a = h[0];
+    let mut b = h[1];
+    let mut c = h[2];
+    let mut d = h[3];
+    let mut e = h[4];
+    let mut f = h[5];
+    let mut g = h[6];
+    let mut h_var = h[7];
+
+    for i in 0..64 {
+        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+        let ch = (e & f) ^ ((!e) & g);
+        let temp1 = h_var.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let temp2 = s0.wrapping_add(maj);
+
+        h_var = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(temp1);
+        d = c;
+        c = b;
+        b = a;
+        a = temp1.wrapping_add(temp2);
+    }
+
+    h[0] = h[0].wrapping_add(a);
+    h[1] = h[1].wrapping_add(b);
+    h[2] = h[2].wrapping_add(c);
+    h[3] = h[3].wrapping_add(d);
+    h[4] = h[4].wrapping_add(e);
+    h[5] = h[5].wrapping_add(f);
+    h[6] = h[6].wrapping_add(g);
+    h[7] = h[7].wrapping_add(h_var);
+}
+
+/// Streaming SHA-256 state machine.
+#[derive(Clone)]
+pub struct Sha256Hasher {
+    h: [u32; 8],
+    total_len: u64,
+    buffer: [u8; 64],
+    buffer_len: usize,
+}
+
+impl Default for Sha256Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Sha256Hasher {
+    pub fn new() -> Self {
+        Self { h: H0, total_len: 0, buffer: [0u8; 64], buffer_len: 0 }
+    }
+
+    pub fn update(&mut self, mut data: &[u8]) {
+        self.total_len = self.total_len.wrapping_add(data.len() as u64);
+
+        if self.buffer_len > 0 {
+            let to_fill = 64 - self.buffer_len;
+            if data.len() < to_fill {
+                self.buffer[self.buffer_len..self.buffer_len + data.len()].copy_from_slice(data);
+                self.buffer_len += data.len();
+                return;
+            }
+            self.buffer[self.buffer_len..64].copy_from_slice(&data[..to_fill]);
+            process_chunk(&mut self.h, &self.buffer);
+            self.buffer_len = 0;
+            data = &data[to_fill..];
+        }
+
+        while data.len() >= 64 {
+            let chunk: &[u8; 64] = data[..64].try_into().unwrap();
+            process_chunk(&mut self.h, chunk);
+            data = &data[64..];
+        }
+
+        if !data.is_empty() {
+            self.buffer[..data.len()].copy_from_slice(data);
+            self.buffer_len = data.len();
+        }
+    }
+
+    pub fn finalize(mut self) -> [u8; 32] {
+        let bit_len = self.total_len.wrapping_mul(8);
+        self.buffer[self.buffer_len] = 0x80;
+        self.buffer_len += 1;
+
+        if self.buffer_len > 56 {
+            self.buffer[self.buffer_len..64].fill(0);
+            process_chunk(&mut self.h, &self.buffer);
+            self.buffer = [0u8; 64];
+            self.buffer_len = 0;
+        }
+
+        self.buffer[self.buffer_len..56].fill(0);
+        self.buffer[56..64].copy_from_slice(&bit_len.to_be_bytes());
+        process_chunk(&mut self.h, &self.buffer);
+
+        let mut out = [0u8; 32];
+        for (i, word) in self.h.iter().enumerate() {
+            out[i * 4..i * 4 + 4].copy_from_slice(&word.to_be_bytes());
+        }
+        out
+    }
+}
+
 /// Compute standard SHA-256 digest of arbitrary input data.
 pub fn compute_sha256(data: &[u8]) -> [u8; 32] {
-    let mut h = H0;
-
-    // Pre-processing: padding
-    let bit_len = (data.len() as u64).wrapping_mul(8);
-    let mut padded = Vec::with_capacity(data.len() + 64);
-    padded.extend_from_slice(data);
-    padded.push(0x80);
-
-    while (padded.len() % 64) != 56 {
-        padded.push(0x00);
-    }
-    padded.extend_from_slice(&bit_len.to_be_bytes());
-
-    // Process each 64-byte chunk
-    for chunk in padded.as_chunks::<64>().0 {
-        let mut w = [0u32; 64];
-        for (i, slot) in w.iter_mut().take(16).enumerate() {
-            *slot = u32::from_be_bytes(chunk[i * 4..i * 4 + 4].try_into().unwrap());
-        }
-        for i in 16..64 {
-            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
-            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
-        }
-
-        let mut a = h[0];
-        let mut b = h[1];
-        let mut c = h[2];
-        let mut d = h[3];
-        let mut e = h[4];
-        let mut f = h[5];
-        let mut g = h[6];
-        let mut h_var = h[7];
-
-        for i in 0..64 {
-            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let ch = (e & f) ^ ((!e) & g);
-            let temp1 = h_var.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
-            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let maj = (a & b) ^ (a & c) ^ (b & c);
-            let temp2 = s0.wrapping_add(maj);
-
-            h_var = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(temp1);
-            d = c;
-            c = b;
-            b = a;
-            a = temp1.wrapping_add(temp2);
-        }
-
-        h[0] = h[0].wrapping_add(a);
-        h[1] = h[1].wrapping_add(b);
-        h[2] = h[2].wrapping_add(c);
-        h[3] = h[3].wrapping_add(d);
-        h[4] = h[4].wrapping_add(e);
-        h[5] = h[5].wrapping_add(f);
-        h[6] = h[6].wrapping_add(g);
-        h[7] = h[7].wrapping_add(h_var);
-    }
-
-    let mut out = [0u8; 32];
-    for (i, word) in h.iter().enumerate() {
-        out[i * 4..i * 4 + 4].copy_from_slice(&word.to_be_bytes());
-    }
-    out
+    let mut hasher = Sha256Hasher::new();
+    hasher.update(data);
+    hasher.finalize()
 }
 
 /// 4-byte magic signature placed at the very end of a verified QymCAD bundle file.
@@ -135,6 +191,53 @@ pub fn verify_qicons_trailer(file_bytes: &[u8]) -> TrailerCheck {
         TrailerCheck::Verified
     } else {
         TrailerCheck::Tampered
+    }
+}
+
+/// Inspect the trailing bytes of a stream/file to check if it has a valid QymCAD bundle signature,
+/// streaming content through SHA-256 without loading entire archive into RAM.
+pub fn verify_qicons_trailer_stream<R: std::io::Read + std::io::Seek>(reader: &mut R, total_len: u64) -> std::io::Result<TrailerCheck> {
+    if total_len < QICONS_TRAILER_LEN as u64 {
+        return Ok(TrailerCheck::Unsigned);
+    }
+
+    reader.seek(std::io::SeekFrom::Start(total_len - QICONS_TRAILER_LEN as u64))?;
+    let mut trailer = [0u8; QICONS_TRAILER_LEN];
+    reader.read_exact(&mut trailer)?;
+
+    let magic = &trailer[36..40];
+    if magic != QICONS_TRAILER_MAGIC {
+        return Ok(TrailerCheck::Unsigned);
+    }
+
+    let version = u32::from_le_bytes(trailer[32..36].try_into().unwrap());
+    if version != QICONS_TRAILER_VERSION {
+        return Ok(TrailerCheck::Tampered);
+    }
+
+    let expected_hash = &trailer[0..32];
+
+    reader.seek(std::io::SeekFrom::Start(0))?;
+    let content_len = total_len - QICONS_TRAILER_LEN as u64;
+    let mut remaining = content_len;
+    let mut buf = [0u8; 64 * 1024];
+    let mut hasher = Sha256Hasher::new();
+
+    while remaining > 0 {
+        let to_read = (remaining.min(buf.len() as u64)) as usize;
+        let bytes_read = reader.read(&mut buf[..to_read])?;
+        if bytes_read == 0 {
+            return Ok(TrailerCheck::Tampered);
+        }
+        hasher.update(&buf[..bytes_read]);
+        remaining -= bytes_read as u64;
+    }
+
+    let actual_hash = hasher.finalize();
+    if expected_hash == actual_hash {
+        Ok(TrailerCheck::Verified)
+    } else {
+        Ok(TrailerCheck::Tampered)
     }
 }
 

@@ -74,4 +74,26 @@ mod tests {
             sins.join("\n")
         );
     }
+
+    /// NO TOOL REUSES AN ICON ACROSS WORKBENCHES.
+    ///
+    /// Every tool has its own dedicated icon. Reusing icons across workbenches confuses
+    /// the eye when switching between contexts.
+    #[test]
+    fn no_tool_reuses_an_icon_across_workbenches() {
+        let src = crate::gui::panels_source::PANELS;
+        let code = src.split("#[cfg(test)]\nmod ").next().expect("the working part");
+        let mut sins: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for wb in ["Sketch", "Part", "Assembly"] {
+            for ic in tool_icons(workbench_block(code, wb)) {
+                if let Some(prev_wb) = seen.get(&ic) {
+                    sins.push(format!("{ic} is used in both {prev_wb} and {wb}"));
+                } else {
+                    seen.insert(ic, wb.to_string());
+                }
+            }
+        }
+        assert!(sins.is_empty(), "tools reuse icons across workbenches ({}):\n{}\nEvery tool must have a unique dedicated icon.", sins.len(), sins.join("\n"));
+    }
 }

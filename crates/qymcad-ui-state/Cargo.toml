@@ -34,5 +34,8 @@ quick-xml = "0.39.4"
 ron = { workspace = true }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
+[dev-dependencies]
+egui_extras = { version = "0.35", features = ["svg"] }
+
 [lints]
 workspace = true

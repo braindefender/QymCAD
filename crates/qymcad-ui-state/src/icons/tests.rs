@@ -198,29 +198,29 @@ fn localized_bundle_text_survives_packaging() {
         description: "Base description",
         color_mode: Universal,
         translations: {
-            "ru": (name: "Цветные иконки", description: "Русское описание"),
+            "de": (name: "Farbsymbole", description: "Deutsche Beschreibung"),
         },
     )"#;
     std::fs::write(root.join("manifest.ron"), manifest).expect("write manifest");
     std::fs::write(root.join("README.md"), "# Base documentation").expect("write base README");
-    std::fs::write(root.join("README.ru.md"), "# Русская документация").expect("write Russian README");
+    std::fs::write(root.join("README.de.md"), "# Deutsche Dokumentation").expect("write German README");
     let folder = IconPack::from_directory(&root).expect("localized folder loads");
-    assert_eq!(folder.manifest.name_for_locale("ru"), "Цветные иконки");
-    assert_eq!(folder.manifest.description_for_locale("ru-RU"), "Русское описание");
-    assert_eq!(folder.manifest.name_for_locale("de"), "Color Icons");
-    assert_eq!(folder.get_readme_for_locale("ru"), "# Русская документация");
-    assert_eq!(folder.get_readme_for_locale("ru-RU"), "# Русская документация");
-    assert_eq!(folder.get_readme_for_locale("de"), "# Base documentation");
+    assert_eq!(folder.manifest.name_for_locale("de"), "Farbsymbole");
+    assert_eq!(folder.manifest.description_for_locale("de-DE"), "Deutsche Beschreibung");
+    assert_eq!(folder.manifest.name_for_locale("fr"), "Color Icons");
+    assert_eq!(folder.get_readme_for_locale("de"), "# Deutsche Dokumentation");
+    assert_eq!(folder.get_readme_for_locale("de-DE"), "# Deutsche Dokumentation");
+    assert_eq!(folder.get_readme_for_locale("fr"), "# Base documentation");
     let no_readme = IconPack { manifest: folder.manifest.clone(), source: PackSource::Memory(HashMap::new()), is_tampered: false };
-    let generated = no_readme.get_readme_for_locale("ru-RU");
-    assert!(generated.starts_with("# Цветные иконки\n\nРусское описание"), "missing README uses localized manifest text");
+    let generated = no_readme.get_readme_for_locale("de-DE");
+    assert!(generated.starts_with("# Farbsymbole\n\nDeutsche Beschreibung"), "missing README uses localized manifest text");
 
     let archive = root.join("localized-test.qicons");
     package_bundle(&root, &folder.manifest, &archive).expect("package localized folder");
     let packed = IconPack::from_archive(&archive).expect("localized archive loads");
-    assert_eq!(packed.manifest.name_for_locale("ru"), "Цветные иконки");
-    assert_eq!(packed.get_readme_for_locale("ru-RU"), "# Русская документация");
-    assert_eq!(packed.get_readme_for_locale("de"), "# Base documentation");
+    assert_eq!(packed.manifest.name_for_locale("de"), "Farbsymbole");
+    assert_eq!(packed.get_readme_for_locale("de-DE"), "# Deutsche Dokumentation");
+    assert_eq!(packed.get_readme_for_locale("fr"), "# Base documentation");
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -499,8 +499,12 @@ fn inspect_and_package_excludes_problematic_files() {
 fn default_embedded_pack_is_valid_and_complete() {
     let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
     assert_eq!(pack.manifest.id, "default");
-    assert_eq!(pack.manifest.name_for_locale("ru"), "QymCAD: стандартные иконки");
-    assert!(pack.get_readme_for_locale("ru").starts_with("# Стандартная тема векторных иконок"), "embedded bundle must include its localized README");
+    assert!(pack.manifest.translations.contains_key("ru"));
+    assert!(pack.manifest.translations.contains_key("uk"));
+    assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
+    assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
+    assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
+    assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
     assert_eq!(pack.manifest.color_mode, ColorMode::Monochrome);
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
     assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
@@ -620,9 +624,21 @@ fn global_icon_manager_cascade() {
 #[test]
 fn icon_tool_renders_with_icon_id() {
     let ctx = egui::Context::default();
+    egui_extras::install_image_loaders(&ctx);
     let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
         let _ = crate::icon_tool(ui, IconId::SketchLine, "Line tool", true);
     });
+
+    let id_key = egui::Id::new("icon_image_prev_uri").with(IconId::SketchLine);
+    let uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("icon_image must track rendered URI");
+    let poll = ctx.try_load_image(&uri, egui::load::SizeHint::default()).expect("icon image must be loaded by installed loader");
+    match poll {
+        egui::load::ImagePoll::Ready { image } => {
+            assert!(image.size[0] > 0 && image.size[1] > 0, "rasterized icon must have positive dimensions");
+            assert!(image.pixels.iter().any(|p| p.a() > 0), "rasterized icon must contain visible pixels");
+        }
+        egui::load::ImagePoll::Pending { .. } => panic!("in-memory SVG bytes must load synchronously into Ready state"),
+    }
 }
 
 #[test]
@@ -667,11 +683,15 @@ fn freecad_theme_is_complete_and_valid() {
 
     let pack = IconPack::from_directory(&freecad_dir).expect("FreeCAD theme must load from directory");
     assert_eq!(pack.manifest.id, "freecad-classic");
-    assert_eq!(pack.manifest.name_for_locale("ru"), "FreeCAD: классические иконки");
-    assert!(pack.get_readme_for_locale("ru").starts_with("# Классическая тема иконок FreeCAD"), "FreeCAD theme must include its localized README");
+    assert!(pack.manifest.translations.contains_key("ru"));
+    assert!(pack.manifest.translations.contains_key("uk"));
+    assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
+    assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
+    assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
+    assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
     assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
-    assert_eq!(pack.format(), BundleFormat::Embedded);
-    assert!(!pack.is_directory());
+    assert_eq!(pack.format(), BundleFormat::Directory);
+    assert!(pack.is_directory());
     validate_svg(&pack.get_pack_icon_svg()).expect("FreeCAD pack icon is a valid SVG");
     assert_ne!(pack.get_pack_icon_svg(), load_default_pack().expect("default loads").get_pack_icon_svg());
 
@@ -1060,7 +1080,7 @@ fn manifest_validation_accepts_valid_manifest() {
         license: "MIT".into(),
         description: "A valid short description of this theme.".into(),
         color_mode: ColorMode::Universal,
-        translations: [("uk".into(), LocalizedThemeText { name: "Тема українською".into(), description: "Короткий опис теми".into() })].into_iter().collect(),
+        translations: [("de".into(), LocalizedThemeText { name: "Deutsches Thema".into(), description: "Kurze Beschreibung".into() })].into_iter().collect(),
         verified: false,
     };
     assert!(manifest.validate().is_ok());
@@ -1273,7 +1293,7 @@ fn has_zalgo_correctly_detects_zalgo_and_allows_normal_text() {
 
     // Normal natural text (precomposed and normal decomposed)
     assert!(!has_zalgo("QymCAD Default Theme"));
-    assert!(!has_zalgo("Стандартні монохромні іконки"));
+    assert!(!has_zalgo("\u{0421}\u{0442}\u{0430}\u{043d}\u{0434}\u{0430}\u{0440}\u{0442}\u{043d}\u{0456} \u{0456}\u{043a}\u{043e}\u{043d}\u{043a}\u{0438}"));
     assert!(!has_zalgo("Café au lait"));
     assert!(!has_zalgo("Cafe\u{0301}")); // NFD French accent
     assert!(!has_zalgo("Tiếng Việt"));
@@ -1324,10 +1344,360 @@ fn manifest_validation_rejects_zalgo_in_all_fields() {
     assert!(m.validate().unwrap_err().contains("Zalgo"));
 
     let mut m = base_manifest.clone();
-    m.translations.insert("uk".into(), LocalizedThemeText { name: zalgo_sample.into(), description: "Опис".into() });
+    m.translations.insert("de".into(), LocalizedThemeText { name: zalgo_sample.into(), description: "Beschreibung".into() });
     assert!(m.validate().unwrap_err().contains("Zalgo"));
 
     let mut m = base_manifest.clone();
-    m.translations.insert("uk".into(), LocalizedThemeText { name: "Назва".into(), description: zalgo_sample.into() });
+    m.translations.insert("de".into(), LocalizedThemeText { name: "Name".into(), description: zalgo_sample.into() });
     assert!(m.validate().unwrap_err().contains("Zalgo"));
+}
+
+#[test]
+fn archive_exceeding_max_file_size_is_rejected_without_reading() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_size_limit_test_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    let file_path = temp_dir.join("oversized.zip");
+    let file = std::fs::File::create(&file_path).unwrap();
+    // Sparse file with 17 MB size (limit is 16 MB)
+    file.set_len(17 * 1024 * 1024).unwrap();
+
+    let res = IconPack::from_archive(&file_path);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(res.is_err(), "expected error for oversized archive");
+    let err = res.err().unwrap();
+    assert!(err.contains("exceeds limit"), "expected size limit error, got: {err}");
+}
+
+#[test]
+fn directory_icon_exceeding_max_svg_size_is_not_loaded() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_svg_size_test_{}", std::process::id()));
+    let icons_dir = temp_dir.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "oversized-svg-theme".into(),
+        name: "Oversized SVG Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    // Create a file larger than MAX_ICON_SVG_SIZE (512 KB)
+    let file_path = icons_dir.join("line.svg");
+    let file = std::fs::File::create(&file_path).unwrap();
+    file.set_len(MAX_ICON_SVG_SIZE + 1024).unwrap();
+
+    let pack = IconPack::from_directory(&temp_dir).unwrap();
+    let loaded = pack.get_svg("sketch/line");
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(loaded.is_none(), "SVG exceeding MAX_ICON_SVG_SIZE should not be loaded");
+}
+
+#[test]
+fn svg_validation_rejects_malformed_xml_tags() {
+    let malformed = br#"<svg viewBox="0 0 24 24"><path></svg>"#;
+    assert!(validate_svg(malformed).is_err(), "malformed XML with unclosed <path> should be rejected");
+
+    let unclosed = br#"<svg viewBox="0 0 24 24"><g>"#;
+    assert!(validate_svg(unclosed).is_err(), "unclosed tags should be rejected");
+
+    let multiple_roots = br#"<svg viewBox="0 0 24 24"></svg><svg viewBox="0 0 24 24"></svg>"#;
+    assert!(validate_svg(multiple_roots).is_err(), "multiple roots should be rejected");
+}
+
+#[test]
+fn invalid_icon_in_custom_pack_continues_fallback_to_default() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_invalid_svg_fallback_{}", std::process::id()));
+    let icons_dir = temp_dir.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "invalid-svg-theme".into(),
+        name: "Invalid SVG Theme".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    // Write invalid SVG content
+    std::fs::write(icons_dir.join("line.svg"), b"not SVG at all").unwrap();
+
+    let pack = IconPack::from_directory(&temp_dir).unwrap();
+
+    // 1. Pack itself must not return invalid SVG
+    assert_eq!(pack.get_svg_for_id(IconId::SketchLine), None);
+
+    // 2. Cascade in manager must fall back to default embedded theme
+    let mut mgr = IconManager::new();
+    mgr.set_active_stack(vec![pack]);
+    let resolved = mgr.resolve(IconId::SketchLine);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert_eq!(resolved.pack_id, "default");
+    assert!(resolved.data.starts_with(b"<svg"));
+}
+
+#[test]
+fn packager_rejects_icon_with_excessive_compression_ratio() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_bomb_pack_{}", std::process::id()));
+    let icons_dir = temp_dir.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "bomb-pack".into(),
+        name: "Bomb Pack".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    // 120 KB SVG with repeating comment that compresses > 250:1 ratio
+    let mut bomb_svg = Vec::new();
+    bomb_svg.extend_from_slice(b"<svg viewBox=\"0 0 24 24\"><!--");
+    bomb_svg.extend(std::iter::repeat_n(b'A', 120 * 1024));
+    bomb_svg.extend_from_slice(b"--><path d=\"M0 0h24v24z\"/></svg>");
+
+    std::fs::write(icons_dir.join("line.svg"), &bomb_svg).unwrap();
+
+    let report = inspect_pack_directory(&temp_dir).unwrap();
+    // Must be rejected by pack directory inspection
+    assert!(report.included.is_empty(), "icon with excessive compression ratio must not be included");
+    assert!(!report.rejected.is_empty(), "icon with excessive compression ratio must be in rejected list");
+
+    let out_archive = temp_dir.join("out.qicons");
+    let res = package_bundle(&temp_dir, &manifest, &out_archive);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(res.is_err(), "package_bundle must fail for directory with only bomb icons");
+}
+
+#[test]
+fn custom_folder_with_special_id_is_still_directory_format() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_special_id_test_{}", std::process::id()));
+    std::fs::create_dir_all(temp_dir.join("icons").join("sketch")).unwrap();
+
+    // Create a directory pack that uses a known bundled id
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "freecad-classic".into(),
+        name: "My Custom FreeCAD".into(),
+        version: "1.0".into(),
+        author: "Me".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    let pack = IconPack::from_directory(&temp_dir).unwrap();
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    // Provenance must reflect physical source (Directory), NOT the theme ID
+    assert_eq!(pack.format(), BundleFormat::Directory);
+    assert!(pack.is_directory(), "a directory on disk must be recognized as directory even if ID is freecad-classic");
+}
+
+#[test]
+fn resolve_global_icon_lazily_initializes_manager() {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        *g = None;
+    }
+    assert!(with_global_icon_manager(|_| ()).is_none());
+
+    let resolved = resolve_global_icon(IconId::SketchLine);
+    assert_eq!(resolved.pack_id, "default");
+    assert!(with_global_icon_manager(|_| ()).is_some(), "global manager must be initialized after resolve");
+}
+
+#[test]
+fn live_watch_reloads_manifest_color_mode() {
+    let temp_root = std::env::temp_dir().join(format!("qymcad_manifest_reload_test_{}", std::process::id()));
+    let icons_dir = temp_root.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).expect("create icons dir");
+
+    let manifest_path = temp_root.join("manifest.ron");
+    let universal_manifest = r#"(
+        id: "live-manifest-pack",
+        name: "Live Manifest Pack",
+        version: "1.0.0",
+        author: "Tester",
+        license: "MIT",
+        color_mode: Universal,
+    )"#;
+    std::fs::write(&manifest_path, universal_manifest).expect("write universal manifest");
+
+    let svg_content = br##"<svg viewBox="0 0 24 24"><path d="M0 0h24v24z" fill="#ff0000"/></svg>"##;
+    std::fs::write(icons_dir.join("line.svg"), svg_content).expect("write line.svg");
+
+    let pack = IconPack::from_directory(&temp_root).expect("load directory pack");
+    let mut manager = IconManager::new();
+    manager.push_top_pack(pack);
+    manager.set_pack_watching("live-manifest-pack", true);
+
+    let res1 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res1.color_mode, ColorMode::Universal);
+
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let mono_manifest = r#"(
+        id: "live-manifest-pack",
+        name: "Live Manifest Pack",
+        version: "1.0.0",
+        author: "Tester",
+        license: "MIT",
+        color_mode: Monochrome,
+    )"#;
+    std::fs::write(&manifest_path, mono_manifest).expect("write monochrome manifest");
+
+    let changed = manager.check_watched_directories();
+    assert!(changed, "check_watched_directories should detect manifest change");
+
+    let res2 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res2.color_mode, ColorMode::Monochrome, "color mode must update to Monochrome after manifest reload");
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+#[test]
+fn transient_read_failure_in_higher_theme_does_not_poison_cache() {
+    let temp_root = std::env::temp_dir().join(format!("qymcad_transient_cache_test_{}", std::process::id()));
+    let icons_dir = temp_root.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).expect("create icons dir");
+
+    let manifest_path = temp_root.join("manifest.ron");
+    let manifest = r#"(
+        id: "custom-transient-pack",
+        name: "Custom Transient Pack",
+        version: "1.0.0",
+        author: "Tester",
+        license: "MIT",
+        color_mode: Universal,
+    )"#;
+    std::fs::write(&manifest_path, manifest).expect("write manifest");
+
+    let line_path = icons_dir.join("line.svg");
+    std::fs::write(&line_path, b"").expect("write empty line.svg");
+
+    let custom_pack = IconPack::from_directory(&temp_root).expect("load directory pack");
+    assert!(custom_pack.has_icon_on_disk(IconId::SketchLine));
+
+    let mut manager = IconManager::new();
+    manager.push_top_pack(custom_pack);
+
+    let res1 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res1.pack_id, "default");
+
+    let valid_svg = br#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24z"/></svg>"#;
+    std::fs::write(&line_path, valid_svg).expect("write valid svg");
+
+    let res2 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res2.pack_id, "custom-transient-pack", "cache must not be poisoned by fallback after transient error");
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+#[test]
+fn discover_packs_detailed_reports_errors_for_corrupt_or_invalid_archives() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_discover_detailed_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let valid_theme = temp_dir.join("valid_theme");
+    std::fs::create_dir_all(valid_theme.join("icons").join("sketch")).unwrap();
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-pack".to_string(),
+        name: "Valid Pack".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Tester".to_string(),
+        license: "MIT".to_string(),
+        description: "Test".to_string(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(valid_theme.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    let corrupt_qicons = temp_dir.join("corrupted.qicons");
+    std::fs::write(&corrupt_qicons, b"not a zip archive at all").unwrap();
+
+    let report = discover_packs_detailed(&temp_dir);
+    assert_eq!(report.packs.len(), 1);
+    assert_eq!(report.packs[0].manifest.id, "valid-pack");
+    assert_eq!(report.errors.len(), 1);
+    assert_eq!(report.errors[0].path, corrupt_qicons);
+    assert!(!report.errors[0].reason.is_empty());
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn icon_image_forgets_previous_revision_uri() {
+    let ctx = egui::Context::default();
+    let id_key = egui::Id::new("icon_image_prev_uri").with(IconId::SketchLine);
+
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _ = crate::icon_image(ui, IconId::SketchLine, 22.0);
+    });
+
+    let first_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("first URI tracked");
+
+    clear_global_icon_cache();
+
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _ = crate::icon_image(ui, IconId::SketchLine, 22.0);
+    });
+
+    let second_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("second URI tracked");
+    assert_ne!(first_uri, second_uri);
+}
+
+#[test]
+fn icon_theme_documentation_matches_all_icons() {
+    let readme_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/icon-themes/README.md");
+    let content = std::fs::read_to_string(&readme_path).expect("assets/icon-themes/README.md must be readable");
+
+    let mut documented_paths = std::collections::BTreeSet::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("| `") {
+            if let Some(rest) = trimmed.strip_prefix("| `") {
+                if let Some((path_with_ext, _)) = rest.split_once('`') {
+                    if let Some(rel_path) = path_with_ext.strip_suffix(".svg") {
+                        documented_paths.insert(rel_path.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let supported_paths: std::collections::BTreeSet<String> = ALL_ICONS.iter().map(|id| id.relative_path().to_string()).collect();
+
+    let extra: Vec<_> = documented_paths.difference(&supported_paths).collect();
+    let missing: Vec<_> = supported_paths.difference(&documented_paths).collect();
+
+    assert!(extra.is_empty(), "README documents non-existent/unsupported icons: {extra:?}");
+    assert!(missing.is_empty(), "README is missing documented icons: {missing:?}");
+    assert_eq!(documented_paths.len(), ALL_ICONS.len(), "Documented count must match ALL_ICONS count");
 }

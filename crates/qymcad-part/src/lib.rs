@@ -6232,13 +6232,13 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     }
                     // COMPONENT PATTERNS ARE AN ASSEMBLY TOOL. They used to sit in the PART workbench, where
                     // there are no components, and there they duplicated the look of the body patterns.
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArray, &qymcad_i18n::tr("tb-comp-lin-array-hint"), bc.carr.mode == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArrayLinear, &qymcad_i18n::tr("tb-comp-lin-array-hint"), bc.carr.mode == 1) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.carr.mode == 1, qymcad_ui_state::BarAsk::CompArray(1)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartArrayCircular, &qymcad_i18n::tr("tb-comp-circ-array-hint"), bc.carr.mode == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArrayCircular, &qymcad_i18n::tr("tb-comp-circ-array-hint"), bc.carr.mode == 2) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.carr.mode == 2, qymcad_ui_state::BarAsk::CompArray(2)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartMirror, &qymcad_i18n::tr("tb-mirror-part-hint"), bc.mirror.in_hand()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyMirror, &qymcad_i18n::tr("tb-mirror-part-hint"), bc.mirror.in_hand()) {
                         // both a PART and a SUBASSEMBLY are accepted (the whole subtree is mirrored); with the tool in
                         // hand the press goes to the door as it is, which puts it down
                         let src = bc.mirror.part.or_else(|| match *bc.sel {
@@ -6254,7 +6254,7 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // and the copy could not release the other tools from here, so it pushed the request and
                     // armed the section straight after. The request runs AFTER the frame and clears exactly
                     // that: switching the section ON through this button did nothing at all.
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSection, &qymcad_i18n::tr("tb-section-hint"), bc.section.pick || bc.section.plane.is_some()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblySection, &qymcad_i18n::tr("tb-section-hint"), bc.section.pick || bc.section.plane.is_some()) {
                         bc.ask.push(qymcad_ui_state::BarAsk::ToggleSection);
                     }
                     // --- The mates: buttons per mate kind, as in the sketcher. Clicking a kind starts the

@@ -1,6 +1,6 @@
 //! Pack discovery, SVG validation, diagnostic inspection, and .qicons bundle packaging.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
 use super::manifest::{ColorMode, IconManifest};
@@ -55,38 +55,56 @@ impl ValidationReport {
     }
 }
 
-/// Discover icon packs from a directory (subdirectories with `manifest.ron` and `.qicons`/`.zip` archives).
-pub fn discover_packs_in(dir: &Path) -> Vec<IconPack> {
+/// A rejected theme directory or archive with the reason for rejection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscoveryError {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
+/// The result of discovering icon packs in a directory, including rejected items.
+#[derive(Clone, Debug, Default)]
+pub struct DiscoveryReport {
+    pub packs: Vec<IconPack>,
+    pub errors: Vec<DiscoveryError>,
+}
+
+/// Discover icon packs from a directory, returning both valid packs and any rejection errors.
+pub fn discover_packs_detailed(dir: &Path) -> DiscoveryReport {
     let mut packs = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return packs };
+    let mut errors = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return DiscoveryReport { packs, errors };
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.join("manifest.ron").exists() {
-                if let Ok(pack) = IconPack::from_directory(&path) {
-                    packs.push(pack);
+            let manifest_path = path.join("manifest.ron");
+            if manifest_path.exists() {
+                match IconPack::from_directory(&path) {
+                    Ok(pack) => packs.push(pack),
+                    Err(err) => errors.push(DiscoveryError { path, reason: err }),
                 }
             }
         } else if path.extension().is_some_and(|ext| ext == "qicons" || ext == "zip") {
-            if let Ok(pack) = IconPack::from_archive(&path) {
-                packs.push(pack);
+            match IconPack::from_archive(&path) {
+                Ok(pack) => packs.push(pack),
+                Err(err) => errors.push(DiscoveryError { path, reason: err }),
             }
         }
     }
     packs.sort_by(|a, b| a.manifest.name.cmp(&b.manifest.name));
-    packs
+    errors.sort_by(|a, b| a.path.cmp(&b.path));
+    DiscoveryReport { packs, errors }
 }
 
-/// Parse width and height from an SVG viewBox attribute.
-fn parse_viewbox_dimensions(text: &str) -> Option<(f32, f32)> {
-    let idx = text.find("viewBox")?;
-    let rest = &text[idx + 7..];
-    let quote_start = rest.find(['"', '\''])?;
-    let quote_char = rest.as_bytes()[quote_start] as char;
-    let content = &rest[quote_start + 1..];
-    let quote_end = content.find(quote_char)?;
-    let val_str = &content[..quote_end];
+/// Discover icon packs from a directory (subdirectories with `manifest.ron` and `.qicons`/`.zip` archives).
+pub fn discover_packs_in(dir: &Path) -> Vec<IconPack> {
+    discover_packs_detailed(dir).packs
+}
 
+///// Parse width and height from an SVG viewBox attribute value.
+fn parse_viewbox_values(val_str: &str) -> Option<(f32, f32)> {
     let parts: Vec<&str> = val_str.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).collect();
     if parts.len() == 4 {
         let x: f32 = parts[0].parse().ok()?;
@@ -168,31 +186,107 @@ pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
 }
 
 /// Validate SVG data according to the theme specification:
-/// - Must contain a valid root `<svg>` element.
+/// - Must be well-formed XML with properly nested tags.
+/// - Must contain a single valid root `<svg>` element.
 /// - Must contain a valid square `viewBox` attribute (1:1 aspect ratio, e.g. `viewBox="0 0 64 64"`).
 /// - Must NOT contain embedded raster images (`<image>` or `data:image/`).
 /// - Must NOT contain junk tags, editor metadata, or executable elements.
 pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(data).map_err(|_| "SVG data is not valid UTF-8".to_string())?;
 
-    if !text.contains("<svg") {
+    let mut reader = quick_xml::Reader::from_str(text);
+    reader.config_mut().check_end_names = true;
+
+    let mut depth: usize = 0;
+    let mut root_svg_found = false;
+    let mut viewbox_attr: Option<String> = None;
+
+    loop {
+        use quick_xml::events::Event;
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
+
+                if depth == 0 {
+                    if root_svg_found {
+                        return Err("multiple root elements in SVG".to_string());
+                    }
+                    if name != "svg" {
+                        return Err(format!("expected root element <svg>, found <{name}>"));
+                    }
+                    root_svg_found = true;
+                    for attr in element.attributes() {
+                        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
+                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
+                        if key == "viewbox" {
+                            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
+                            viewbox_attr = Some(val.into_owned());
+                        }
+                    }
+                }
+                if name == "image" {
+                    return Err("embedded raster images (<image>) are prohibited".to_string());
+                }
+                depth += 1;
+            }
+            Ok(Event::Empty(element)) => {
+                let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
+
+                if depth == 0 {
+                    if root_svg_found {
+                        return Err("multiple root elements in SVG".to_string());
+                    }
+                    if name != "svg" {
+                        return Err(format!("expected root element <svg>, found <{name}>"));
+                    }
+                    root_svg_found = true;
+                    for attr in element.attributes() {
+                        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
+                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
+                        if key == "viewbox" {
+                            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
+                            viewbox_attr = Some(val.into_owned());
+                        }
+                    }
+                }
+                if name == "image" {
+                    return Err("embedded raster images (<image>) are prohibited".to_string());
+                }
+            }
+            Ok(Event::End(_)) => {
+                if depth == 0 {
+                    return Err("unexpected closing tag".to_string());
+                }
+                depth -= 1;
+            }
+            Ok(Event::DocType(_) | Event::Decl(_) | Event::Comment(_) | Event::Text(_)) => {}
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(format!("XML syntax error: {e}")),
+            _ => {}
+        }
+    }
+
+    if !root_svg_found {
         return Err("missing <svg> root element".to_string());
     }
-
-    if !text.contains("viewBox") {
-        return Err("missing viewBox attribute (expected 1:1, e.g. viewBox=\"0 0 64 64\")".to_string());
+    if depth != 0 {
+        return Err("unclosed XML tags in SVG".to_string());
     }
 
-    let (w, h) = parse_viewbox_dimensions(text).ok_or_else(|| "invalid viewBox attribute (expected four finite numbers)".to_string())?;
+    let Some(viewbox_str) = viewbox_attr else {
+        return Err("missing viewBox attribute (expected 1:1, e.g. viewBox=\"0 0 64 64\")".to_string());
+    };
+
+    let (w, h) = parse_viewbox_values(&viewbox_str).ok_or_else(|| "invalid viewBox attribute (expected four finite numbers)".to_string())?;
     if w <= 0.0 || h <= 0.0 {
         return Err(format!("non-positive viewBox dimensions: {w}x{h}"));
     }
     let ratio = w / h;
-    if ratio < 0.95 || ratio > 1.05 {
+    if !(0.95..=1.05).contains(&ratio) {
         return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
     }
 
-    if text.contains("<image") || text.contains("data:image/") {
+    if text.contains("data:image/") {
         return Err("embedded raster images (<image>) are prohibited".to_string());
     }
 
@@ -613,6 +707,23 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
     inspect_pack_directory_for_mode(source_dir, color_mode)
 }
 
+fn estimate_deflate_ratio(data: &[u8]) -> Option<u64> {
+    if data.len() <= 64 * 1024 {
+        return Some(1);
+    }
+    let mut zip_buf = Vec::new();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_buf));
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("entry", options).ok()?;
+    std::io::Write::write_all(&mut zip, data).ok()?;
+    zip.finish().ok()?;
+
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_buf)).ok()?;
+    let file = archive.by_index(0).ok()?;
+    let compressed = file.compressed_size();
+    (data.len() as u64).checked_div(compressed)
+}
+
 /// Inspect a folder using the color mode that will be written to its bundle manifest.
 pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode: ColorMode) -> Result<ValidationReport, String> {
     let source_dir = source_dir.as_ref();
@@ -705,18 +816,30 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                     continue;
                 };
 
-                // Validate SVG content and viewport
+                // Validate SVG content, size, and compression ratio
                 match std::fs::read(&p) {
-                    Ok(data) => match validate_icon_svg(&data, color_mode) {
-                        Ok(()) => {
-                            if !included.contains(&id) {
-                                included.push(id);
+                    Ok(data) => {
+                        if data.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
+                            rejected.push((rel_str, format!("SVG exceeds {} byte limit", super::pack::MAX_ICON_SVG_SIZE)));
+                            continue;
+                        }
+                        if let Some(ratio) = estimate_deflate_ratio(&data) {
+                            if ratio > super::pack::MAX_COMPRESSION_RATIO {
+                                rejected.push((rel_str, format!("suspicious compression ratio ({ratio}:1, exceeds limit {})", super::pack::MAX_COMPRESSION_RATIO)));
+                                continue;
                             }
                         }
-                        Err(err) => {
-                            rejected.push((rel_str, err));
+                        match validate_icon_svg(&data, color_mode) {
+                            Ok(()) => {
+                                if !included.contains(&id) {
+                                    included.push(id);
+                                }
+                            }
+                            Err(err) => {
+                                rejected.push((rel_str, err));
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         rejected.push((rel_str, format!("read error: {e}")));
                     }
@@ -737,7 +860,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
 /// Package an icon folder into any writer (e.g. file or in-memory cursor).
 /// Only valid, verified icons that match a known `IconId` are packaged into the archive.
 /// Extraneous files and invalid SVGs are automatically excluded.
-pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, writer: W) -> Result<ValidationReport, String> {
+pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, mut writer: W) -> Result<ValidationReport, String> {
     manifest.validate()?;
     let source_dir = source_dir.as_ref();
     let report = inspect_pack_directory_for_mode(source_dir, manifest.color_mode)?;
@@ -746,7 +869,8 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
         return Err("cannot package bundle: 0 valid CAD icons found in icons/ directory".to_string());
     }
 
-    let mut zip = zip::ZipWriter::new(writer);
+    let mut mem_buf = Vec::new();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut mem_buf));
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // 1. Write manifest.ron (marked verified)
@@ -760,11 +884,21 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
     for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "preview.svg", "preview.png", "preview.webp", "icon.svg"] {
         let doc_path = source_dir.join(doc);
         if doc_path.is_file() {
-            if *doc == "icon.svg" && std::fs::metadata(&doc_path).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
+            let limit = if *doc == "icon.svg" {
+                super::pack::MAX_ICON_SVG_SIZE
+            } else if doc.starts_with("preview.") {
+                super::pack::MAX_SINGLE_FILE_UNCOMPRESSED_SIZE
+            } else {
+                super::pack::MAX_TEXT_FILE_SIZE
+            };
+            if std::fs::metadata(&doc_path).ok().is_some_and(|m| m.len() > limit) {
                 continue;
             }
             if let Ok(content) = std::fs::read(&doc_path) {
-                if *doc == "icon.svg" && (content.len() as u64 > super::pack::MAX_ICON_SVG_SIZE || validate_svg(&content).is_err()) {
+                if content.len() as u64 > limit {
+                    continue;
+                }
+                if *doc == "icon.svg" && validate_svg(&content).is_err() {
                     continue;
                 }
                 let _ = zip.start_file(*doc, options);
@@ -804,6 +938,12 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
     }
 
     zip.finish().map_err(|e| e.to_string())?;
+
+    // Verify generated zip passes all archive safety requirements
+    let mut check_zip = zip::ZipArchive::new(std::io::Cursor::new(&mem_buf)).map_err(|e| e.to_string())?;
+    super::pack::validate_archive_safety(&mut check_zip).map_err(|e| format!("generated bundle rejected by safety rules: {e}"))?;
+
+    std::io::Write::write_all(&mut writer, &mem_buf).map_err(|e| e.to_string())?;
 
     Ok(report)
 }

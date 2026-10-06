@@ -5,11 +5,11 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_in, inspect_pack_directory_for_mode, load_default_pack, package_bundle,
-    reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory_for_mode, load_default_pack, package_bundle,
+    reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The directory for user-installed icon themes in the application config folder.
 pub(crate) fn user_themes_dir() -> Option<PathBuf> {
@@ -18,15 +18,30 @@ pub(crate) fn user_themes_dir() -> Option<PathBuf> {
 
 /// The directory for bundled icon themes.
 pub(crate) fn bundled_themes_dir() -> PathBuf {
-    let dev = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes"));
-    if dev.exists() {
-        return dev;
+    bundled_themes_dir_with(Some(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes"))), std::env::current_exe().ok().as_deref())
+}
+
+pub(crate) fn bundled_themes_dir_with(dev_candidate: Option<&Path>, exe_path: Option<&Path>) -> PathBuf {
+    if let Some(dev) = dev_candidate {
+        if dev.exists() {
+            return dev.to_path_buf();
+        }
     }
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = exe_path {
         if let Some(parent) = exe.parent() {
             let beside = parent.join("assets/icon-themes");
             if beside.exists() {
                 return beside;
+            }
+            if let Some(contents) = parent.parent() {
+                let mac_resources = contents.join("Resources/assets/icon-themes");
+                if mac_resources.exists() {
+                    return mac_resources;
+                }
+                let mac_resources_flat = contents.join("Resources/icon-themes");
+                if mac_resources_flat.exists() {
+                    return mac_resources_flat;
+                }
             }
         }
     }
@@ -63,17 +78,130 @@ pub(crate) fn all_theme_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> Vec<IconPack> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ThemeEntrySignature {
+    path: PathBuf,
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ThemeDirSignature {
+    dir: PathBuf,
+    entries: Vec<ThemeEntrySignature>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DiscoveredThemes {
+    pub packs: Vec<IconPack>,
+    pub errors: Vec<DiscoveryError>,
+}
+
+#[derive(Clone, Debug)]
+struct CachedDiscovery {
+    signatures: Vec<ThemeDirSignature>,
+    themes: DiscoveredThemes,
+}
+
+static DISCOVERY_CACHE: std::sync::RwLock<Option<std::collections::HashMap<Vec<PathBuf>, CachedDiscovery>>> = std::sync::RwLock::new(None);
+
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DiscoveryCacheStats {
+    pub hits: usize,
+    pub misses: usize,
+}
+
+#[cfg(test)]
+static DISCOVERY_HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static DISCOVERY_MISSES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn discovery_cache_stats() -> DiscoveryCacheStats {
+    DiscoveryCacheStats { hits: DISCOVERY_HITS.load(std::sync::atomic::Ordering::Relaxed), misses: DISCOVERY_MISSES.load(std::sync::atomic::Ordering::Relaxed) }
+}
+
+#[cfg(test)]
+pub(crate) fn clear_discovery_cache_for_test() {
+    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
+        if let Some(map) = guard.as_mut() {
+            map.clear();
+        }
+    }
+    DISCOVERY_HITS.store(0, std::sync::atomic::Ordering::Relaxed);
+    DISCOVERY_MISSES.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Invalidate cached discovery results across all searched theme directories.
+pub(crate) fn invalidate_theme_discovery_cache() {
+    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
+        if let Some(map) = guard.as_mut() {
+            map.clear();
+        }
+    }
+}
+
+fn compute_dir_signature(dir: &Path) -> ThemeDirSignature {
+    let mut entries = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let manifest_path = path.join("manifest.ron");
+                if let Ok(meta) = std::fs::metadata(&manifest_path) {
+                    entries.push(ThemeEntrySignature { path: manifest_path, modified: meta.modified().ok(), len: meta.len() });
+                }
+            } else if path.extension().is_some_and(|ext| ext == "qicons" || ext == "zip") {
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    entries.push(ThemeEntrySignature { path, modified: meta.modified().ok(), len: meta.len() });
+                }
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    ThemeDirSignature { dir: dir.to_path_buf(), entries }
+}
+
+fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> DiscoveredThemes {
+    let current_signatures: Vec<ThemeDirSignature> = dirs.iter().map(|d| compute_dir_signature(d)).collect();
+
+    if let Ok(guard) = DISCOVERY_CACHE.read() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(cached) = map.get(dirs) {
+                if cached.signatures == current_signatures {
+                    #[cfg(test)]
+                    DISCOVERY_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return cached.themes.clone();
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    DISCOVERY_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     let mut packs = Vec::new();
+    let mut errors = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
     for dir in dirs {
-        for pack in discover_packs_in(dir) {
+        let report = discover_packs_detailed(dir);
+        for pack in report.packs {
             if seen_ids.insert(pack.manifest.id.clone()) {
                 packs.push(pack);
             }
         }
+        errors.extend(report.errors);
     }
-    packs
+
+    let themes = DiscoveredThemes { packs, errors };
+
+    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
+        let map = guard.get_or_insert_with(std::collections::HashMap::new);
+        map.insert(dirs.to_vec(), CachedDiscovery { signatures: current_signatures, themes: themes.clone() });
+    }
+
+    themes
 }
 
 /// Apply the active icon packs from settings into the global icon manager.
@@ -111,6 +239,19 @@ fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, size: f32) {
 
 fn draw_pack_icon_bytes(ui: &mut egui::Ui, pack: &IconPack, size: f32, bytes: egui::load::Bytes, generation: u64) {
     let uri = format!("bytes://pack-icon/{}/r{}-g{generation}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision());
+    let id_key = egui::Id::new("pack_icon_prev_uri").with(&pack.manifest.id);
+    let to_forget = ui.data_mut(|d| {
+        let prev = d.get_temp::<String>(id_key);
+        if prev.as_ref() != Some(&uri) {
+            d.insert_temp(id_key, uri.clone());
+            prev
+        } else {
+            None
+        }
+    });
+    if let Some(prev) = to_forget {
+        ui.ctx().forget_image(&prev);
+    }
     ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(egui::vec2(size, size)));
 }
 
@@ -144,7 +285,25 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                 match &icon {
                     Ok(Some(svg_data)) => {
                         let uri = format!("bytes://mgr/{}/r{}-g{generation}/{}.svg", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), relative_path);
-                        let mut image = egui::Image::from_bytes(uri, svg_data.clone()).fit_to_exact_size(egui::vec2(48.0, 48.0));
+                        let id_key = egui::Id::new("gallery_icon_prev_uri").with((&pack.manifest.id, id));
+                        let to_forget = ui.data_mut(|d| {
+                            let prev = d.get_temp::<String>(id_key);
+                            if prev.as_ref() != Some(&uri) {
+                                d.insert_temp(id_key, uri.clone());
+                                prev
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(prev) = to_forget {
+                            ui.ctx().forget_image(&prev);
+                        }
+                        let prepared_bytes = if pack.manifest.color_mode == ColorMode::Monochrome {
+                            egui::load::Bytes::from(qymcad_ui_state::icons::prepare_monochrome_svg(svg_data))
+                        } else {
+                            svg_data.clone()
+                        };
+                        let mut image = egui::Image::from_bytes(uri, prepared_bytes).fit_to_exact_size(egui::vec2(48.0, 48.0));
                         if pack.manifest.color_mode == ColorMode::Monochrome {
                             image = image.tint(ui.visuals().text_color());
                         }
@@ -253,7 +412,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
     ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-desc")).small().weak());
     ui.add_space(4.0);
 
-    let mut all_packs = discover_theme_packs_in_dirs(&all_theme_dirs());
+    let mut all_packs = discover_theme_packs_in_dirs(&all_theme_dirs()).packs;
     if !all_packs.iter().any(|p| p.manifest.id == "default") {
         if let Some(def) = load_default_pack() {
             all_packs.push(def);
@@ -300,39 +459,39 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
         ui.add_space(4.0);
 
         egui::Grid::new("packager_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            ui.label("Theme ID:");
+            ui.label(crate::i18n::tr("icon-packager-field-id"));
             ui.text_edit_singleline(&mut state.id);
             ui.end_row();
 
-            ui.label("Theme Name:");
+            ui.label(crate::i18n::tr("icon-packager-field-name"));
             ui.text_edit_singleline(&mut state.name);
             ui.end_row();
 
-            ui.label("Version:");
+            ui.label(crate::i18n::tr("icon-packager-field-version"));
             ui.text_edit_singleline(&mut state.version);
             ui.end_row();
 
-            ui.label("Author:");
+            ui.label(crate::i18n::tr("icon-packager-field-author"));
             ui.text_edit_singleline(&mut state.author);
             ui.end_row();
 
-            ui.label("License:");
+            ui.label(crate::i18n::tr("icon-packager-field-license"));
             ui.text_edit_singleline(&mut state.license);
             ui.end_row();
 
-            ui.label("Description:");
+            ui.label(crate::i18n::tr("icon-packager-field-desc"));
             ui.text_edit_singleline(&mut state.description);
             ui.end_row();
 
-            ui.label("Monochrome:");
-            ui.checkbox(&mut state.is_monochrome, "Theme adapts to UI foreground");
+            ui.label(crate::i18n::tr("icon-packager-field-monochrome"));
+            ui.checkbox(&mut state.is_monochrome, crate::i18n::tr("icon-packager-monochrome-hint"));
             ui.end_row();
 
-            ui.label("Source Folder:");
+            ui.label(crate::i18n::tr("icon-packager-field-source"));
             ui.text_edit_singleline(&mut state.source_dir);
             ui.end_row();
 
-            ui.label("Output .qicons Path:");
+            ui.label(crate::i18n::tr("icon-packager-field-output"));
             ui.text_edit_singleline(&mut state.output_file);
             ui.end_row();
         });
@@ -349,7 +508,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
             if ui.button(crate::i18n::tr("icon-packager-inspect-btn")).clicked() {
                 let source_path = PathBuf::from(state.source_dir.trim());
                 if !source_path.exists() {
-                    state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
+                    let path_str = source_path.display().to_string();
+                    state.message = Some(crate::i18n::tr1("icon-packager-source-not-found", "path", &path_str));
                     state.is_error = true;
                     state.report = None;
                 } else {
@@ -357,8 +517,10 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                     match inspect_pack_directory_for_mode(&source_path, color_mode) {
                         Ok(rep) => {
                             if rep.has_issues() {
-                                state.message =
-                                    Some(format!("Validation found {} issue(s): {} rejected, {} extraneous", rep.rejected.len() + rep.extraneous.len(), rep.rejected.len(), rep.extraneous.len()));
+                                let total_str = (rep.rejected.len() + rep.extraneous.len()).to_string();
+                                let rej_str = rep.rejected.len().to_string();
+                                let ext_str = rep.extraneous.len().to_string();
+                                state.message = Some(crate::i18n::trn("icon-packager-validation-issues", &[("total", &total_str), ("rejected", &rej_str), ("extraneous", &ext_str)]));
                                 state.is_error = !rep.rejected.is_empty();
                             } else {
                                 state.message = Some(crate::i18n::tr("icon-packager-all-valid"));
@@ -367,7 +529,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             state.report = Some(rep);
                         }
                         Err(e) => {
-                            state.message = Some(format!("Inspection failed: {e}"));
+                            let err_str = e.to_string();
+                            state.message = Some(crate::i18n::tr1("icon-packager-inspection-failed", "error", &err_str));
                             state.is_error = true;
                             state.report = None;
                         }
@@ -380,10 +543,11 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 let output_path = PathBuf::from(state.output_file.trim());
 
                 if !source_path.exists() {
-                    state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
+                    let path_str = source_path.display().to_string();
+                    state.message = Some(crate::i18n::tr1("icon-packager-source-not-found", "path", &path_str));
                     state.is_error = true;
                 } else if state.output_file.trim().is_empty() {
-                    state.message = Some("Output .qicons path cannot be empty".into());
+                    state.message = Some(crate::i18n::tr("icon-packager-output-empty"));
                     state.is_error = true;
                 } else {
                     let result = (|| {
@@ -410,6 +574,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                                 state.message = Some(crate::i18n::tr("icon-packager-no-icons"));
                                 state.is_error = true;
                             } else {
+                                invalidate_theme_discovery_cache();
                                 let cov_str = rep.included.len().to_string();
                                 let path_str = output_path.display().to_string();
                                 state.message = Some(crate::i18n::trn("icon-packager-success", &[("count", &cov_str), ("path", &path_str)]));
@@ -418,7 +583,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             state.report = Some(rep);
                         }
                         Err(e) => {
-                            state.message = Some(format!("Packaging failed: {e}"));
+                            let err_str = e.to_string();
+                            state.message = Some(crate::i18n::tr1("icon-packager-packaging-failed", "error", &err_str));
                             state.is_error = true;
                         }
                     }
@@ -499,7 +665,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
             });
         }
     });
-    state.is_open = open;
+    state.is_open = open && state.is_open;
 }
 
 /// Active tab in the Icon Theme Manager window.
@@ -605,11 +771,12 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
         }
         icons.insert(id, inspected);
     }
+    let image_generation = ctx.data(|data| data.get_temp::<ManagerArchiveCache>(cache_id).map_or(1, |cache| cache.preview.image_generation.wrapping_add(1)));
     let preview = std::sync::Arc::new(ManagerPackPreview {
         coverage,
         invalid_icons,
         has_cleanable_icons: false,
-        image_generation: 0,
+        image_generation,
         readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), snapshot.get_readme_for_locale(&locale))).collect(),
         preview_image: snapshot.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
         pack_icon: snapshot.get_pack_icon_svg().into(),
@@ -742,8 +909,19 @@ fn open_packager_for_directory(ctx: &egui::Context, pack: &IconPack, source: &st
     });
 }
 
+/// Poll watched theme packs during the frame.
+pub(crate) fn poll_icon_themes_frame(ctx: &egui::Context) {
+    if qymcad_ui_state::icons::poll_watched_icon_packs() {
+        ctx.request_repaint();
+    }
+    if qymcad_ui_state::icons::has_watched_icon_packs() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(300));
+    }
+}
+
 /// Draw the dedicated Icon Theme Manager window.
 pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
+    poll_icon_themes_frame(ctx);
     draw_icon_manager_window_in_dirs(ctx, wc, &all_theme_dirs());
 }
 
@@ -768,7 +946,8 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
     let mut open = state.is_open;
     let mut changed = false;
 
-    let mut all_packs = discover_theme_packs_in_dirs(dirs);
+    let discovered = discover_theme_packs_in_dirs(dirs);
+    let mut all_packs = discovered.packs;
 
     // Ensure the built-in default pack is always represented if discovered or from embedded
     if !all_packs.iter().any(|p| p.manifest.id == "default") {
@@ -934,6 +1113,23 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     }
                     if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
                         ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
+                    }
+
+                    if !discovered.errors.is_empty() {
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-rejected-title"))).strong().color(ui.visuals().error_fg_color));
+                        ui.add_space(4.0);
+                        for err in &discovered.errors {
+                            let file_name = err.path.file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
+                            egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.12)).corner_radius(4.0).inner_margin(egui::Margin::symmetric(6, 4)).show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(file_name).strong());
+                                    ui.label(egui::RichText::new(&err.reason).small().weak());
+                                });
+                            });
+                            ui.add_space(3.0);
+                        }
                     }
 
                     if let Some(idx) = to_remove {
@@ -1136,17 +1332,35 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                 match state.active_tab {
                     IconManagerTab::Readme => {
                         egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").auto_shrink([false, false]).show(ui, |ui| {
-                            let preview_image = if let Some(preview) = pack_preview.as_ref() {
-                                preview.preview_image.clone()
+                            let (preview_image, generation) = if let Some(preview) = pack_preview.as_ref() {
+                                (preview.preview_image.clone(), preview.image_generation)
                             } else {
-                                pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension })
+                                (pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }), 0)
                             };
+                            let id_key = egui::Id::new("preview_image_prev_uri").with(&pack.manifest.id);
                             if let Some(image) = preview_image {
-                                let uri = format!("bytes://preview/{}/{}.{}", pack.manifest.id, image.extension, image.extension);
+                                let uri = format!("bytes://preview/{}/r{}-g{generation}/{}.{}", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), image.extension, image.extension);
+                                let to_forget = ui.data_mut(|d| {
+                                    let prev = d.get_temp::<String>(id_key);
+                                    if prev.as_ref() != Some(&uri) {
+                                        d.insert_temp(id_key, uri.clone());
+                                        prev
+                                    } else {
+                                        None
+                                    }
+                                });
+                                if let Some(prev) = to_forget {
+                                    ui.ctx().forget_image(&prev);
+                                }
                                 let img = egui::Image::from_bytes(uri, image.bytes).max_width(ui.available_width());
                                 ui.add(img);
                                 ui.add_space(8.0);
                                 ui.separator();
+                            } else {
+                                let to_forget = ui.data_mut(|d| d.remove_temp::<String>(id_key));
+                                if let Some(prev) = to_forget {
+                                    ui.ctx().forget_image(&prev);
+                                }
                             }
 
                             let readme_md = pack_preview.as_ref().and_then(|preview| preview.readmes.get(&locale)).cloned().unwrap_or_else(|| pack.get_readme_for_locale(&locale));
@@ -1260,6 +1474,12 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
 mod tests {
     use super::*;
 
+    static THEME_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_theme_test() -> std::sync::MutexGuard<'static, ()> {
+        THEME_TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn test_theme_directories_resolution() {
         let bundled = bundled_themes_dir();
@@ -1272,6 +1492,7 @@ mod tests {
 
     #[test]
     fn test_apply_icon_themes_cascade_logic() {
+        let _lock = lock_theme_test();
         let set = Settings { active_icon_packs: vec!["nonexistent-pack".into()], ..Default::default() };
         apply_icon_themes(&set);
 
@@ -1323,17 +1544,19 @@ mod tests {
     #[test]
     fn test_bundled_freecad_classic_pack_discovered() {
         let bundled = bundled_themes_dir();
-        let packs = discover_packs_in(&bundled);
+        let packs = qymcad_ui_state::icons::discover_packs_in(&bundled);
         assert!(packs.iter().any(|p| p.manifest.id == "freecad-classic"), "bundled freecad-classic pack must be found");
         let classic = packs.iter().find(|p| p.manifest.id == "freecad-classic").unwrap();
         assert!(classic.coverage().0 >= 5);
-        assert_eq!(classic.format(), BundleFormat::Embedded);
+        assert_eq!(classic.format(), BundleFormat::Directory);
+        assert!(classic.is_directory());
         let readme = classic.get_readme();
         assert!(readme.contains("FreeCAD Classic Icon Theme"), "FreeCAD pack should have markdown description");
     }
 
     #[test]
     fn selected_bundled_freecad_redraw_stays_responsive() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
         let mut app = App::default();
         app.set.active_icon_packs.clear();
@@ -1425,10 +1648,10 @@ mod tests {
         let ctx = egui::Context::default();
         let empty = manager_directory_preview(&ctx, &pack).expect("initial preview");
         assert_eq!(empty.coverage, 0);
-        assert!(empty.readmes.contains_key("ru"), "preview must cache text for the Russian interface");
-        std::fs::write(root.join("README.ru.md"), "# Русское описание").expect("add localized README");
+        assert!(empty.readmes.contains_key("en"), "preview must cache text for the interface");
+        std::fs::write(root.join("README.en.md"), "# Custom English").expect("add localized README");
         let localized = manager_directory_preview(&ctx, &pack).expect("preview after adding localized README");
-        assert_eq!(localized.readmes.get("ru").map(String::as_str), Some("# Русское описание"));
+        assert_eq!(localized.readmes.get("en").map(String::as_str), Some("# Custom English"));
         assert!(!std::sync::Arc::ptr_eq(&empty, &localized), "new localized text must refresh the preview cache");
         let file = icon_dir.join("line.svg");
         std::fs::write(&file, br#"<svg viewBox="0 0 24 24"><path d="M0 0 L24 24"/></svg>"#).expect("add SVG");
@@ -1447,13 +1670,14 @@ mod tests {
 
     #[test]
     fn icon_manager_discovers_each_pack_once() {
+        let _lock = lock_theme_test();
         let bundled = bundled_themes_dir();
         let temp_root = std::env::temp_dir().join(format!("qymcad_duplicate_theme_{}", std::process::id()));
         let custom_theme = temp_root.join("custom_freecad");
         std::fs::create_dir_all(&custom_theme).expect("create another theme directory");
         std::fs::copy(bundled.join("freecad/manifest.ron"), custom_theme.join("manifest.ron")).expect("copy the duplicate manifest");
         let dirs = [temp_root.clone(), bundled];
-        let packs = discover_theme_packs_in_dirs(&dirs);
+        let packs = discover_theme_packs_in_dirs(&dirs).packs;
 
         let mut app = crate::gui::App::default();
         app.set.active_icon_packs.clear();
@@ -1586,6 +1810,7 @@ mod tests {
 
     #[test]
     fn deactivation_does_not_paint_the_theme_in_both_lists() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
 
         struct PaintedLabel {
@@ -1635,6 +1860,7 @@ mod tests {
 
     #[test]
     fn selecting_unverified_archive_keeps_redraw_responsive() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
         let Some(sample_dir) = qymcad_paths::data("icon_themes") else {
             eprintln!("PASSED OVER: icon theme data directory is unavailable");
@@ -1709,6 +1935,7 @@ mod tests {
 
     #[test]
     fn cleaning_a_gallery_icon_updates_its_file_and_preview() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
         let root = std::env::temp_dir().join(format!("qymcad_gallery_clean_{}", std::process::id()));
         let theme = root.join("repairable");
@@ -1876,5 +2103,386 @@ mod tests {
         assert!(!labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-clean-icon"))), "archive icons must not show cleaning controls");
         assert!(labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-gallery-missing"))), "missing icons need a neutral status");
         assert_eq!(preview_frames, 2, "every icon needs a visible 56 px preview frame");
+    }
+
+    #[test]
+    fn discover_theme_packs_caches_results_until_directory_changes() {
+        let _lock = lock_theme_test();
+        let temp_root = std::env::temp_dir().join(format!("qymcad_cache_test_{}", std::process::id()));
+        let theme_dir = temp_root.join("test_theme");
+        std::fs::create_dir_all(&theme_dir).expect("create test theme dir");
+        let manifest_content = r#"(
+            id: "test-cache",
+            name: "Test Cache",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Universal,
+        )"#;
+        std::fs::write(theme_dir.join("manifest.ron"), manifest_content).expect("write manifest");
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let initial_stats = discovery_cache_stats();
+        let first = discover_theme_packs_in_dirs(&dirs);
+        assert_eq!(first.packs.len(), 1);
+        let after_first = discovery_cache_stats();
+        assert_eq!(after_first.misses, initial_stats.misses + 1);
+
+        let second = discover_theme_packs_in_dirs(&dirs);
+        assert_eq!(second.packs.len(), 1);
+        let after_second = discovery_cache_stats();
+        assert_eq!(after_second.hits, initial_stats.hits + 1);
+        assert_eq!(after_second.misses, after_first.misses);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn icon_manager_window_displays_rejected_archives_with_reason() {
+        let _lock = lock_theme_test();
+        let temp_root = std::env::temp_dir().join(format!("qymcad_reject_ui_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        let broken_archive = temp_root.join("broken_pack.qicons");
+        std::fs::write(&broken_archive, b"corrupted data that cannot be parsed as zip").expect("write broken archive");
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let mut app = crate::gui::App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let mut painted = Vec::new();
+        for _ in 0..2 {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            let output = ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+            painted.clear();
+            for shape in &output.shapes {
+                crate::gui::screen_keys::tests::collect_text(&shape.shape, &mut painted);
+            }
+        }
+
+        assert!(painted.iter().any(|text| text.contains("broken_pack.qicons")), "icon manager window must display rejected archive filename: {painted:?}");
+        assert!(painted.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-rejected-title"))), "icon manager window must display rejected section title: {painted:?}");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn png_image_loader_is_available_for_theme_previews() {
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let png_bytes = [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15,
+            0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+            0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        let uri = "bytes://test/preview.png";
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 100.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input, |ui| {
+            let img = egui::Image::from_bytes(uri, png_bytes.to_vec());
+            ui.add(img);
+        });
+        let load_result = ctx.try_load_image(uri, egui::load::SizeHint::default());
+        assert!(load_result.is_ok(), "PNG preview must be supported by installed image loaders");
+    }
+
+    #[test]
+    fn theme_preview_image_cache_is_invalidated_when_file_changes() {
+        let _lock = lock_theme_test();
+        let temp_root = std::env::temp_dir().join(format!("qymcad_preview_cache_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        let pack_dir = temp_root.join("test-preview-theme");
+        std::fs::create_dir_all(&pack_dir).unwrap();
+
+        let manifest = r#"(
+            id: "test-preview-theme",
+            name: "Test Preview Theme",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Universal,
+            inherits: None,
+        )"#;
+        std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
+        let preview1 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"/></svg>"#;
+        std::fs::write(pack_dir.join("preview.svg"), preview1).unwrap();
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let mut app = crate::gui::App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+
+        ctx.data_mut(|d| {
+            let state = d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window"));
+            state.selected_pack_id = "test-preview-theme".to_string();
+            state.active_tab = IconManagerTab::Readme;
+        });
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+        }
+
+        let id_key = egui::Id::new("preview_image_prev_uri").with("test-preview-theme");
+        let first_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("first preview URI should be tracked");
+        assert!(first_uri.contains("-g1"), "URI should contain generation number, got: {first_uri}");
+
+        // Now modify preview.svg
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let preview2 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><rect width="20" height="20"/></svg>"#;
+        std::fs::write(pack_dir.join("preview.svg"), preview2).unwrap();
+
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+        }
+
+        let second_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("second preview URI should be tracked");
+        assert_ne!(first_uri, second_uri, "URI must change when preview file is modified");
+        assert!(second_uri.contains("-g2"), "URI should contain updated generation number, got: {second_uri}");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn monochrome_icon_with_current_color_is_prepared_as_white_in_gallery() {
+        let _lock = lock_theme_test();
+        use egui::load::{ImagePoll, SizeHint};
+
+        let temp_root = std::env::temp_dir().join(format!("qymcad_mono_gallery_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        let pack_dir = temp_root.join("test-mono-theme");
+        let icons_dir = pack_dir.join("icons").join("sketch");
+        std::fs::create_dir_all(&icons_dir).unwrap();
+
+        let manifest = r#"(
+            id: "test-mono-theme",
+            name: "Test Mono Theme",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Monochrome,
+            inherits: None,
+        )"#;
+        std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24z"/></svg>"#;
+        std::fs::write(icons_dir.join("line.svg"), svg).unwrap();
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let mut app = crate::gui::App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+
+        ctx.data_mut(|d| {
+            let state = d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window"));
+            state.selected_pack_id = "test-mono-theme".to_string();
+            state.active_tab = IconManagerTab::Gallery;
+            state.category_filter = "sketch".to_string();
+        });
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+        }
+
+        let rev = qymcad_ui_state::icons::get_global_icon_revision();
+        let uri = format!("bytes://mgr/test-mono-theme/r{rev}-g1/sketch/line.svg");
+        let poll = ctx.try_load_image(&uri, SizeHint::Width(24)).expect("gallery image must load");
+        if let ImagePoll::Ready { image } = poll {
+            let center_pixel = image.pixels[(image.size[1] / 2) * image.size[0] + image.size[0] / 2];
+            assert!(center_pixel.a() > 0, "pixel must be non-transparent");
+            assert_eq!(center_pixel.r(), center_pixel.a(), "monochrome icon with currentColor must be prepared with white base color for tinting (premultiplied r == a), got: {center_pixel:?}");
+        } else {
+            panic!("gallery image should be ready");
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn packager_modal_cancel_button_closes_dialog() {
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let mut state = PackagerDialogState { is_open: true, id: "test".into(), name: "Test".into(), ..Default::default() };
+
+        fn find_text(shapes: &[egui::epaint::ClippedShape], needle: &str) -> Option<egui::Rect> {
+            fn in_shape(shape: &egui::epaint::Shape, needle: &str) -> Option<egui::Rect> {
+                match shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text().contains(needle) => Some(egui::Rect::from_min_size(text.pos, text.galley.size())),
+                    egui::epaint::Shape::Vec(shapes) => shapes.iter().find_map(|shape| in_shape(shape, needle)),
+                    _ => None,
+                }
+            }
+            shapes.iter().find_map(|shape| in_shape(&shape.shape, needle))
+        }
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let cancel_text = crate::i18n::tr("nav-cancel");
+
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input.clone(), |ui| draw_packager_modal(ui.ctx(), &mut state));
+        let output = ctx.run_ui(input, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        let cancel_rect = find_text(&output.shapes, &cancel_text).expect("Cancel button must be rendered in packager modal");
+        let cancel_pos = cancel_rect.center();
+
+        let click_down = egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![
+                egui::Event::PointerMoved(cancel_pos),
+                egui::Event::PointerButton { pos: cancel_pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(click_down, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        let click_up = egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![egui::Event::PointerButton { pos: cancel_pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(click_up, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        assert!(!state.is_open, "packager modal must be closed after clicking cancel");
+    }
+
+    #[test]
+    fn packager_modal_labels_and_messages_are_localized() {
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("uk");
+
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let mut state = PackagerDialogState { is_open: true, id: "test".into(), name: "Test".into(), ..Default::default() };
+
+        fn collect_shapes_text(shapes: &[egui::epaint::ClippedShape], out: &mut Vec<String>) {
+            fn in_shape(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+                match shape {
+                    egui::epaint::Shape::Text(text) => out.push(text.galley.text().to_string()),
+                    egui::epaint::Shape::Vec(shapes) => {
+                        for s in shapes {
+                            in_shape(s, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for s in shapes {
+                in_shape(&s.shape, out);
+            }
+        }
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input.clone(), |ui| draw_packager_modal(ui.ctx(), &mut state));
+        let output = ctx.run_ui(input, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        let mut texts = Vec::new();
+        collect_shapes_text(&output.shapes, &mut texts);
+
+        let expected_id = crate::i18n::tr("icon-packager-field-id");
+        let expected_source = crate::i18n::tr("icon-packager-field-source");
+        crate::i18n::set_language(&prev);
+
+        let joined = texts.join(" ");
+        assert!(joined.contains(&expected_id), "Theme ID label must be localized in Ukrainian, got texts: {joined}");
+        assert!(joined.contains(&expected_source), "Source Folder label must be localized in Ukrainian, got texts: {joined}");
+    }
+
+    #[test]
+    fn bundled_themes_dir_finds_themes_in_macos_and_portable_layouts() {
+        let temp = std::env::temp_dir().join(format!("qymcad_bundled_themes_layout_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+
+        // Layout A: Windows / Portable Linux
+        let portable_root = temp.join("portable");
+        let portable_exe = portable_root.join("bin").join("qymcad");
+        let portable_themes = portable_root.join("bin").join("assets").join("icon-themes");
+        std::fs::create_dir_all(&portable_themes).unwrap();
+        std::fs::write(portable_themes.join("marker.txt"), "portable").unwrap();
+
+        let resolved_portable = bundled_themes_dir_with(None, Some(&portable_exe));
+        assert_eq!(resolved_portable, portable_themes, "portable layout should locate assets/icon-themes beside binary");
+
+        // Layout B: macOS .app bundle
+        let app_root = temp.join("QymCAD.app");
+        let mac_exe = app_root.join("Contents").join("MacOS").join("qymcad");
+        let mac_themes = app_root.join("Contents").join("Resources").join("assets").join("icon-themes");
+        std::fs::create_dir_all(&mac_themes).unwrap();
+        std::fs::write(mac_themes.join("marker.txt"), "macos").unwrap();
+
+        let resolved_mac = bundled_themes_dir_with(None, Some(&mac_exe));
+        assert_eq!(resolved_mac, mac_themes, "macOS bundle layout should locate Resources/assets/icon-themes");
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn draw_frame_polls_watched_icon_themes() {
+        let _lock = lock_theme_test();
+        let temp_root = std::env::temp_dir().join(format!("qymcad_draw_frame_poll_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        let icons_dir = temp_root.join("icons").join("sketch");
+        std::fs::create_dir_all(&icons_dir).unwrap();
+
+        let manifest = r#"(
+            id: "draw-frame-watched-theme",
+            name: "Draw Frame Watched Theme",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Universal,
+            inherits: None,
+        )"#;
+        std::fs::write(temp_root.join("manifest.ron"), manifest).unwrap();
+        let svg1 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>"#;
+        std::fs::write(icons_dir.join("line.svg"), svg1).unwrap();
+
+        let pack = qymcad_ui_state::icons::IconPack::from_directory(&temp_root).unwrap();
+        let mut mgr = qymcad_ui_state::icons::IconManager::new();
+        mgr.push_top_pack(pack);
+        mgr.set_pack_watching("draw-frame-watched-theme", true);
+        qymcad_ui_state::icons::set_global_icon_manager(mgr);
+
+        let mut app = crate::gui::App::default();
+        app.waiting.splash_until = None;
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input.clone(), |ui| app.draw_frame(ui));
+
+        let res1 = qymcad_ui_state::icons::resolve_global_icon(qymcad_ui_state::IconId::SketchLine);
+        assert_eq!(res1.pack_id, "draw-frame-watched-theme");
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let svg2 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24"/></svg>"#;
+        std::fs::write(icons_dir.join("line.svg"), svg2).unwrap();
+
+        // Run draw_frame again (the frame path of both live window and Session/Hand)
+        let _ = ctx.run_ui(input, |ui| app.draw_frame(ui));
+
+        let res2 = qymcad_ui_state::icons::resolve_global_icon(qymcad_ui_state::IconId::SketchLine);
+        assert_eq!(res2.pack_id, "draw-frame-watched-theme");
+        assert_ne!(res1.revision, res2.revision, "draw_frame must poll watched icon themes and update revision on change");
+
+        qymcad_ui_state::icons::clear_global_icon_cache();
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }

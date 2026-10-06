@@ -49,6 +49,7 @@ fn the_command_names_itself_from_the_hand() {
 #[test]
 fn icon_tool_with_typed_ids_renders_in_toolbar() {
     let ctx = egui::Context::default();
+    egui_extras::install_image_loaders(&ctx);
     let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
         // Line tool
         let _ = qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchLine, "Line", false);
@@ -59,4 +60,18 @@ fn icon_tool_with_typed_ids_renders_in_toolbar() {
         // Part Extrude
         let _ = qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartExtrude, "Extrude", true);
     });
+
+    let tested_icons = [qymcad_ui_state::IconId::SketchLine, qymcad_ui_state::IconId::SketchCircle3Pt, qymcad_ui_state::IconId::SketchEllipse, qymcad_ui_state::IconId::PartExtrude];
+    for icon in tested_icons {
+        let id_key = egui::Id::new("icon_image_prev_uri").with(icon);
+        let uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("icon_image must track rendered URI");
+        let poll = ctx.try_load_image(&uri, egui::load::SizeHint::default()).expect("toolbar icon must be loaded by image loader");
+        match poll {
+            egui::load::ImagePoll::Ready { image } => {
+                assert!(image.size[0] > 0 && image.size[1] > 0, "rasterized icon must have positive dimensions");
+                assert!(image.pixels.iter().any(|p| p.a() > 0), "rasterized icon must contain visible pixels");
+            }
+            egui::load::ImagePoll::Pending { .. } => panic!("in-memory SVG bytes must load synchronously into Ready state"),
+        }
+    }
 }

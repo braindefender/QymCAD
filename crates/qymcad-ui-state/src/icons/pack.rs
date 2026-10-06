@@ -16,8 +16,10 @@ pub enum PackSource {
     Directory(PathBuf),
     /// Zip archive containing `manifest.ron` and `icons/` strictly at root level.
     Archive(PathBuf),
-    /// In-memory map (used for tests and baked-in virtual bundles).
+    /// In-memory map (used for tests and virtual bundles).
     Memory(HashMap<String, Vec<u8>>),
+    /// Embedded in the application executable binary.
+    Embedded(HashMap<String, Vec<u8>>),
 }
 
 /// The underlying format and provenance of an icon bundle.
@@ -44,6 +46,8 @@ impl BundleFormat {
     }
 }
 
+/// Maximum file size permitted for an icon archive file on disk (16 MB).
+pub const MAX_ARCHIVE_FILE_SIZE: u64 = 16 * 1024 * 1024;
 /// Maximum number of file entries permitted in an icon archive (prevents zip bomb exhaustion).
 pub const MAX_ARCHIVE_ENTRIES: usize = 1_000;
 /// Maximum cumulative uncompressed size of all files across an entire icon archive (32 MB).
@@ -131,9 +135,6 @@ pub struct IconPack {
 impl IconPack {
     /// The provenance and format of this icon pack.
     pub fn format(&self) -> BundleFormat {
-        if self.manifest.id == "default" || self.manifest.id == "freecad-classic" {
-            return BundleFormat::Embedded;
-        }
         match &self.source {
             PackSource::Directory(_) => BundleFormat::Directory,
             PackSource::Archive(_) | PackSource::Memory(_) => {
@@ -143,12 +144,13 @@ impl IconPack {
                     BundleFormat::Archive
                 }
             }
+            PackSource::Embedded(_) => BundleFormat::Embedded,
         }
     }
 
     /// Whether this pack is a folder on disk that supports live file editing.
     pub fn is_directory(&self) -> bool {
-        self.format() == BundleFormat::Directory
+        matches!(self.source, PackSource::Directory(_))
     }
 
     /// Whether an icon file exists on disk in a directory pack (even if temporarily locked).
@@ -173,6 +175,24 @@ impl IconPack {
         self.manifest.verified || self.format() == BundleFormat::VerifiedArchive
     }
 
+    /// Reload the pack manifest from its source on disk if available.
+    pub fn reload_manifest(&mut self) -> Result<(), String> {
+        match &self.source {
+            PackSource::Directory(dir) => {
+                let manifest_path = dir.join("manifest.ron");
+                if !manifest_path.is_file() {
+                    return Err(format!("missing manifest.ron in {}", dir.display()));
+                }
+                let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+                let manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+                manifest.validate().map_err(|e| format!("invalid manifest in {}: {e}", dir.display()))?;
+                self.manifest = manifest;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Load an icon pack from a directory on disk.
     pub fn from_directory(dir: impl AsRef<Path>) -> Result<Self, String> {
         let dir = dir.as_ref();
@@ -191,10 +211,14 @@ impl IconPack {
     /// - `.zip`: Unverified community archive (can omit manifest.ron, crash-guarded).
     pub fn from_archive(file_path: impl AsRef<Path>) -> Result<Self, String> {
         let file_path = file_path.as_ref();
-        let file_bytes = std::fs::read(file_path).map_err(|e| e.to_string())?;
+        let metadata = std::fs::metadata(file_path).map_err(|e| e.to_string())?;
+        if metadata.len() > MAX_ARCHIVE_FILE_SIZE {
+            return Err(format!("archive file size exceeds limit: {} bytes (limit is {MAX_ARCHIVE_FILE_SIZE})", metadata.len()));
+        }
 
         let is_qicons = file_path.extension().is_some_and(|e| e == "qicons");
-        let trailer_check = super::sha256::verify_qicons_trailer(&file_bytes);
+        let mut file = std::fs::File::open(file_path).map_err(|e| e.to_string())?;
+        let trailer_check = super::sha256::verify_qicons_trailer_stream(&mut file, metadata.len()).map_err(|e| e.to_string())?;
 
         let (is_verified, is_tampered) = match trailer_check {
             super::sha256::TrailerCheck::Verified => (true, false),
@@ -205,8 +229,8 @@ impl IconPack {
             }
         };
 
-        let cursor = std::io::Cursor::new(&file_bytes);
-        let mut zip = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+        file.seek(std::io::SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
 
         // Guard against decompression bombs (Zip Bombs), excessive file counts, and zip-slip
         validate_archive_safety(&mut zip)?;
@@ -290,15 +314,24 @@ impl IconPack {
         Ok(Self { manifest, source: PackSource::Memory(map), is_tampered: trailer_check == super::sha256::TrailerCheck::Tampered })
     }
 
+    /// Load an embedded icon pack from in-memory ZIP archive bytes (e.g. from `include_bytes!`).
+    pub fn from_embedded_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let mut pack = Self::from_zip_bytes(bytes)?;
+        if let PackSource::Memory(map) = pack.source {
+            pack.source = PackSource::Embedded(map);
+        }
+        Ok(pack)
+    }
+
     /// Retrieve raw SVG bytes for a relative path inside `icons/` (e.g. `"sketch/line.svg"`).
     pub fn get_svg(&self, rel_path: &str) -> Option<Vec<u8>> {
         let clean = rel_path.trim_start_matches('/');
         let file_subpath = if clean.ends_with(".svg") { clean.to_string() } else { format!("{clean}.svg") };
 
-        match &self.source {
+        let data = match &self.source {
             PackSource::Directory(base) => {
                 let p = base.join("icons").join(&file_subpath);
-                read_svg_with_retry(&p)
+                read_svg_with_retry(&p)?
             }
             PackSource::Archive(archive_path) => {
                 let file = std::fs::File::open(archive_path).ok()?;
@@ -314,23 +347,24 @@ impl IconPack {
                 if buf.len() as u64 > MAX_ICON_SVG_SIZE {
                     return None;
                 }
-                if self.format() == BundleFormat::VerifiedArchive {
-                    // Fast path: Verified QymCAD bundle, trusted pre-validated content, zero overhead
-                    Some(buf)
-                } else {
-                    // Archive path: Crash-guard against entity bombs or non-renderable byte sequences
-                    sanitize_svg_for_safety(buf)
-                }
+                buf
             }
-            PackSource::Memory(map) => {
+            PackSource::Memory(map) | PackSource::Embedded(map) => {
                 let full_name = format!("icons/{file_subpath}");
-                let data = map.get(&full_name).or_else(|| map.get(&file_subpath))?.clone();
-                if self.manifest.verified && !self.is_tampered {
-                    Some(data)
-                } else {
-                    sanitize_svg_for_safety(data)
-                }
+                map.get(&full_name).or_else(|| map.get(&file_subpath))?.clone()
             }
+        };
+
+        if self.format() == BundleFormat::VerifiedArchive || self.format() == BundleFormat::Embedded {
+            // Fast path: Verified QymCAD bundle or built-in embedded pack
+            Some(data)
+        } else {
+            // Unverified pack (folder, community zip, or raw memory): must pass SVG validation to prevent corrupting UI or blocking fallback
+            sanitize_svg_for_safety(data.clone())?;
+            if super::bundle::validate_icon_svg(&data, self.manifest.color_mode).is_err() {
+                return None;
+            }
+            Some(data)
         }
     }
 
@@ -376,7 +410,7 @@ impl IconPack {
                 entry.take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut data).map_err(|err| format!("cannot read SVG entry: {err}"))?;
                 data
             }
-            PackSource::Memory(map) => {
+            PackSource::Memory(map) | PackSource::Embedded(map) => {
                 let Some(data) = map.get(&full_name).or_else(|| map.get(&file_subpath)) else {
                     return Ok(None);
                 };
@@ -420,7 +454,7 @@ impl IconPack {
                     (data.len() as u64 <= MAX_ICON_SVG_SIZE).then_some(data)
                 })
             }
-            PackSource::Memory(map) => map.get("icon.svg").cloned(),
+            PackSource::Memory(map) | PackSource::Embedded(map) => map.get("icon.svg").cloned(),
         };
         data.and_then(sanitize_svg_for_safety).filter(|svg| super::bundle::validate_svg(svg).is_ok()).unwrap_or_else(|| DEFAULT_PACK_ICON_SVG.to_vec())
     }
@@ -466,7 +500,7 @@ impl IconPack {
                     }
                     Some(s)
                 }
-                PackSource::Memory(map) => map.get(name).filter(|bytes| bytes.len() as u64 <= MAX_TEXT_FILE_SIZE).and_then(|bytes| String::from_utf8(bytes.clone()).ok()),
+                PackSource::Memory(map) | PackSource::Embedded(map) => map.get(name).filter(|bytes| bytes.len() as u64 <= MAX_TEXT_FILE_SIZE).and_then(|bytes| String::from_utf8(bytes.clone()).ok()),
             }
         };
 
@@ -521,7 +555,7 @@ impl IconPack {
                     }
                     Some(buf)
                 }
-                PackSource::Memory(map) => map.get(candidate).cloned(),
+                PackSource::Memory(map) | PackSource::Embedded(map) => map.get(candidate).cloned(),
             }
         };
 
@@ -574,8 +608,16 @@ impl IconPack {
 /// Missing paths return immediately; 106 absent icons previously took 3.2s to check.
 fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
     for attempt in 0..6 {
-        match std::fs::read(path) {
-            Ok(data) if !data.is_empty() => return Some(data),
+        match std::fs::metadata(path) {
+            Ok(m) if m.len() > MAX_ICON_SVG_SIZE => return None,
+            Ok(m) if m.len() > 0 => {
+                if let Ok(mut file) = std::fs::File::open(path) {
+                    let mut buf = Vec::with_capacity(m.len() as usize);
+                    if file.by_ref().take(MAX_ICON_SVG_SIZE + 1).read_to_end(&mut buf).is_ok() && buf.len() as u64 <= MAX_ICON_SVG_SIZE && !buf.is_empty() {
+                        return Some(buf);
+                    }
+                }
+            }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound || (attempt >= 2 && !path.exists()) => {
                 return None;
             }
@@ -585,12 +627,7 @@ fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
             std::thread::sleep(std::time::Duration::from_millis(15));
         }
     }
-    let data = std::fs::read(path).ok()?;
-    if !data.is_empty() {
-        Some(data)
-    } else {
-        None
-    }
+    None
 }
 
 /// Recursively collect all .svg files in a directory, ignoring temporary and editor swap files.

@@ -1912,13 +1912,6 @@ impl eframe::App for App {
     /// the framework hands the root one in. The context is still wanted for windows, input and viewport
     /// commands, and it comes from the same place.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx();
-        if qymcad_ui_state::icons::poll_watched_icon_packs() {
-            ctx.request_repaint();
-        }
-        if qymcad_ui_state::icons::has_watched_icon_packs() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(300));
-        }
         self.draw_frame(ui);
     }
 }
