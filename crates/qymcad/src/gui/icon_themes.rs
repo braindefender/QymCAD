@@ -745,11 +745,12 @@ fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::
         }
         icons.insert(id, inspected);
     }
+    let image_generation = ctx.data(|data| data.get_temp::<ManagerArchiveCache>(cache_id).map_or(1, |cache| cache.preview.image_generation.wrapping_add(1)));
     let preview = std::sync::Arc::new(ManagerPackPreview {
         coverage,
         invalid_icons,
         has_cleanable_icons: false,
-        image_generation: 0,
+        image_generation,
         readmes: crate::i18n::available().into_iter().map(|(locale, _)| (locale.clone(), snapshot.get_readme_for_locale(&locale))).collect(),
         preview_image: snapshot.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }),
         pack_icon: snapshot.get_pack_icon_svg().into(),
@@ -1294,17 +1295,35 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                 match state.active_tab {
                     IconManagerTab::Readme => {
                         egui::ScrollArea::vertical().id_salt("mgr_readme_scroll").auto_shrink([false, false]).show(ui, |ui| {
-                            let preview_image = if let Some(preview) = pack_preview.as_ref() {
-                                preview.preview_image.clone()
+                            let (preview_image, generation) = if let Some(preview) = pack_preview.as_ref() {
+                                (preview.preview_image.clone(), preview.image_generation)
                             } else {
-                                pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension })
+                                (pack.get_preview_image().map(|(bytes, extension)| ManagerPreviewImage { bytes: bytes.into(), extension }), 0)
                             };
+                            let id_key = egui::Id::new("preview_image_prev_uri").with(&pack.manifest.id);
                             if let Some(image) = preview_image {
-                                let uri = format!("bytes://preview/{}/{}.{}", pack.manifest.id, image.extension, image.extension);
+                                let uri = format!("bytes://preview/{}/r{}-g{generation}/{}.{}", pack.manifest.id, qymcad_ui_state::icons::get_global_icon_revision(), image.extension, image.extension);
+                                let to_forget = ui.data_mut(|d| {
+                                    let prev = d.get_temp::<String>(id_key);
+                                    if prev.as_ref() != Some(&uri) {
+                                        d.insert_temp(id_key, uri.clone());
+                                        prev
+                                    } else {
+                                        None
+                                    }
+                                });
+                                if let Some(prev) = to_forget {
+                                    ui.ctx().forget_image(&prev);
+                                }
                                 let img = egui::Image::from_bytes(uri, image.bytes).max_width(ui.available_width());
                                 ui.add(img);
                                 ui.add_space(8.0);
                                 ui.separator();
+                            } else {
+                                let to_forget = ui.data_mut(|d| d.remove_temp::<String>(id_key));
+                                if let Some(prev) = to_forget {
+                                    ui.ctx().forget_image(&prev);
+                                }
                             }
 
                             let readme_md = pack_preview.as_ref().and_then(|preview| preview.readmes.get(&locale)).cloned().unwrap_or_else(|| pack.get_readme_for_locale(&locale));
@@ -2120,5 +2139,65 @@ mod tests {
         });
         let load_result = ctx.try_load_image(uri, egui::load::SizeHint::default());
         assert!(load_result.is_ok(), "PNG preview must be supported by installed image loaders");
+    }
+
+    #[test]
+    fn theme_preview_image_cache_is_invalidated_when_file_changes() {
+        let temp_root = std::env::temp_dir().join(format!("qymcad_preview_cache_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        let pack_dir = temp_root.join("test-preview-theme");
+        std::fs::create_dir_all(&pack_dir).unwrap();
+
+        let manifest = r#"(
+            id: "test-preview-theme",
+            name: "Test Preview Theme",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Universal,
+            inherits: None,
+        )"#;
+        std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
+        let preview1 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"/></svg>"#;
+        std::fs::write(pack_dir.join("preview.svg"), preview1).unwrap();
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let mut app = crate::gui::App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+
+        ctx.data_mut(|d| {
+            let state = d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window"));
+            state.selected_pack_id = "test-preview-theme".to_string();
+            state.active_tab = IconManagerTab::Readme;
+        });
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+        }
+
+        let id_key = egui::Id::new("preview_image_prev_uri").with("test-preview-theme");
+        let first_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("first preview URI should be tracked");
+        assert!(first_uri.contains("-g1"), "URI should contain generation number, got: {first_uri}");
+
+        // Now modify preview.svg
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let preview2 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><rect width="20" height="20"/></svg>"#;
+        std::fs::write(pack_dir.join("preview.svg"), preview2).unwrap();
+
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+        }
+
+        let second_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("second preview URI should be tracked");
+        assert_ne!(first_uri, second_uri, "URI must change when preview file is modified");
+        assert!(second_uri.contains("-g2"), "URI should contain updated generation number, got: {second_uri}");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }
