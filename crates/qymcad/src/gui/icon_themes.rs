@@ -644,7 +644,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
             });
         }
     });
-    state.is_open = open;
+    state.is_open = open && state.is_open;
 }
 
 /// Active tab in the Icon Theme Manager window.
@@ -2261,5 +2261,53 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn packager_modal_cancel_button_closes_dialog() {
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let mut state = PackagerDialogState { is_open: true, id: "test".into(), name: "Test".into(), ..Default::default() };
+
+        fn find_text(shapes: &[egui::epaint::ClippedShape], needle: &str) -> Option<egui::Rect> {
+            fn in_shape(shape: &egui::epaint::Shape, needle: &str) -> Option<egui::Rect> {
+                match shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text().contains(needle) => Some(egui::Rect::from_min_size(text.pos, text.galley.size())),
+                    egui::epaint::Shape::Vec(shapes) => shapes.iter().find_map(|shape| in_shape(shape, needle)),
+                    _ => None,
+                }
+            }
+            shapes.iter().find_map(|shape| in_shape(&shape.shape, needle))
+        }
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let cancel_text = crate::i18n::tr("nav-cancel");
+
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input.clone(), |ui| draw_packager_modal(ui.ctx(), &mut state));
+        let output = ctx.run_ui(input, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        let cancel_rect = find_text(&output.shapes, &cancel_text).expect("Cancel button must be rendered in packager modal");
+        let cancel_pos = cancel_rect.center();
+
+        let click_down = egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![
+                egui::Event::PointerMoved(cancel_pos),
+                egui::Event::PointerButton { pos: cancel_pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(click_down, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        let click_up = egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![egui::Event::PointerButton { pos: cancel_pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(click_up, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        assert!(!state.is_open, "packager modal must be closed after clicking cancel");
     }
 }
