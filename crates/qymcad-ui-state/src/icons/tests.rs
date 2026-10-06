@@ -1518,3 +1518,52 @@ fn resolve_global_icon_lazily_initializes_manager() {
     assert_eq!(resolved.pack_id, "default");
     assert!(with_global_icon_manager(|_| ()).is_some(), "global manager must be initialized after resolve");
 }
+
+#[test]
+fn live_watch_reloads_manifest_color_mode() {
+    let temp_root = std::env::temp_dir().join(format!("qymcad_manifest_reload_test_{}", std::process::id()));
+    let icons_dir = temp_root.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).expect("create icons dir");
+
+    let manifest_path = temp_root.join("manifest.ron");
+    let universal_manifest = r#"(
+        id: "live-manifest-pack",
+        name: "Live Manifest Pack",
+        version: "1.0.0",
+        author: "Tester",
+        license: "MIT",
+        color_mode: Universal,
+    )"#;
+    std::fs::write(&manifest_path, universal_manifest).expect("write universal manifest");
+
+    let svg_content = br##"<svg viewBox="0 0 24 24"><path d="M0 0h24v24z" fill="#ff0000"/></svg>"##;
+    std::fs::write(icons_dir.join("line.svg"), svg_content).expect("write line.svg");
+
+    let pack = IconPack::from_directory(&temp_root).expect("load directory pack");
+    let mut manager = IconManager::new();
+    manager.push_top_pack(pack);
+    manager.set_pack_watching("live-manifest-pack", true);
+
+    let res1 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res1.color_mode, ColorMode::Universal);
+
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let mono_manifest = r#"(
+        id: "live-manifest-pack",
+        name: "Live Manifest Pack",
+        version: "1.0.0",
+        author: "Tester",
+        license: "MIT",
+        color_mode: Monochrome,
+    )"#;
+    std::fs::write(&manifest_path, mono_manifest).expect("write monochrome manifest");
+
+    let changed = manager.check_watched_directories();
+    assert!(changed, "check_watched_directories should detect manifest change");
+
+    let res2 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res2.color_mode, ColorMode::Monochrome, "color mode must update to Monochrome after manifest reload");
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}

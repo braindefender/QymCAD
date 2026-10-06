@@ -156,13 +156,14 @@ impl IconManager {
         self.last_poll_time = Some(now);
 
         let mut any_changed = false;
-        for pack in &self.active_stack {
+        for pack in &mut self.active_stack {
             if pack.is_directory() && (self.dev_watch_enabled || self.watched_pack_ids.iter().any(|id| id == &pack.manifest.id)) {
                 if let Some(snap) = pack.directory_snapshot() {
                     if let Some(prev) = self.last_seen_snapshots.get(&pack.manifest.id) {
                         if prev != &snap {
                             any_changed = true;
                             self.last_seen_snapshots.insert(pack.manifest.id.clone(), snap);
+                            let _ = pack.reload_manifest();
                         }
                     } else {
                         // First observation of this pack's directory

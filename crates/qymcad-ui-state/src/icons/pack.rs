@@ -175,6 +175,24 @@ impl IconPack {
         self.manifest.verified || self.format() == BundleFormat::VerifiedArchive
     }
 
+    /// Reload the pack manifest from its source on disk if available.
+    pub fn reload_manifest(&mut self) -> Result<(), String> {
+        match &self.source {
+            PackSource::Directory(dir) => {
+                let manifest_path = dir.join("manifest.ron");
+                if !manifest_path.is_file() {
+                    return Err(format!("missing manifest.ron in {}", dir.display()));
+                }
+                let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+                let manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+                manifest.validate().map_err(|e| format!("invalid manifest in {}: {e}", dir.display()))?;
+                self.manifest = manifest;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Load an icon pack from a directory on disk.
     pub fn from_directory(dir: impl AsRef<Path>) -> Result<Self, String> {
         let dir = dir.as_ref();
