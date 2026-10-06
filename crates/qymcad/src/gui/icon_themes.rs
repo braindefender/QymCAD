@@ -909,8 +909,19 @@ fn open_packager_for_directory(ctx: &egui::Context, pack: &IconPack, source: &st
     });
 }
 
+/// Poll watched theme packs during the frame.
+pub(crate) fn poll_icon_themes_frame(ctx: &egui::Context) {
+    if qymcad_ui_state::icons::poll_watched_icon_packs() {
+        ctx.request_repaint();
+    }
+    if qymcad_ui_state::icons::has_watched_icon_packs() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(300));
+    }
+}
+
 /// Draw the dedicated Icon Theme Manager window.
 pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
+    poll_icon_themes_frame(ctx);
     draw_icon_manager_window_in_dirs(ctx, wc, &all_theme_dirs());
 }
 
@@ -2402,5 +2413,58 @@ mod tests {
         assert_eq!(resolved_mac, mac_themes, "macOS bundle layout should locate Resources/assets/icon-themes");
 
         let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn draw_frame_polls_watched_icon_themes() {
+        let temp_root = std::env::temp_dir().join(format!("qymcad_draw_frame_poll_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        let icons_dir = temp_root.join("icons").join("sketch");
+        std::fs::create_dir_all(&icons_dir).unwrap();
+
+        let manifest = r#"(
+            id: "draw-frame-watched-theme",
+            name: "Draw Frame Watched Theme",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Universal,
+            inherits: None,
+        )"#;
+        std::fs::write(temp_root.join("manifest.ron"), manifest).unwrap();
+        let svg1 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>"#;
+        std::fs::write(icons_dir.join("line.svg"), svg1).unwrap();
+
+        let pack = qymcad_ui_state::icons::IconPack::from_directory(&temp_root).unwrap();
+        let mut mgr = qymcad_ui_state::icons::IconManager::new();
+        mgr.push_top_pack(pack);
+        mgr.set_pack_watching("draw-frame-watched-theme", true);
+        qymcad_ui_state::icons::set_global_icon_manager(mgr);
+
+        let mut app = crate::gui::App::default();
+        app.waiting.splash_until = None;
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input.clone(), |ui| app.draw_frame(ui));
+
+        let res1 = qymcad_ui_state::icons::resolve_global_icon(qymcad_ui_state::IconId::SketchLine);
+        assert_eq!(res1.pack_id, "draw-frame-watched-theme");
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let svg2 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24"/></svg>"#;
+        std::fs::write(icons_dir.join("line.svg"), svg2).unwrap();
+
+        // Run draw_frame again (the frame path of both live window and Session/Hand)
+        let _ = ctx.run_ui(input, |ui| app.draw_frame(ui));
+
+        let res2 = qymcad_ui_state::icons::resolve_global_icon(qymcad_ui_state::IconId::SketchLine);
+        assert_eq!(res2.pack_id, "draw-frame-watched-theme");
+        assert_ne!(res1.revision, res2.revision, "draw_frame must poll watched icon themes and update revision on change");
+
+        qymcad_ui_state::icons::clear_global_icon_cache();
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }
