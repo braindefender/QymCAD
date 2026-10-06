@@ -1567,3 +1567,41 @@ fn live_watch_reloads_manifest_color_mode() {
 
     let _ = std::fs::remove_dir_all(&temp_root);
 }
+
+#[test]
+fn transient_read_failure_in_higher_theme_does_not_poison_cache() {
+    let temp_root = std::env::temp_dir().join(format!("qymcad_transient_cache_test_{}", std::process::id()));
+    let icons_dir = temp_root.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).expect("create icons dir");
+
+    let manifest_path = temp_root.join("manifest.ron");
+    let manifest = r#"(
+        id: "custom-transient-pack",
+        name: "Custom Transient Pack",
+        version: "1.0.0",
+        author: "Tester",
+        license: "MIT",
+        color_mode: Universal,
+    )"#;
+    std::fs::write(&manifest_path, manifest).expect("write manifest");
+
+    let line_path = icons_dir.join("line.svg");
+    std::fs::write(&line_path, b"").expect("write empty line.svg");
+
+    let custom_pack = IconPack::from_directory(&temp_root).expect("load directory pack");
+    assert!(custom_pack.has_icon_on_disk(IconId::SketchLine));
+
+    let mut manager = IconManager::new();
+    manager.push_top_pack(custom_pack);
+
+    let res1 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res1.pack_id, "default");
+
+    let valid_svg = br#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24z"/></svg>"#;
+    std::fs::write(&line_path, valid_svg).expect("write valid svg");
+
+    let res2 = manager.resolve(IconId::SketchLine);
+    assert_eq!(res2.pack_id, "custom-transient-pack", "cache must not be poisoned by fallback after transient error");
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}

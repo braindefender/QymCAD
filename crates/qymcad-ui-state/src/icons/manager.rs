@@ -208,7 +208,9 @@ impl IconManager {
                     }
                 }
                 let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision };
-                self.cache.insert(id, res.clone());
+                if !had_transient_read_failure {
+                    self.cache.insert(id, res.clone());
+                }
                 return res;
             } else if pack.has_icon_on_disk(id) {
                 // The icon file exists on disk in this custom folder pack, but reading it failed
