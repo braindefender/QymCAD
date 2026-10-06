@@ -1474,6 +1474,12 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
 mod tests {
     use super::*;
 
+    static THEME_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_theme_test() -> std::sync::MutexGuard<'static, ()> {
+        THEME_TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn test_theme_directories_resolution() {
         let bundled = bundled_themes_dir();
@@ -1486,6 +1492,7 @@ mod tests {
 
     #[test]
     fn test_apply_icon_themes_cascade_logic() {
+        let _lock = lock_theme_test();
         let set = Settings { active_icon_packs: vec!["nonexistent-pack".into()], ..Default::default() };
         apply_icon_themes(&set);
 
@@ -1549,6 +1556,7 @@ mod tests {
 
     #[test]
     fn selected_bundled_freecad_redraw_stays_responsive() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
         let mut app = App::default();
         app.set.active_icon_packs.clear();
@@ -1662,6 +1670,7 @@ mod tests {
 
     #[test]
     fn icon_manager_discovers_each_pack_once() {
+        let _lock = lock_theme_test();
         let bundled = bundled_themes_dir();
         let temp_root = std::env::temp_dir().join(format!("qymcad_duplicate_theme_{}", std::process::id()));
         let custom_theme = temp_root.join("custom_freecad");
@@ -1801,6 +1810,7 @@ mod tests {
 
     #[test]
     fn deactivation_does_not_paint_the_theme_in_both_lists() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
 
         struct PaintedLabel {
@@ -1850,6 +1860,7 @@ mod tests {
 
     #[test]
     fn selecting_unverified_archive_keeps_redraw_responsive() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
         let Some(sample_dir) = qymcad_paths::data("icon_themes") else {
             eprintln!("PASSED OVER: icon theme data directory is unavailable");
@@ -1924,6 +1935,7 @@ mod tests {
 
     #[test]
     fn cleaning_a_gallery_icon_updates_its_file_and_preview() {
+        let _lock = lock_theme_test();
         use crate::gui::App;
         let root = std::env::temp_dir().join(format!("qymcad_gallery_clean_{}", std::process::id()));
         let theme = root.join("repairable");
@@ -2095,6 +2107,7 @@ mod tests {
 
     #[test]
     fn discover_theme_packs_caches_results_until_directory_changes() {
+        let _lock = lock_theme_test();
         let temp_root = std::env::temp_dir().join(format!("qymcad_cache_test_{}", std::process::id()));
         let theme_dir = temp_root.join("test_theme");
         std::fs::create_dir_all(&theme_dir).expect("create test theme dir");
@@ -2128,6 +2141,7 @@ mod tests {
 
     #[test]
     fn icon_manager_window_displays_rejected_archives_with_reason() {
+        let _lock = lock_theme_test();
         let temp_root = std::env::temp_dir().join(format!("qymcad_reject_ui_test_{}", std::process::id()));
         std::fs::create_dir_all(&temp_root).expect("create temp dir");
         let broken_archive = temp_root.join("broken_pack.qicons");
@@ -2180,6 +2194,7 @@ mod tests {
 
     #[test]
     fn theme_preview_image_cache_is_invalidated_when_file_changes() {
+        let _lock = lock_theme_test();
         let temp_root = std::env::temp_dir().join(format!("qymcad_preview_cache_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_root);
         let pack_dir = temp_root.join("test-preview-theme");
@@ -2240,6 +2255,7 @@ mod tests {
 
     #[test]
     fn monochrome_icon_with_current_color_is_prepared_as_white_in_gallery() {
+        let _lock = lock_theme_test();
         use egui::load::{ImagePoll, SizeHint};
 
         let temp_root = std::env::temp_dir().join(format!("qymcad_mono_gallery_test_{}", std::process::id()));
@@ -2282,8 +2298,9 @@ mod tests {
             let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
         }
 
-        let uri = "bytes://mgr/test-mono-theme/r0-g1/sketch/line.svg";
-        let poll = ctx.try_load_image(uri, SizeHint::Width(24)).expect("gallery image must load");
+        let rev = qymcad_ui_state::icons::get_global_icon_revision();
+        let uri = format!("bytes://mgr/test-mono-theme/r{rev}-g1/sketch/line.svg");
+        let poll = ctx.try_load_image(&uri, SizeHint::Width(24)).expect("gallery image must load");
         if let ImagePoll::Ready { image } = poll {
             let center_pixel = image.pixels[(image.size[1] / 2) * image.size[0] + image.size[0] / 2];
             assert!(center_pixel.a() > 0, "pixel must be non-transparent");
@@ -2417,6 +2434,7 @@ mod tests {
 
     #[test]
     fn draw_frame_polls_watched_icon_themes() {
+        let _lock = lock_theme_test();
         let temp_root = std::env::temp_dir().join(format!("qymcad_draw_frame_poll_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_root);
         let icons_dir = temp_root.join("icons").join("sketch");
