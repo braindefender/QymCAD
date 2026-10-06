@@ -25,7 +25,7 @@
       <stop style="stop-color:#0069ff;stop-opacity:1;" offset="1" id="stop3381"/>
     </linearGradient>
     <linearGradient xlink:href="#linearGradient3377" id="linearGradient3383" x1="901.1875" y1="1190.875" x2="1267.9062" y2="1190.875" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-1,0,0,1,2199.356,0)"/>
-    
+
     <radialGradient xlink:href="#linearGradient6349" id="radialGradient6355" cx="1103.6399" cy="1424.4465" fx="1103.6399" fy="1424.4465" r="194.40614" gradientTransform="matrix(-1.4307499,-1.3605156e-7,-1.202713e-8,0.1264801,2674.7488,1244.2826)" gradientUnits="userSpaceOnUse"/>
     <linearGradient y2="100.2725" x2="672.73157" y1="100.79263" x1="635.40765" gradientTransform="matrix(5.0014507,-3.4620165,0,3.8836567,-2288.049,3040.9534)" gradientUnits="userSpaceOnUse" id="linearGradient4018" xlink:href="#linearGradient3864-0-2"/>
     <linearGradient id="linearGradient3864-0-2">
@@ -335,7 +335,7 @@
       <stop style="stop-color:#3465a4;stop-opacity:1" offset="1" id="stop4059-0"/>
     </linearGradient>
   </defs>
-  
+
   <g id="layer1">
     <g transform="matrix(2.2328615,0,0,2.2328615,-68.950378,-21.690395)" style="stroke-width:0.8957116;stroke-miterlimit:4;stroke-dasharray:none" id="g4065">
       <path id="path3221-3" d="m 58.199034,14.640583 -6.269982,-1.791423 -19.705657,12.539962 0,6.269982 15.674955,5.37427 10.300684,0 z" style="color:#000000;fill:url(#linearGradient4219);fill-opacity:1;fill-rule:evenodd;stroke:#0b1521;stroke-width:0.8957116;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate"/>

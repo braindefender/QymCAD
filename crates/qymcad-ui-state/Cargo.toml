@@ -39,4 +39,3 @@ egui_extras = { version = "0.35", features = ["svg"] }
 
 [lints]
 workspace = true
-

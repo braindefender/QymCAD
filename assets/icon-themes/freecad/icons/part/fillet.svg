@@ -24,7 +24,7 @@
       <stop style="stop-color:#00aff9;stop-opacity:1;" offset="0" id="stop3595"/>
       <stop style="stop-color:#001ccc;stop-opacity:1;" offset="1" id="stop3597"/>
     </linearGradient>
-    
+
     <radialGradient xlink:href="#linearGradient3593-0" id="radialGradient3004-8" gradientUnits="userSpaceOnUse" gradientTransform="translate(-320.59978,-6.63068)" cx="330.63791" cy="39.962704" fx="330.63791" fy="39.962704" r="19.571428"/>
     <linearGradient id="linearGradient3593-0">
       <stop style="stop-color:#c8e0f9;stop-opacity:1;" offset="0" id="stop3595-2"/>
@@ -40,7 +40,7 @@
     </linearGradient>
     <linearGradient xlink:href="#linearGradient3854" id="linearGradient3860" x1="-32" y1="45" x2="-38" y2="24" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1.2080212,0,0,1.1944945,101.77571,-10.822302)"/>
   </defs>
-  
+
   <g id="layer1">
     <g id="g3780" transform="matrix(0.82780005,0,0,0.83717425,-0.2499405,9.0601524)">
       <path id="rect2568" d="m 3.9259975,33.373993 33.8245935,11.944945 0,14.333933 L 3.9259975,47.707927 z" style="fill:#3465a4;fill-opacity:1;fill-rule:evenodd;stroke:#0b1521;stroke-width:2.4024775;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate"/>

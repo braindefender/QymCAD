@@ -321,4 +321,3 @@ Place your unpacked theme folder or `.qicons` archive into the user configuratio
 * **macOS:** `~/Library/Application Support/qymcad/icon_themes/`
 
 Open **Settings -> Icon Themes** in QymCAD to select and activate your theme.
-

@@ -8,7 +8,7 @@
       <stop id="stop3866" offset="0" style="stop-color:#71b2f8;stop-opacity:1;"/>
       <stop id="stop3868" offset="1" style="stop-color:#002795;stop-opacity:1;"/>
     </linearGradient>
-    
+
     <linearGradient gradientTransform="translate(0,-4)" xlink:href="#linearGradient3767" id="linearGradient3773" x1="22.116516" y1="55.717518" x2="17.328547" y2="21.31134" gradientUnits="userSpaceOnUse"/>
     <linearGradient id="linearGradient3767">
       <stop style="stop-color:#3465a4;stop-opacity:1" offset="0" id="stop3769"/>
@@ -24,7 +24,7 @@
       <feGaussianBlur stdDeviation="0.90909257" id="feGaussianBlur4899"/>
     </filter>
   </defs>
-  
+
   <g id="layer1" style="display:inline;opacity:0.7">
     <ellipse style="fill:url(#radialGradient3800);fill-opacity:1;stroke:none" id="path3024" transform="matrix(0.73170732,0,0,0.80769231,31.268293,15.153846)" cx="1" cy="45" rx="41" ry="13"/>
     <path style="fill:#729fcf;stroke:#0b1521;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;stroke-opacity:1" d="M 3,13 37,19 61,11 31,7 Z" id="path2993"/>

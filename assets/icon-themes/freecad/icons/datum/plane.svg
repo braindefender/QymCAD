@@ -4,7 +4,7 @@
       <stop style="stop-color:#71b2f8;stop-opacity:1;" offset="0" id="stop4034"/>
       <stop style="stop-color:#002795;stop-opacity:1;" offset="1" id="stop4036"/>
     </linearGradient>
-    
+
     <radialGradient xlink:href="#linearGradient3377" id="radialGradient3705" gradientUnits="userSpaceOnUse" cx="148.88333" cy="81.869568" fx="148.88333" fy="81.869568" r="19.467436" gradientTransform="matrix(1.6244669,-0.05136783,0.04345521,0.9993132,-102.99033,7.7040438)"/>
     <linearGradient id="linearGradient3377">
       <stop id="stop3379" offset="0" style="stop-color:#4bff54;stop-opacity:1;"/>
@@ -42,7 +42,7 @@
       <stop style="stop-color:#ef2929;stop-opacity:1" offset="1" id="stop3840-5-5-8-7-23-5-9"/>
     </linearGradient>
   </defs>
-  
+
   <g id="layer1">
     <g id="g3052" transform="translate(-79.748577,-0.03433376)">
       <g id="g3186-7" transform="matrix(0,1,-1,0,176.82174,1.3245738)">
