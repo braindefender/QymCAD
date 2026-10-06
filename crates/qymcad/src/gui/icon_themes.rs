@@ -444,39 +444,39 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
         ui.add_space(4.0);
 
         egui::Grid::new("packager_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            ui.label("Theme ID:");
+            ui.label(crate::i18n::tr("icon-packager-field-id"));
             ui.text_edit_singleline(&mut state.id);
             ui.end_row();
 
-            ui.label("Theme Name:");
+            ui.label(crate::i18n::tr("icon-packager-field-name"));
             ui.text_edit_singleline(&mut state.name);
             ui.end_row();
 
-            ui.label("Version:");
+            ui.label(crate::i18n::tr("icon-packager-field-version"));
             ui.text_edit_singleline(&mut state.version);
             ui.end_row();
 
-            ui.label("Author:");
+            ui.label(crate::i18n::tr("icon-packager-field-author"));
             ui.text_edit_singleline(&mut state.author);
             ui.end_row();
 
-            ui.label("License:");
+            ui.label(crate::i18n::tr("icon-packager-field-license"));
             ui.text_edit_singleline(&mut state.license);
             ui.end_row();
 
-            ui.label("Description:");
+            ui.label(crate::i18n::tr("icon-packager-field-desc"));
             ui.text_edit_singleline(&mut state.description);
             ui.end_row();
 
-            ui.label("Monochrome:");
-            ui.checkbox(&mut state.is_monochrome, "Theme adapts to UI foreground");
+            ui.label(crate::i18n::tr("icon-packager-field-monochrome"));
+            ui.checkbox(&mut state.is_monochrome, crate::i18n::tr("icon-packager-monochrome-hint"));
             ui.end_row();
 
-            ui.label("Source Folder:");
+            ui.label(crate::i18n::tr("icon-packager-field-source"));
             ui.text_edit_singleline(&mut state.source_dir);
             ui.end_row();
 
-            ui.label("Output .qicons Path:");
+            ui.label(crate::i18n::tr("icon-packager-field-output"));
             ui.text_edit_singleline(&mut state.output_file);
             ui.end_row();
         });
@@ -493,7 +493,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
             if ui.button(crate::i18n::tr("icon-packager-inspect-btn")).clicked() {
                 let source_path = PathBuf::from(state.source_dir.trim());
                 if !source_path.exists() {
-                    state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
+                    let path_str = source_path.display().to_string();
+                    state.message = Some(crate::i18n::tr1("icon-packager-source-not-found", "path", &path_str));
                     state.is_error = true;
                     state.report = None;
                 } else {
@@ -501,8 +502,10 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                     match inspect_pack_directory_for_mode(&source_path, color_mode) {
                         Ok(rep) => {
                             if rep.has_issues() {
-                                state.message =
-                                    Some(format!("Validation found {} issue(s): {} rejected, {} extraneous", rep.rejected.len() + rep.extraneous.len(), rep.rejected.len(), rep.extraneous.len()));
+                                let total_str = (rep.rejected.len() + rep.extraneous.len()).to_string();
+                                let rej_str = rep.rejected.len().to_string();
+                                let ext_str = rep.extraneous.len().to_string();
+                                state.message = Some(crate::i18n::trn("icon-packager-validation-issues", &[("total", &total_str), ("rejected", &rej_str), ("extraneous", &ext_str)]));
                                 state.is_error = !rep.rejected.is_empty();
                             } else {
                                 state.message = Some(crate::i18n::tr("icon-packager-all-valid"));
@@ -511,7 +514,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             state.report = Some(rep);
                         }
                         Err(e) => {
-                            state.message = Some(format!("Inspection failed: {e}"));
+                            let err_str = e.to_string();
+                            state.message = Some(crate::i18n::tr1("icon-packager-inspection-failed", "error", &err_str));
                             state.is_error = true;
                             state.report = None;
                         }
@@ -524,10 +528,11 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 let output_path = PathBuf::from(state.output_file.trim());
 
                 if !source_path.exists() {
-                    state.message = Some(format!("Source folder does not exist: {}", source_path.display()));
+                    let path_str = source_path.display().to_string();
+                    state.message = Some(crate::i18n::tr1("icon-packager-source-not-found", "path", &path_str));
                     state.is_error = true;
                 } else if state.output_file.trim().is_empty() {
-                    state.message = Some("Output .qicons path cannot be empty".into());
+                    state.message = Some(crate::i18n::tr("icon-packager-output-empty"));
                     state.is_error = true;
                 } else {
                     let result = (|| {
@@ -563,7 +568,8 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             state.report = Some(rep);
                         }
                         Err(e) => {
-                            state.message = Some(format!("Packaging failed: {e}"));
+                            let err_str = e.to_string();
+                            state.message = Some(crate::i18n::tr1("icon-packager-packaging-failed", "error", &err_str));
                             state.is_error = true;
                         }
                     }
@@ -2309,5 +2315,47 @@ mod tests {
         let _ = ctx.run_ui(click_up, |ui| draw_packager_modal(ui.ctx(), &mut state));
 
         assert!(!state.is_open, "packager modal must be closed after clicking cancel");
+    }
+
+    #[test]
+    fn packager_modal_labels_and_messages_are_localized() {
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("uk");
+
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let mut state = PackagerDialogState { is_open: true, id: "test".into(), name: "Test".into(), ..Default::default() };
+
+        fn collect_shapes_text(shapes: &[egui::epaint::ClippedShape], out: &mut Vec<String>) {
+            fn in_shape(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+                match shape {
+                    egui::epaint::Shape::Text(text) => out.push(text.galley.text().to_string()),
+                    egui::epaint::Shape::Vec(shapes) => {
+                        for s in shapes {
+                            in_shape(s, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for s in shapes {
+                in_shape(&s.shape, out);
+            }
+        }
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(input.clone(), |ui| draw_packager_modal(ui.ctx(), &mut state));
+        let output = ctx.run_ui(input, |ui| draw_packager_modal(ui.ctx(), &mut state));
+
+        let mut texts = Vec::new();
+        collect_shapes_text(&output.shapes, &mut texts);
+
+        crate::i18n::set_language(&prev);
+
+        let joined = texts.join(" ");
+        assert!(joined.contains("Ідентифікатор теми:"), "Theme ID label must be localized in Ukrainian, got texts: {joined}");
+        assert!(joined.contains("Вихідна тека:"), "Source Folder label must be localized in Ukrainian, got texts: {joined}");
     }
 }
