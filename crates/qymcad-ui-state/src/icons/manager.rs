@@ -193,19 +193,7 @@ impl IconManager {
         for pack in &self.active_stack {
             if let Some(mut data) = pack.get_svg_for_id(id) {
                 if pack.manifest.color_mode == ColorMode::Monochrome {
-                    match String::from_utf8(data) {
-                        Ok(text) => {
-                            if text.contains("currentColor") || text.contains("fill=\"#000000\"") || text.contains("fill=\"black\"") {
-                                let replaced = text.replace("currentColor", "white").replace("fill=\"#000000\"", "fill=\"white\"").replace("fill=\"black\"", "fill=\"white\"");
-                                data = replaced.into_bytes();
-                            } else {
-                                data = text.into_bytes();
-                            }
-                        }
-                        Err(e) => {
-                            data = e.into_bytes();
-                        }
-                    }
+                    data = prepare_monochrome_svg(&data);
                 }
                 let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision };
                 if !had_transient_read_failure {
@@ -395,4 +383,19 @@ pub fn get_global_icon_revision() -> u64 {
         }
     }
     0
+}
+
+/// Prepares monochrome SVG bytes for tinting by replacing `currentColor` and black fills with white.
+pub fn prepare_monochrome_svg(data: &[u8]) -> Vec<u8> {
+    match std::str::from_utf8(data) {
+        Ok(text) => {
+            if text.contains("currentColor") || text.contains("fill=\"#000000\"") || text.contains("fill=\"black\"") {
+                let replaced = text.replace("currentColor", "white").replace("fill=\"#000000\"", "fill=\"white\"").replace("fill=\"black\"", "fill=\"white\"");
+                replaced.into_bytes()
+            } else {
+                data.to_vec()
+            }
+        }
+        Err(_) => data.to_vec(),
+    }
 }

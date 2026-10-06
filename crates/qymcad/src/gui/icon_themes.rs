@@ -283,7 +283,12 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         if let Some(prev) = to_forget {
                             ui.ctx().forget_image(&prev);
                         }
-                        let mut image = egui::Image::from_bytes(uri, svg_data.clone()).fit_to_exact_size(egui::vec2(48.0, 48.0));
+                        let prepared_bytes = if pack.manifest.color_mode == ColorMode::Monochrome {
+                            egui::load::Bytes::from(qymcad_ui_state::icons::prepare_monochrome_svg(svg_data))
+                        } else {
+                            svg_data.clone()
+                        };
+                        let mut image = egui::Image::from_bytes(uri, prepared_bytes).fit_to_exact_size(egui::vec2(48.0, 48.0));
                         if pack.manifest.color_mode == ColorMode::Monochrome {
                             image = image.tint(ui.visuals().text_color());
                         }
@@ -2197,6 +2202,63 @@ mod tests {
         let second_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("second preview URI should be tracked");
         assert_ne!(first_uri, second_uri, "URI must change when preview file is modified");
         assert!(second_uri.contains("-g2"), "URI should contain updated generation number, got: {second_uri}");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn monochrome_icon_with_current_color_is_prepared_as_white_in_gallery() {
+        use egui::load::{ImagePoll, SizeHint};
+
+        let temp_root = std::env::temp_dir().join(format!("qymcad_mono_gallery_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        let pack_dir = temp_root.join("test-mono-theme");
+        let icons_dir = pack_dir.join("icons").join("sketch");
+        std::fs::create_dir_all(&icons_dir).unwrap();
+
+        let manifest = r#"(
+            id: "test-mono-theme",
+            name: "Test Mono Theme",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Monochrome,
+            inherits: None,
+        )"#;
+        std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24z"/></svg>"#;
+        std::fs::write(icons_dir.join("line.svg"), svg).unwrap();
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let mut app = crate::gui::App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+
+        ctx.data_mut(|d| {
+            let state = d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window"));
+            state.selected_pack_id = "test-mono-theme".to_string();
+            state.active_tab = IconManagerTab::Gallery;
+            state.category_filter = "sketch".to_string();
+        });
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input.clone(), |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+        }
+
+        let uri = "bytes://mgr/test-mono-theme/r0-g1/sketch/line.svg";
+        let poll = ctx.try_load_image(uri, SizeHint::Width(24)).expect("gallery image must load");
+        if let ImagePoll::Ready { image } = poll {
+            let center_pixel = image.pixels[(image.size[1] / 2) * image.size[0] + image.size[0] / 2];
+            assert!(center_pixel.a() > 0, "pixel must be non-transparent");
+            assert_eq!(center_pixel.r(), center_pixel.a(), "monochrome icon with currentColor must be prepared with white base color for tinting (premultiplied r == a), got: {center_pixel:?}");
+        } else {
+            panic!("gallery image should be ready");
+        }
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
