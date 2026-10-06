@@ -9,7 +9,7 @@ use qymcad_ui_state::icons::{
     reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The directory for user-installed icon themes in the application config folder.
 pub(crate) fn user_themes_dir() -> Option<PathBuf> {
@@ -63,7 +63,103 @@ pub(crate) fn all_theme_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ThemeEntrySignature {
+    path: PathBuf,
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ThemeDirSignature {
+    dir: PathBuf,
+    entries: Vec<ThemeEntrySignature>,
+}
+
+#[derive(Clone, Debug)]
+struct CachedDiscovery {
+    signatures: Vec<ThemeDirSignature>,
+    packs: Vec<IconPack>,
+}
+
+static DISCOVERY_CACHE: std::sync::RwLock<Option<std::collections::HashMap<Vec<PathBuf>, CachedDiscovery>>> = std::sync::RwLock::new(None);
+
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DiscoveryCacheStats {
+    pub hits: usize,
+    pub misses: usize,
+}
+
+#[cfg(test)]
+static DISCOVERY_HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static DISCOVERY_MISSES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn discovery_cache_stats() -> DiscoveryCacheStats {
+    DiscoveryCacheStats { hits: DISCOVERY_HITS.load(std::sync::atomic::Ordering::Relaxed), misses: DISCOVERY_MISSES.load(std::sync::atomic::Ordering::Relaxed) }
+}
+
+#[cfg(test)]
+pub(crate) fn clear_discovery_cache_for_test() {
+    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
+        if let Some(map) = guard.as_mut() {
+            map.clear();
+        }
+    }
+    DISCOVERY_HITS.store(0, std::sync::atomic::Ordering::Relaxed);
+    DISCOVERY_MISSES.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Invalidate cached discovery results across all searched theme directories.
+pub(crate) fn invalidate_theme_discovery_cache() {
+    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
+        if let Some(map) = guard.as_mut() {
+            map.clear();
+        }
+    }
+}
+
+fn compute_dir_signature(dir: &Path) -> ThemeDirSignature {
+    let mut entries = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let manifest_path = path.join("manifest.ron");
+                if let Ok(meta) = std::fs::metadata(&manifest_path) {
+                    entries.push(ThemeEntrySignature { path: manifest_path, modified: meta.modified().ok(), len: meta.len() });
+                }
+            } else if path.extension().is_some_and(|ext| ext == "qicons" || ext == "zip") {
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    entries.push(ThemeEntrySignature { path, modified: meta.modified().ok(), len: meta.len() });
+                }
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    ThemeDirSignature { dir: dir.to_path_buf(), entries }
+}
+
 fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> Vec<IconPack> {
+    let current_signatures: Vec<ThemeDirSignature> = dirs.iter().map(|d| compute_dir_signature(d)).collect();
+
+    if let Ok(guard) = DISCOVERY_CACHE.read() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(cached) = map.get(dirs) {
+                if cached.signatures == current_signatures {
+                    #[cfg(test)]
+                    DISCOVERY_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return cached.packs.clone();
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    DISCOVERY_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     let mut packs = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
     for dir in dirs {
@@ -73,6 +169,12 @@ fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> Vec<IconPack> {
             }
         }
     }
+
+    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
+        let map = guard.get_or_insert_with(std::collections::HashMap::new);
+        map.insert(dirs.to_vec(), CachedDiscovery { signatures: current_signatures, packs: packs.clone() });
+    }
+
     packs
 }
 
@@ -410,6 +512,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                                 state.message = Some(crate::i18n::tr("icon-packager-no-icons"));
                                 state.is_error = true;
                             } else {
+                                invalidate_theme_discovery_cache();
                                 let cov_str = rep.included.len().to_string();
                                 let path_str = output_path.display().to_string();
                                 state.message = Some(crate::i18n::trn("icon-packager-success", &[("count", &cov_str), ("path", &path_str)]));
@@ -1877,5 +1980,38 @@ mod tests {
         assert!(!labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-clean-icon"))), "archive icons must not show cleaning controls");
         assert!(labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-gallery-missing"))), "missing icons need a neutral status");
         assert_eq!(preview_frames, 2, "every icon needs a visible 56 px preview frame");
+    }
+
+    #[test]
+    fn discover_theme_packs_caches_results_until_directory_changes() {
+        let temp_root = std::env::temp_dir().join(format!("qymcad_cache_test_{}", std::process::id()));
+        let theme_dir = temp_root.join("test_theme");
+        std::fs::create_dir_all(&theme_dir).expect("create test theme dir");
+        let manifest_content = r#"(
+            id: "test-cache",
+            name: "Test Cache",
+            version: "1.0.0",
+            author: "Tester",
+            license: "MIT",
+            color_mode: Universal,
+        )"#;
+        std::fs::write(theme_dir.join("manifest.ron"), manifest_content).expect("write manifest");
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let initial_stats = discovery_cache_stats();
+        let first = discover_theme_packs_in_dirs(&dirs);
+        assert_eq!(first.len(), 1);
+        let after_first = discovery_cache_stats();
+        assert_eq!(after_first.misses, initial_stats.misses + 1);
+
+        let second = discover_theme_packs_in_dirs(&dirs);
+        assert_eq!(second.len(), 1);
+        let after_second = discovery_cache_stats();
+        assert_eq!(after_second.hits, initial_stats.hits + 1);
+        assert_eq!(after_second.misses, after_first.misses);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }
