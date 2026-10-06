@@ -3424,6 +3424,7 @@ version = "0.1.0"
 dependencies = [
  "egui 0.35.0",
  "egui-phosphor 0.11.0",
+ "egui_extras",
  "qymcad-core",
  "qymcad-i18n",
  "qymcad-kernel",
@@ -3516,6 +3517,7 @@ dependencies = [
  "bytemuck",
  "egui 0.35.0",
  "egui-phosphor 0.11.0",
+ "egui_extras",
  "quick-xml",
  "qymcad-core",
  "qymcad-i18n",

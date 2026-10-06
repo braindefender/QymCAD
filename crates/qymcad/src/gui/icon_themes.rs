@@ -2367,11 +2367,13 @@ mod tests {
         let mut texts = Vec::new();
         collect_shapes_text(&output.shapes, &mut texts);
 
+        let expected_id = crate::i18n::tr("icon-packager-field-id");
+        let expected_source = crate::i18n::tr("icon-packager-field-source");
         crate::i18n::set_language(&prev);
 
         let joined = texts.join(" ");
-        assert!(joined.contains("Ідентифікатор теми:"), "Theme ID label must be localized in Ukrainian, got texts: {joined}");
-        assert!(joined.contains("Вихідна тека:"), "Source Folder label must be localized in Ukrainian, got texts: {joined}");
+        assert!(joined.contains(&expected_id), "Theme ID label must be localized in Ukrainian, got texts: {joined}");
+        assert!(joined.contains(&expected_source), "Source Folder label must be localized in Ukrainian, got texts: {joined}");
     }
 
     #[test]

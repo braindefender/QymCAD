@@ -624,9 +624,21 @@ fn global_icon_manager_cascade() {
 #[test]
 fn icon_tool_renders_with_icon_id() {
     let ctx = egui::Context::default();
+    egui_extras::install_image_loaders(&ctx);
     let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
         let _ = crate::icon_tool(ui, IconId::SketchLine, "Line tool", true);
     });
+
+    let id_key = egui::Id::new("icon_image_prev_uri").with(IconId::SketchLine);
+    let uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("icon_image must track rendered URI");
+    let poll = ctx.try_load_image(&uri, egui::load::SizeHint::default()).expect("icon image must be loaded by installed loader");
+    match poll {
+        egui::load::ImagePoll::Ready { image } => {
+            assert!(image.size[0] > 0 && image.size[1] > 0, "rasterized icon must have positive dimensions");
+            assert!(image.pixels.iter().any(|p| p.a() > 0), "rasterized icon must contain visible pixels");
+        }
+        egui::load::ImagePoll::Pending { .. } => panic!("in-memory SVG bytes must load synchronously into Ready state"),
+    }
 }
 
 #[test]
@@ -1484,7 +1496,7 @@ fn custom_folder_with_special_id_is_still_directory_format() {
     let temp_dir = std::env::temp_dir().join(format!("qymcad_special_id_test_{}", std::process::id()));
     std::fs::create_dir_all(temp_dir.join("icons").join("sketch")).unwrap();
 
-    // Create a directory pack that uses id: "freecad-classic"
+    // Create a directory pack that uses a known bundled id
     let manifest = IconManifest {
         package_type: PackageType::IconTheme,
         id: "freecad-classic".into(),
