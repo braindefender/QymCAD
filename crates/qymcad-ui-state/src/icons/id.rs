@@ -115,6 +115,8 @@ pub enum IconId {
     AssemblyRelation,
     AssemblyArrayLinear,
     AssemblyArrayCircular,
+    AssemblyMirror,
+    AssemblySection,
 }
 
 include!(concat!(env!("OUT_DIR"), "/icon_generated.rs"));

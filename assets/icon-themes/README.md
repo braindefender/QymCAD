@@ -271,7 +271,7 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 
 ---
 
-### 6.4. Category `assembly/` — Components, Mates & Mechanisms (12 icons)
+### 6.4. Category `assembly/` — Components, Mates & Mechanisms (15 icons)
 
 | Icon Path | Function & Description |
 | :--- | :--- |
@@ -287,6 +287,8 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 | `assembly/drive.svg` | **Drive Mechanism:** Animate and simulate joint movement through its range of motion. |
 | `assembly/array_linear.svg` | **Linear Component Pattern:** Replicate components in linear assembly patterns. |
 | `assembly/array_circular.svg` | **Circular Component Pattern:** Replicate components in circular assembly patterns. |
+| `assembly/mirror.svg` | **Mirror Component:** Mirror parts or subassemblies across a planar symmetry datum. |
+| `assembly/section.svg` | **Assembly Section View:** Toggle parametric cross-section cut plane view of the assembly. |
 | `assembly/explode.svg` | **Exploded View:** Step-by-step disassembly inspection and presentation of assembly parts. |
 
 ---
