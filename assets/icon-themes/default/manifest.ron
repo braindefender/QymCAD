@@ -11,6 +11,10 @@
             name: "QymCAD: стандартные иконки",
             description: "Встроенные монохромные векторные иконки на основе Phosphor",
         ),
+        "uk": (
+            name: "QymCAD: стандартні іконки",
+            description: "Вбудовані монохромні векторні іконки на основі Phosphor",
+        ),
     },
     color_mode: Monochrome,
 )

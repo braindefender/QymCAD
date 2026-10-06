@@ -11,6 +11,10 @@
             name: "FreeCAD: классические иконки",
             description: "Классические цветные векторные иконки из FreeCAD",
         ),
+        "uk": (
+            name: "FreeCAD: класичні іконки",
+            description: "Класичні кольорові векторні іконки з FreeCAD",
+        ),
     },
     color_mode: Universal,
 )
