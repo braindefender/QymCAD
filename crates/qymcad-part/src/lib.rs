@@ -6232,10 +6232,10 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     }
                     // COMPONENT PATTERNS ARE AN ASSEMBLY TOOL. They used to sit in the PART workbench, where
                     // there are no components, and there they duplicated the look of the body patterns.
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArray, &qymcad_i18n::tr("tb-comp-lin-array-hint"), bc.carr.mode == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArrayLinear, &qymcad_i18n::tr("tb-comp-lin-array-hint"), bc.carr.mode == 1) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.carr.mode == 1, qymcad_ui_state::BarAsk::CompArray(1)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartArrayCircular, &qymcad_i18n::tr("tb-comp-circ-array-hint"), bc.carr.mode == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArrayCircular, &qymcad_i18n::tr("tb-comp-circ-array-hint"), bc.carr.mode == 2) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.carr.mode == 2, qymcad_ui_state::BarAsk::CompArray(2)));
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartMirror, &qymcad_i18n::tr("tb-mirror-part-hint"), bc.mirror.in_hand()) {

@@ -285,7 +285,8 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 | `assembly/tangent.svg` | **Tangent Mate:** Mate a cylindrical or curved face in tangent contact with a plane. |
 | `assembly/relation.svg` | **Gear / Rack Relation:** Couple kinematic degrees of freedom between two joints (gear ratios, linear racks). |
 | `assembly/drive.svg` | **Drive Mechanism:** Animate and simulate joint movement through its range of motion. |
-| `assembly/array.svg` | **Component Pattern:** Replicate components in linear or circular assembly patterns. |
+| `assembly/array_linear.svg` | **Linear Component Pattern:** Replicate components in linear assembly patterns. |
+| `assembly/array_circular.svg` | **Circular Component Pattern:** Replicate components in circular assembly patterns. |
 | `assembly/explode.svg` | **Exploded View:** Step-by-step disassembly inspection and presentation of assembly parts. |
 
 ---
