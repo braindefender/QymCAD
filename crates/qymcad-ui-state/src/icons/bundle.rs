@@ -681,6 +681,23 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
     inspect_pack_directory_for_mode(source_dir, color_mode)
 }
 
+fn estimate_deflate_ratio(data: &[u8]) -> Option<u64> {
+    if data.len() <= 64 * 1024 {
+        return Some(1);
+    }
+    let mut zip_buf = Vec::new();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_buf));
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("entry", options).ok()?;
+    std::io::Write::write_all(&mut zip, data).ok()?;
+    zip.finish().ok()?;
+
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_buf)).ok()?;
+    let file = archive.by_index(0).ok()?;
+    let compressed = file.compressed_size();
+    (data.len() as u64).checked_div(compressed)
+}
+
 /// Inspect a folder using the color mode that will be written to its bundle manifest.
 pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode: ColorMode) -> Result<ValidationReport, String> {
     let source_dir = source_dir.as_ref();
@@ -773,18 +790,30 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                     continue;
                 };
 
-                // Validate SVG content and viewport
+                // Validate SVG content, size, and compression ratio
                 match std::fs::read(&p) {
-                    Ok(data) => match validate_icon_svg(&data, color_mode) {
-                        Ok(()) => {
-                            if !included.contains(&id) {
-                                included.push(id);
+                    Ok(data) => {
+                        if data.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
+                            rejected.push((rel_str, format!("SVG exceeds {} byte limit", super::pack::MAX_ICON_SVG_SIZE)));
+                            continue;
+                        }
+                        if let Some(ratio) = estimate_deflate_ratio(&data) {
+                            if ratio > super::pack::MAX_COMPRESSION_RATIO {
+                                rejected.push((rel_str, format!("suspicious compression ratio ({ratio}:1, exceeds limit {})", super::pack::MAX_COMPRESSION_RATIO)));
+                                continue;
                             }
                         }
-                        Err(err) => {
-                            rejected.push((rel_str, err));
+                        match validate_icon_svg(&data, color_mode) {
+                            Ok(()) => {
+                                if !included.contains(&id) {
+                                    included.push(id);
+                                }
+                            }
+                            Err(err) => {
+                                rejected.push((rel_str, err));
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         rejected.push((rel_str, format!("read error: {e}")));
                     }
@@ -805,7 +834,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
 /// Package an icon folder into any writer (e.g. file or in-memory cursor).
 /// Only valid, verified icons that match a known `IconId` are packaged into the archive.
 /// Extraneous files and invalid SVGs are automatically excluded.
-pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, writer: W) -> Result<ValidationReport, String> {
+pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, mut writer: W) -> Result<ValidationReport, String> {
     manifest.validate()?;
     let source_dir = source_dir.as_ref();
     let report = inspect_pack_directory_for_mode(source_dir, manifest.color_mode)?;
@@ -814,7 +843,8 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
         return Err("cannot package bundle: 0 valid CAD icons found in icons/ directory".to_string());
     }
 
-    let mut zip = zip::ZipWriter::new(writer);
+    let mut mem_buf = Vec::new();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut mem_buf));
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // 1. Write manifest.ron (marked verified)
@@ -828,11 +858,21 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
     for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "preview.svg", "preview.png", "preview.webp", "icon.svg"] {
         let doc_path = source_dir.join(doc);
         if doc_path.is_file() {
-            if *doc == "icon.svg" && std::fs::metadata(&doc_path).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
+            let limit = if *doc == "icon.svg" {
+                super::pack::MAX_ICON_SVG_SIZE
+            } else if doc.starts_with("preview.") {
+                super::pack::MAX_SINGLE_FILE_UNCOMPRESSED_SIZE
+            } else {
+                super::pack::MAX_TEXT_FILE_SIZE
+            };
+            if std::fs::metadata(&doc_path).ok().is_some_and(|m| m.len() > limit) {
                 continue;
             }
             if let Ok(content) = std::fs::read(&doc_path) {
-                if *doc == "icon.svg" && (content.len() as u64 > super::pack::MAX_ICON_SVG_SIZE || validate_svg(&content).is_err()) {
+                if content.len() as u64 > limit {
+                    continue;
+                }
+                if *doc == "icon.svg" && validate_svg(&content).is_err() {
                     continue;
                 }
                 let _ = zip.start_file(*doc, options);
@@ -872,6 +912,12 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
     }
 
     zip.finish().map_err(|e| e.to_string())?;
+
+    // Verify generated zip passes all archive safety requirements
+    let mut check_zip = zip::ZipArchive::new(std::io::Cursor::new(&mem_buf)).map_err(|e| e.to_string())?;
+    super::pack::validate_archive_safety(&mut check_zip).map_err(|e| format!("generated bundle rejected by safety rules: {e}"))?;
+
+    std::io::Write::write_all(&mut writer, &mem_buf).map_err(|e| e.to_string())?;
 
     Ok(report)
 }

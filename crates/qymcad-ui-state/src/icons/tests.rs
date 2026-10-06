@@ -1438,3 +1438,43 @@ fn invalid_icon_in_custom_pack_continues_fallback_to_default() {
     assert_eq!(resolved.pack_id, "default");
     assert!(resolved.data.starts_with(b"<svg"));
 }
+
+#[test]
+fn packager_rejects_icon_with_excessive_compression_ratio() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_bomb_pack_{}", std::process::id()));
+    let icons_dir = temp_dir.join("icons").join("sketch");
+    std::fs::create_dir_all(&icons_dir).unwrap();
+
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "bomb-pack".into(),
+        name: "Bomb Pack".into(),
+        version: "1.0".into(),
+        author: "Author".into(),
+        license: "MIT".into(),
+        description: "Test".into(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    // 120 KB SVG with repeating comment that compresses > 250:1 ratio
+    let mut bomb_svg = Vec::new();
+    bomb_svg.extend_from_slice(b"<svg viewBox=\"0 0 24 24\"><!--");
+    bomb_svg.extend(std::iter::repeat_n(b'A', 120 * 1024));
+    bomb_svg.extend_from_slice(b"--><path d=\"M0 0h24v24z\"/></svg>");
+
+    std::fs::write(icons_dir.join("line.svg"), &bomb_svg).unwrap();
+
+    let report = inspect_pack_directory(&temp_dir).unwrap();
+    // Must be rejected by pack directory inspection
+    assert!(report.included.is_empty(), "icon with excessive compression ratio must not be included");
+    assert!(!report.rejected.is_empty(), "icon with excessive compression ratio must be in rejected list");
+
+    let out_archive = temp_dir.join("out.qicons");
+    let res = package_bundle(&temp_dir, &manifest, &out_archive);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(res.is_err(), "package_bundle must fail for directory with only bomb icons");
+}
