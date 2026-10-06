@@ -1660,3 +1660,32 @@ fn icon_image_forgets_previous_revision_uri() {
     let second_uri = ctx.data(|d| d.get_temp::<String>(id_key)).expect("second URI tracked");
     assert_ne!(first_uri, second_uri);
 }
+
+#[test]
+fn icon_theme_documentation_matches_all_icons() {
+    let readme_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/icon-themes/README.md");
+    let content = std::fs::read_to_string(&readme_path).expect("assets/icon-themes/README.md must be readable");
+
+    let mut documented_paths = std::collections::BTreeSet::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("| `") {
+            if let Some(rest) = trimmed.strip_prefix("| `") {
+                if let Some((path_with_ext, _)) = rest.split_once('`') {
+                    if let Some(rel_path) = path_with_ext.strip_suffix(".svg") {
+                        documented_paths.insert(rel_path.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let supported_paths: std::collections::BTreeSet<String> = ALL_ICONS.iter().map(|id| id.relative_path().to_string()).collect();
+
+    let extra: Vec<_> = documented_paths.difference(&supported_paths).collect();
+    let missing: Vec<_> = supported_paths.difference(&documented_paths).collect();
+
+    assert!(extra.is_empty(), "README documents non-existent/unsupported icons: {extra:?}");
+    assert!(missing.is_empty(), "README is missing documented icons: {missing:?}");
+    assert_eq!(documented_paths.len(), ALL_ICONS.len(), "Documented count must match ALL_ICONS count");
+}
