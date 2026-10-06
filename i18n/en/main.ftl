@@ -2476,6 +2476,7 @@ icon-mgr-color-universal = Full-color icons
 icon-mgr-total-icons = Icons in pack: { $count } / { $total } ({ $percent }%)
 icon-mgr-hygiene-warning = { $count } icon(s) contain junk tags or validation issues
 icon-mgr-hygiene-clean = All icons pass SVG hygiene and validation
+icon-mgr-rejected-title = Rejected themes and archives
 doc-props-title = Document properties
 doc-props-name = Title
 doc-props-author = Author

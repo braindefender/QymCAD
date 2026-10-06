@@ -5,8 +5,8 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_in, inspect_pack_directory_for_mode, load_default_pack, package_bundle,
-    reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, IconManifest, IconPack, IconId, PackSource, PackageType, ValidationReport, ALL_ICONS,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory_for_mode, load_default_pack, package_bundle,
+    reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::{Path, PathBuf};
@@ -76,10 +76,16 @@ struct ThemeDirSignature {
     entries: Vec<ThemeEntrySignature>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DiscoveredThemes {
+    pub packs: Vec<IconPack>,
+    pub errors: Vec<DiscoveryError>,
+}
+
 #[derive(Clone, Debug)]
 struct CachedDiscovery {
     signatures: Vec<ThemeDirSignature>,
-    packs: Vec<IconPack>,
+    themes: DiscoveredThemes,
 }
 
 static DISCOVERY_CACHE: std::sync::RwLock<Option<std::collections::HashMap<Vec<PathBuf>, CachedDiscovery>>> = std::sync::RwLock::new(None);
@@ -142,7 +148,7 @@ fn compute_dir_signature(dir: &Path) -> ThemeDirSignature {
     ThemeDirSignature { dir: dir.to_path_buf(), entries }
 }
 
-fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> Vec<IconPack> {
+fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> DiscoveredThemes {
     let current_signatures: Vec<ThemeDirSignature> = dirs.iter().map(|d| compute_dir_signature(d)).collect();
 
     if let Ok(guard) = DISCOVERY_CACHE.read() {
@@ -151,7 +157,7 @@ fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> Vec<IconPack> {
                 if cached.signatures == current_signatures {
                     #[cfg(test)]
                     DISCOVERY_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return cached.packs.clone();
+                    return cached.themes.clone();
                 }
             }
         }
@@ -161,21 +167,26 @@ fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> Vec<IconPack> {
     DISCOVERY_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let mut packs = Vec::new();
+    let mut errors = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
     for dir in dirs {
-        for pack in discover_packs_in(dir) {
+        let report = discover_packs_detailed(dir);
+        for pack in report.packs {
             if seen_ids.insert(pack.manifest.id.clone()) {
                 packs.push(pack);
             }
         }
+        errors.extend(report.errors);
     }
+
+    let themes = DiscoveredThemes { packs, errors };
 
     if let Ok(mut guard) = DISCOVERY_CACHE.write() {
         let map = guard.get_or_insert_with(std::collections::HashMap::new);
-        map.insert(dirs.to_vec(), CachedDiscovery { signatures: current_signatures, packs: packs.clone() });
+        map.insert(dirs.to_vec(), CachedDiscovery { signatures: current_signatures, themes: themes.clone() });
     }
 
-    packs
+    themes
 }
 
 /// Apply the active icon packs from settings into the global icon manager.
@@ -355,7 +366,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
     ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-desc")).small().weak());
     ui.add_space(4.0);
 
-    let mut all_packs = discover_theme_packs_in_dirs(&all_theme_dirs());
+    let mut all_packs = discover_theme_packs_in_dirs(&all_theme_dirs()).packs;
     if !all_packs.iter().any(|p| p.manifest.id == "default") {
         if let Some(def) = load_default_pack() {
             all_packs.push(def);
@@ -871,7 +882,8 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
     let mut open = state.is_open;
     let mut changed = false;
 
-    let mut all_packs = discover_theme_packs_in_dirs(dirs);
+    let discovered = discover_theme_packs_in_dirs(dirs);
+    let mut all_packs = discovered.packs;
 
     // Ensure the built-in default pack is always represented if discovered or from embedded
     if !all_packs.iter().any(|p| p.manifest.id == "default") {
@@ -1037,6 +1049,23 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     }
                     if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
                         ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
+                    }
+
+                    if !discovered.errors.is_empty() {
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-rejected-title"))).strong().color(ui.visuals().error_fg_color));
+                        ui.add_space(4.0);
+                        for err in &discovered.errors {
+                            let file_name = err.path.file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
+                            egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.12)).corner_radius(4.0).inner_margin(egui::Margin::symmetric(6, 4)).show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(file_name).strong());
+                                    ui.label(egui::RichText::new(&err.reason).small().weak());
+                                });
+                            });
+                            ui.add_space(3.0);
+                        }
                     }
 
                     if let Some(idx) = to_remove {
@@ -1426,7 +1455,7 @@ mod tests {
     #[test]
     fn test_bundled_freecad_classic_pack_discovered() {
         let bundled = bundled_themes_dir();
-        let packs = discover_packs_in(&bundled);
+        let packs = qymcad_ui_state::icons::discover_packs_in(&bundled);
         assert!(packs.iter().any(|p| p.manifest.id == "freecad-classic"), "bundled freecad-classic pack must be found");
         let classic = packs.iter().find(|p| p.manifest.id == "freecad-classic").unwrap();
         assert!(classic.coverage().0 >= 5);
@@ -1557,7 +1586,7 @@ mod tests {
         std::fs::create_dir_all(&custom_theme).expect("create another theme directory");
         std::fs::copy(bundled.join("freecad/manifest.ron"), custom_theme.join("manifest.ron")).expect("copy the duplicate manifest");
         let dirs = [temp_root.clone(), bundled];
-        let packs = discover_theme_packs_in_dirs(&dirs);
+        let packs = discover_theme_packs_in_dirs(&dirs).packs;
 
         let mut app = crate::gui::App::default();
         app.set.active_icon_packs.clear();
@@ -2002,15 +2031,46 @@ mod tests {
 
         let initial_stats = discovery_cache_stats();
         let first = discover_theme_packs_in_dirs(&dirs);
-        assert_eq!(first.len(), 1);
+        assert_eq!(first.packs.len(), 1);
         let after_first = discovery_cache_stats();
         assert_eq!(after_first.misses, initial_stats.misses + 1);
 
         let second = discover_theme_packs_in_dirs(&dirs);
-        assert_eq!(second.len(), 1);
+        assert_eq!(second.packs.len(), 1);
         let after_second = discovery_cache_stats();
         assert_eq!(after_second.hits, initial_stats.hits + 1);
         assert_eq!(after_second.misses, after_first.misses);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn icon_manager_window_displays_rejected_archives_with_reason() {
+        let temp_root = std::env::temp_dir().join(format!("qymcad_reject_ui_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        let broken_archive = temp_root.join("broken_pack.qicons");
+        std::fs::write(&broken_archive, b"corrupted data that cannot be parsed as zip").expect("write broken archive");
+
+        let dirs = vec![temp_root.clone()];
+        clear_discovery_cache_for_test();
+
+        let mut app = crate::gui::App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let mut painted = Vec::new();
+        for _ in 0..2 {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            let output = ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
+            painted.clear();
+            for shape in &output.shapes {
+                crate::gui::screen_keys::tests::collect_text(&shape.shape, &mut painted);
+            }
+        }
+
+        assert!(painted.iter().any(|text| text.contains("broken_pack.qicons")), "icon manager window must display rejected archive filename: {painted:?}");
+        assert!(painted.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-rejected-title"))), "icon manager window must display rejected section title: {painted:?}");
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }

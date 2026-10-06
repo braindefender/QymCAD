@@ -1,6 +1,6 @@
 //! Pack discovery, SVG validation, diagnostic inspection, and .qicons bundle packaging.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
 use super::manifest::{ColorMode, IconManifest};
@@ -55,26 +55,52 @@ impl ValidationReport {
     }
 }
 
-/// Discover icon packs from a directory (subdirectories with `manifest.ron` and `.qicons`/`.zip` archives).
-pub fn discover_packs_in(dir: &Path) -> Vec<IconPack> {
+/// A rejected theme directory or archive with the reason for rejection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscoveryError {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
+/// The result of discovering icon packs in a directory, including rejected items.
+#[derive(Clone, Debug, Default)]
+pub struct DiscoveryReport {
+    pub packs: Vec<IconPack>,
+    pub errors: Vec<DiscoveryError>,
+}
+
+/// Discover icon packs from a directory, returning both valid packs and any rejection errors.
+pub fn discover_packs_detailed(dir: &Path) -> DiscoveryReport {
     let mut packs = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return packs };
+    let mut errors = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return DiscoveryReport { packs, errors };
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.join("manifest.ron").exists() {
-                if let Ok(pack) = IconPack::from_directory(&path) {
-                    packs.push(pack);
+            let manifest_path = path.join("manifest.ron");
+            if manifest_path.exists() {
+                match IconPack::from_directory(&path) {
+                    Ok(pack) => packs.push(pack),
+                    Err(err) => errors.push(DiscoveryError { path, reason: err }),
                 }
             }
         } else if path.extension().is_some_and(|ext| ext == "qicons" || ext == "zip") {
-            if let Ok(pack) = IconPack::from_archive(&path) {
-                packs.push(pack);
+            match IconPack::from_archive(&path) {
+                Ok(pack) => packs.push(pack),
+                Err(err) => errors.push(DiscoveryError { path, reason: err }),
             }
         }
     }
     packs.sort_by(|a, b| a.manifest.name.cmp(&b.manifest.name));
-    packs
+    errors.sort_by(|a, b| a.path.cmp(&b.path));
+    DiscoveryReport { packs, errors }
+}
+
+/// Discover icon packs from a directory (subdirectories with `manifest.ron` and `.qicons`/`.zip` archives).
+pub fn discover_packs_in(dir: &Path) -> Vec<IconPack> {
+    discover_packs_detailed(dir).packs
 }
 
 ///// Parse width and height from an SVG viewBox attribute value.

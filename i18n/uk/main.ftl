@@ -2470,6 +2470,7 @@ icon-mgr-color-universal = Кольорові іконки
 icon-mgr-total-icons = Іконок у наборі: { $count } / { $total } ({ $percent }%)
 icon-mgr-hygiene-warning = Увага: { $count } іконок містять зайві теги або помилки валідації
 icon-mgr-hygiene-clean = Усі іконки набору відповідають стандартам чистоти SVG
+icon-mgr-rejected-title = Відхилені теми та архіви
 doc-props-title = Властивості документа
 doc-props-name = Назва
 doc-props-author = Автор

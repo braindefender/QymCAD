@@ -1605,3 +1605,37 @@ fn transient_read_failure_in_higher_theme_does_not_poison_cache() {
 
     let _ = std::fs::remove_dir_all(&temp_root);
 }
+
+#[test]
+fn discover_packs_detailed_reports_errors_for_corrupt_or_invalid_archives() {
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_discover_detailed_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let valid_theme = temp_dir.join("valid_theme");
+    std::fs::create_dir_all(valid_theme.join("icons").join("sketch")).unwrap();
+    let manifest = IconManifest {
+        package_type: PackageType::IconTheme,
+        id: "valid-pack".to_string(),
+        name: "Valid Pack".to_string(),
+        version: "1.0.0".to_string(),
+        author: "Tester".to_string(),
+        license: "MIT".to_string(),
+        description: "Test".to_string(),
+        color_mode: ColorMode::Universal,
+        translations: Default::default(),
+        verified: false,
+    };
+    std::fs::write(valid_theme.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
+    let corrupt_qicons = temp_dir.join("corrupted.qicons");
+    std::fs::write(&corrupt_qicons, b"not a zip archive at all").unwrap();
+
+    let report = discover_packs_detailed(&temp_dir);
+    assert_eq!(report.packs.len(), 1);
+    assert_eq!(report.packs[0].manifest.id, "valid-pack");
+    assert_eq!(report.errors.len(), 1);
+    assert_eq!(report.errors[0].path, corrupt_qicons);
+    assert!(!report.errors[0].reason.is_empty());
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
