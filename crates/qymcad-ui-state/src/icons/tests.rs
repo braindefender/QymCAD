@@ -1506,3 +1506,15 @@ fn custom_folder_with_special_id_is_still_directory_format() {
     assert_eq!(pack.format(), BundleFormat::Directory);
     assert!(pack.is_directory(), "a directory on disk must be recognized as directory even if ID is freecad-classic");
 }
+
+#[test]
+fn resolve_global_icon_lazily_initializes_manager() {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        *g = None;
+    }
+    assert!(with_global_icon_manager(|_| ()).is_none());
+
+    let resolved = resolve_global_icon(IconId::SketchLine);
+    assert_eq!(resolved.pack_id, "default");
+    assert!(with_global_icon_manager(|_| ()).is_some(), "global manager must be initialized after resolve");
+}

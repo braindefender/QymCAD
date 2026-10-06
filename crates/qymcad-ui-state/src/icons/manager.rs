@@ -232,7 +232,7 @@ impl IconManager {
     }
 }
 
-static GLOBAL_ICON_MANAGER: RwLock<Option<IconManager>> = RwLock::new(None);
+pub(crate) static GLOBAL_ICON_MANAGER: RwLock<Option<IconManager>> = RwLock::new(None);
 
 /// Set or replace the global icon manager instance.
 pub fn set_global_icon_manager(mgr: IconManager) {
@@ -254,9 +254,8 @@ pub fn with_global_icon_manager_mut<R>(f: impl FnOnce(&mut IconManager) -> R) ->
 /// Resolve an `IconId` using the global priority stack.
 pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
-        if let Some(mgr) = g.as_mut() {
-            return mgr.resolve(id);
-        }
+        let mgr = g.get_or_insert_with(IconManager::new);
+        return mgr.resolve(id);
     }
     if let Some(def) = load_default_pack() {
         if let Some(data) = def.get_svg_for_id(id) {
