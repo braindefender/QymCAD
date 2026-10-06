@@ -1,0 +1,19 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="3" cy="3" r="3" transform="matrix(-1 0 0 1 31 1)" fill="white" fill-opacity="0.66"/>
+<circle cx="3" cy="3" r="3" transform="matrix(-1 0 0 1 7 25)" fill="white" fill-opacity="0.66"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 29 27)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 21 27)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 13 27)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 13 19)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 29 19)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 29 11)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 21 11)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 13 11)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 5 11)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 5 19)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 5 3)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 13 3)" fill="white" fill-opacity="0.33"/>
+<circle cx="1" cy="1" r="1" transform="matrix(-1 0 0 1 21 3)" fill="white" fill-opacity="0.33"/>
+<path d="M24.0605 3.30957C13.4089 4.99568 4.99712 13.4081 3.31055 24.0596C3.53454 24.0207 3.76487 24 4 24C4.45946 24 4.9006 24.0781 5.31152 24.2207C6.91109 14.5458 14.5466 6.90966 24.2217 5.31055C24.0792 4.89978 24 4.45925 24 4C24 3.76448 24.0215 3.53392 24.0605 3.30957Z" fill="#18F2F2"/>
+<path d="M20 17V20V23M17 20H23" stroke="#18F2F2" stroke-width="2" stroke-linecap="round"/>
+</svg>

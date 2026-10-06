@@ -6,7 +6,7 @@ QymCAD features a modular, dynamic vector icon theme engine. It supports both bu
 
 ## 1. Important: Partial Packs & Fallback Cascade
 
-> **A theme does NOT need to provide all 106 icons!**
+> **A theme does NOT need to provide all 92 icons!**
 >
 > Theme packs can be **partial** and contain only a subset of icons (for example, only sketch tools, only custom constraint badges, or only specific 3D solid operations).
 >
@@ -45,11 +45,8 @@ my-theme.qicons (or directory my-theme/)
     │   ├── joint.svg
     │   ├── ground.svg
     │   └── ...
-    ├── datum/
-    │   ├── plane.svg
-    │   └── ...
-    └── common/
-        ├── settings.svg
+    └── datum/
+        ├── plane.svg
         └── ...
 ```
 
@@ -162,12 +159,12 @@ All SVG files are validated at compile-time and load-time by `validate_svg`. An 
 
 ---
 
-## 6. Directory Naming & Icon Catalogue (All 106 Icons)
+## 6. Directory Naming & Icon Catalogue (All 92 Icons)
 
 Icon paths are resolved by combining category subdirectories with the icon name:
 `icons/<category>/<name>.svg`
 
-Below is the complete dictionary of all **106 icons** across the 6 categories:
+Below is the complete dictionary of all **92 icons** across the 5 categories:
 
 ### 6.1. Category `sketch/` — 2D Sketch Creation, Modification & Dimensions (31 icons)
 
@@ -240,7 +237,6 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 | `part/shell.svg` | **Shell:** Hollow out a solid body leaving walls of specified thickness and opening selected faces. |
 | `part/hole.svg` | **Hole:** Create parametric simple, counterbored, countersunk, or tapped holes on solid faces. |
 | `part/draft.svg` | **Draft Angle:** Taper selected planar faces relative to a mold pull direction for casting. |
-| `part/section.svg` | **Section View:** Cut a live interactive clipping cross-section through the 3D model. |
 | `part/thread.svg` | **Thread:** Generate cosmetic or modeled helical screw threads on cylindrical solid faces. |
 | `part/push_face.svg` | **Push/Pull Face:** Direct modeling: offset or move a solid face along its normal vector. |
 | `part/remove_face.svg` | **Remove Face:** Direct modeling: delete a solid face and extend neighbouring faces to heal the gap. |
@@ -254,9 +250,6 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 | `part/cone.svg` | **Cone Primitive:** Create a parametric cone or truncated frustum (bottom radius, top radius, height). |
 | `part/torus.svg` | **Torus Primitive:** Create a parametric torus ring (major ring radius, minor tube radius). |
 | `part/prism.svg` | **Prism Primitive:** Create a parametric regular polygonal prism solid. |
-| `part/boolean_union.svg` | **Boolean Union:** Fuse two or more overlapping solid bodies into a single unified body. |
-| `part/boolean_cut.svg` | **Boolean Cut:** Subtract a tool body from a target base body. |
-| `part/boolean_intersect.svg` | **Boolean Intersect:** Keep only the common intersecting volume of two solid bodies. |
 | `part/boolean_bodies.svg` | **Boolean Bodies Tool:** Launch the multi-body boolean operations toolbar. |
 | `part/offset_surface.svg` | **Offset Surface:** Create a new surface sheet at an equidistant normal offset from a reference face. |
 | `part/surface_replace.svg` | **Replace Face:** Substitute an existing face of a solid body with a curved surface sheet. |
@@ -264,10 +257,11 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 | `part/stitch.svg` | **Stitch Surfaces:** Sew neighbouring surface sheets along shared edges into an unified shell. |
 | `part/trim_surface.svg` | **Trim Surface:** Trim away surface sheet segments using cutting curves or intersecting faces. |
 | `part/recognise.svg` | **Recognize Shapes:** Feature recognition: detect planes, cylinders, and primitives on imported mesh/BREP data. |
-| `part/surface_flow.svg` | **Surface Flow:** Inspect and harmonize UV parameterization and curvature zebra stripes. |
 | `part/array_linear.svg` | **3D Linear Pattern:** Replicate 3D features or solid bodies along linear directions. |
 | `part/array_circular.svg` | **3D Circular Pattern:** Replicate 3D features or solid bodies rotationally around an axis. |
 | `part/mirror.svg` | **3D Mirror:** Mirror 3D features or bodies across a planar symmetry datum. |
+| `part/measure.svg` | **Measure 3D:** Interactive inspection ruler: measure distances, coordinates, and angles in 3D space. |
+| `part/section.svg` | **Section View:** Cut a live interactive clipping cross-section through the 3D model. |
 
 ---
 
@@ -284,9 +278,7 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 | `assembly/width.svg` | **Width Mate:** Center a component midway between two opposing parallel boundary walls. |
 | `assembly/tangent.svg` | **Tangent Mate:** Mate a cylindrical or curved face in tangent contact with a plane. |
 | `assembly/relation.svg` | **Gear / Rack Relation:** Couple kinematic degrees of freedom between two joints (gear ratios, linear racks). |
-| `assembly/drive.svg` | **Drive Mechanism:** Animate and simulate joint movement through its range of motion. |
 | `assembly/array.svg` | **Component Pattern:** Replicate components in linear or circular assembly patterns. |
-| `assembly/explode.svg` | **Exploded View:** Step-by-step disassembly inspection and presentation of assembly parts. |
 
 ---
 
@@ -294,26 +286,10 @@ Below is the complete dictionary of all **106 icons** across the 6 categories:
 
 | Icon Path | Function & Description |
 | :--- | :--- |
+| `datum/axis.svg` | **Datum Axis:** Construct a parametric reference axis (cylinder centerline, line, face normal). |
 | `datum/plane.svg` | **Datum Plane:** Construct an auxiliary reference plane (offset, angled, 3-point, tangent). |
 | `datum/point.svg` | **Datum Point:** Construct a parametric reference point in 3D space. |
-| `datum/axis.svg` | **Datum Axis:** Construct a parametric reference axis (cylinder centerline, line, face normal). |
 | `datum/sketch_pick_plane.svg` | **New Sketch Plane:** Select a planar face or datum plane to begin drawing a new 2D sketch. |
-
----
-
-### 6.6. Category `common/` — General UI & Workbench Actions (9 icons)
-
-| Icon Path | Function & Description |
-| :--- | :--- |
-| `common/select.svg` | **Select:** General pointer / pick mode for viewport objects and tree rows. |
-| `common/delete.svg` | **Delete:** Delete active selection from the document and tree. |
-| `common/copy.svg` | **Copy:** Copy active selection to the clipboard. |
-| `common/cut.svg` | **Cut:** Cut active selection to the clipboard. |
-| `common/measure.svg` | **Measure 3D:** Interactive inspection ruler: measure distances, coordinates, and angles in 3D space. |
-| `common/visibility.svg` | **Toggle Visibility:** Hide or unhide selected bodies, sketches, datums, or components. |
-| `common/settings.svg` | **Preferences:** Open the application settings and preferences dialog. |
-| `common/help.svg` | **Help:** Open keyboard shortcuts, mouse gesture cheatsheets, and user manual. |
-| `common/folder.svg` | **Open / Browse:** File open and folder directory selection dialog. |
 
 ---
 
