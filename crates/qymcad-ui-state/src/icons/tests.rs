@@ -499,10 +499,13 @@ fn inspect_and_package_excludes_problematic_files() {
 fn default_embedded_pack_is_valid_and_complete() {
     let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
     assert_eq!(pack.manifest.id, "default");
+    assert!(pack.manifest.translations.contains_key("kk"));
     assert!(pack.manifest.translations.contains_key("ru"));
     assert!(pack.manifest.translations.contains_key("uk"));
+    assert_ne!(pack.manifest.name_for_locale("kk"), pack.manifest.name);
     assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
     assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
+    assert_ne!(pack.get_readme_for_locale("kk"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
     assert_eq!(pack.manifest.color_mode, ColorMode::Monochrome);
@@ -541,6 +544,15 @@ fn all_embedded_packs_are_valid_and_complete() {
     assert_eq!(shapr_pack.format(), BundleFormat::Embedded);
     assert!(!shapr_pack.is_directory());
     assert!(shapr_pack.is_verified());
+    assert!(shapr_pack.manifest.translations.contains_key("kk"));
+    assert!(shapr_pack.manifest.translations.contains_key("ru"));
+    assert!(shapr_pack.manifest.translations.contains_key("uk"));
+    assert_ne!(shapr_pack.manifest.description_for_locale("kk"), shapr_pack.manifest.description);
+    assert_ne!(shapr_pack.manifest.description_for_locale("ru"), shapr_pack.manifest.description);
+    assert_ne!(shapr_pack.manifest.description_for_locale("uk"), shapr_pack.manifest.description);
+    assert_ne!(shapr_pack.get_readme_for_locale("kk"), shapr_pack.get_readme());
+    assert_ne!(shapr_pack.get_readme_for_locale("ru"), shapr_pack.get_readme());
+    assert_ne!(shapr_pack.get_readme_for_locale("uk"), shapr_pack.get_readme());
     let (shapr_cov, total) = shapr_pack.coverage();
     assert_eq!(shapr_cov, total, "embedded Shapr-Alike pack must cover all icons");
 
