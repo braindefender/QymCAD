@@ -576,40 +576,82 @@ fn monochrome_inspection_and_packaging_share_color_validation() {
         verified: false,
     };
     std::fs::write(root.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
-    std::fs::write(icons.join("line.svg"), br#"<svg viewBox="0 0 24 24" fill="white"><path d="M0 0h24v24"/></svg>"#).unwrap();
-    std::fs::write(icons.join("circle.svg"), br#"<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red"/></svg>"#).unwrap();
+    std::fs::write(icons.join("line.svg"), br#"<svg viewBox="0 0 24 24" fill="var(--icon-stroke, #fff)"><path d="M0 0h24v24"/></svg>"#).unwrap();
+    std::fs::write(icons.join("circle.svg"), br#"<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--invalid-token, #f00)"/></svg>"#).unwrap();
     let report = inspect_pack_directory(&root).unwrap();
     assert_eq!(report.included, vec![IconId::SketchLine]);
-    assert!(report.rejected.iter().any(|(path, reason)| path == "sketch/circle.svg" && reason.contains("fill") && reason.contains("red")));
+    assert!(report.rejected.iter().any(|(path, reason)| path == "sketch/circle.svg" && reason.contains("unknown icon token")));
     let pack = IconPack::from_directory(&root).unwrap();
-    assert!(pack.inspect_svg_for_id(IconId::SketchCircle).unwrap_err().contains("red"));
+    assert!(pack.inspect_svg_for_id(IconId::SketchCircle).unwrap_err().contains("unknown icon token"));
     let archive = root.join("output.qicons");
     package_bundle(&root, &manifest, &archive).unwrap();
     let bundled = IconPack::from_archive(&archive).unwrap();
     assert!(bundled.get_svg_for_id(IconId::SketchCircle).is_none());
-    let mut color_manifest = manifest.clone();
-    color_manifest.color_mode = ColorMode::Universal;
-    let color_archive = root.join("color.qicons");
-    let color_report = package_bundle(&root, &color_manifest, &color_archive).unwrap();
-    assert!(color_report.included.contains(&IconId::SketchCircle));
+
+    // With valid token it is included
+    std::fs::write(icons.join("circle.svg"), br#"<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--icon-sketch-primary, #f00)"/></svg>"#).unwrap();
+    let valid_archive = root.join("valid.qicons");
+    let valid_report = package_bundle(&root, &manifest, &valid_archive).unwrap();
+    assert!(valid_report.included.contains(&IconId::SketchCircle));
     std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
-fn monochrome_svg_checks_inherited_fill_stroke_styles_and_paint_servers() {
-    for (svg, expected) in [
-        (r#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24"/></svg>"#, "implicit black fill"),
-        (r##"<svg viewBox="0 0 24 24" fill="white"><path d="M0 0h24" stroke="#f00"/></svg>"##, "stroke"),
-        (r#"<svg viewBox="0 0 24 24" style="fill: white"><circle r="12" style="stroke: rgb(255, 0, 0)"/></svg>"#, "stroke"),
-        (r#"<svg viewBox="0 0 24 24" fill="white"><style>path { fill: red }</style><path d="M0 0h24"/></svg>"#, "<style>"),
-        (r#"<svg viewBox="0 0 24 24" fill="white"><path d="M0 0h24" stroke="url(#paint)"/></svg>"#, "stroke"),
+fn token_svg_validates_css_variables_and_fallbacks() {
+    // Valid tokens with fallbacks must pass
+    for valid in [
+        r##"<svg viewBox="0 0 24 24"><path d="M0 0h24" stroke="var(--icon-stroke, #fff)"/></svg>"##,
+        r##"<svg viewBox="0 0 24 24"><circle fill="var(--icon-sketch-primary, #0288D1)"/></svg>"##,
+        r##"<svg viewBox="0 0 24 24"><rect fill="var(--icon-neutral, #CCCCCC)" stroke="currentColor"/></svg>"##,
+        r##"<svg viewBox="0 0 24 24"><path fill="#f00" stroke="#00f"/></svg>"##,
     ] {
-        let err = validate_icon_svg(svg.as_bytes(), ColorMode::Monochrome).unwrap_err();
-        assert!(err.contains(expected), "{err}");
-        validate_icon_svg(svg.as_bytes(), ColorMode::Universal).unwrap();
+        validate_icon_svg(valid.as_bytes(), ColorMode::Universal).unwrap();
+        validate_icon_svg(valid.as_bytes(), ColorMode::Monochrome).unwrap();
     }
-    let valid = br##"<svg viewBox="0 0 24 24"><g fill="#fff"><circle r="12" fill="none" stroke="currentColor"/><path d="M0 0h24"/></g></svg>"##;
-    validate_icon_svg(valid, ColorMode::Monochrome).unwrap();
+
+    // Invalid variables must be rejected
+    for (invalid, expected) in [
+        (r##"<svg viewBox="0 0 24 24"><path stroke="var(--icon-stroke)"/></svg>"##, "must specify a fallback color"),
+        (r##"<svg viewBox="0 0 24 24"><path stroke="var(--nonexistent-token, #fff)"/></svg>"##, "unknown icon token"),
+        (r##"<svg viewBox="0 0 24 24"><path stroke="var(icon-stroke, #fff)"/></svg>"##, "must start with '--'"),
+        (r##"<svg viewBox="0 0 24 24"><path stroke="var(--icon-stroke, )"/></svg>"##, "empty fallback color"),
+    ] {
+        let err = validate_icon_svg(invalid.as_bytes(), ColorMode::Universal).unwrap_err();
+        assert!(err.contains(expected), "expected '{expected}' in '{err}'");
+    }
+}
+
+#[test]
+fn resolve_icon_tokens_substitutes_active_palette_and_preserves_static() {
+    let dark_pal = qymcad_scheme::dark();
+    let light_pal = qymcad_scheme::light();
+
+    let svg_with_tokens = br##"<svg viewBox="0 0 24 24"><path stroke="var(--icon-stroke, #111)" fill="var(--icon-sketch-primary, #222)"/><rect fill="currentColor"/></svg>"##;
+
+    let dark_resolved = String::from_utf8(super::manager::resolve_icon_tokens(svg_with_tokens, &dark_pal, false)).unwrap();
+    assert!(dark_resolved.contains("stroke=\"#E0E0E0\""));
+    assert!(dark_resolved.contains("fill=\"#29B6F6\""));
+    assert!(dark_resolved.contains("fill=\"#E0E0E0\""));
+
+    let light_resolved = String::from_utf8(super::manager::resolve_icon_tokens(svg_with_tokens, &light_pal, false)).unwrap();
+    assert!(light_resolved.contains("stroke=\"#2A2A2A\""));
+    assert!(light_resolved.contains("fill=\"#0288D1\""));
+    assert!(light_resolved.contains("fill=\"#2A2A2A\""));
+
+    // Unknown token uses fallback
+    let unknown_token_svg = br##"<svg viewBox="0 0 24 24"><path stroke="var(--custom-fallback, #AABBCC)"/></svg>"##;
+    let fallback_resolved = String::from_utf8(super::manager::resolve_icon_tokens(unknown_token_svg, &dark_pal, false)).unwrap();
+    assert!(fallback_resolved.contains("stroke=\"#AABBCC\""));
+
+    // Nested paren in fallback
+    let nested_fallback_svg = br##"<svg viewBox="0 0 24 24"><path stroke="var(--custom-rgb, rgba(10, 20, 30, 0.5))"/></svg>"##;
+    let nested_resolved = String::from_utf8(super::manager::resolve_icon_tokens(nested_fallback_svg, &dark_pal, false)).unwrap();
+    assert!(nested_resolved.contains("stroke=\"rgba(10, 20, 30, 0.5)\""));
+
+    // Static SVG without tokens is byte-for-byte identical
+    let static_svg = br##"<svg viewBox="0 0 24 24"><path stroke="#FF0000" fill="#00FF00"/></svg>"##;
+    let static_resolved = super::manager::resolve_icon_tokens(static_svg, &dark_pal, false);
+    assert_eq!(static_resolved, static_svg.to_vec());
 }
 
 #[test]

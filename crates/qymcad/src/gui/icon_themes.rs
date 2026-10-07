@@ -327,15 +327,14 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         if let Some(prev) = to_forget {
                             ui.ctx().forget_image(&prev);
                         }
-                        let prepared_bytes = if pack.manifest.color_mode == ColorMode::Monochrome {
-                            egui::load::Bytes::from(qymcad_ui_state::icons::prepare_monochrome_svg(svg_data))
+                        let is_mono = pack.manifest.color_mode == ColorMode::Monochrome;
+                        let prepared_bytes = if is_mono {
+                            let pal = if ui.visuals().dark_mode { qymcad_scheme::dark() } else { qymcad_scheme::light() };
+                            egui::load::Bytes::from(qymcad_ui_state::icons::resolve_icon_tokens(svg_data, &pal, true))
                         } else {
                             svg_data.clone()
                         };
-                        let mut image = egui::Image::from_bytes(uri, prepared_bytes).fit_to_exact_size(egui::vec2(48.0, 48.0));
-                        if pack.manifest.color_mode == ColorMode::Monochrome {
-                            image = image.tint(ui.visuals().text_color());
-                        }
+                        let image = egui::Image::from_bytes(uri, prepared_bytes).fit_to_exact_size(egui::vec2(48.0, 48.0));
                         ui.put(preview.shrink(4.0), image);
                     }
                     Err(_) => {
@@ -2374,7 +2373,7 @@ mod tests {
     }
 
     #[test]
-    fn monochrome_icon_with_current_color_is_prepared_as_white_in_gallery() {
+    fn monochrome_icon_with_current_color_is_prepared_with_theme_stroke_in_gallery() {
         let _lock = lock_theme_test();
         use egui::load::{ImagePoll, SizeHint};
 
@@ -2424,7 +2423,9 @@ mod tests {
         if let ImagePoll::Ready { image } = poll {
             let center_pixel = image.pixels[(image.size[1] / 2) * image.size[0] + image.size[0] / 2];
             assert!(center_pixel.a() > 0, "pixel must be non-transparent");
-            assert_eq!(center_pixel.r(), center_pixel.a(), "monochrome icon with currentColor must be prepared with white base color for tinting (premultiplied r == a), got: {center_pixel:?}");
+            let expected_ratio = qymcad_scheme::dark().icon_stroke[0] as f32 / 255.0;
+            let actual_ratio = center_pixel.r() as f32 / center_pixel.a() as f32;
+            assert!((actual_ratio - expected_ratio).abs() < 0.05, "monochrome icon with currentColor must be prepared with active theme stroke color, got: {center_pixel:?}");
         } else {
             panic!("gallery image should be ready");
         }

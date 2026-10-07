@@ -281,6 +281,20 @@ scheme-color-cam_op3 = траектория операции 3
 scheme-color-cam_op4 = траектория операции 4
 scheme-color-cam_op5 = траектория операции 5
 scheme-color-cam_op6 = траектория операции 6
+scheme-group-icons = Иконки
+scheme-color-icon_stroke = обводка иконок
+scheme-color-icon_neutral = нейтральное тело иконок
+scheme-color-icon_accent = общий акцент иконок
+scheme-color-icon_sketch_primary = эскиз: основной акцент
+scheme-color-icon_sketch_secondary = эскиз: дополнительный акцент
+scheme-color-icon_constraint_primary = ограничения: основной акцент
+scheme-color-icon_constraint_secondary = ограничения: дополнительный акцент
+scheme-color-icon_part_primary = деталь: основной акцент
+scheme-color-icon_part_secondary = деталь: дополнительный акцент
+scheme-color-icon_assembly_primary = сборка: основной акцент
+scheme-color-icon_assembly_secondary = сборка: дополнительный акцент
+scheme-color-icon_datum_primary = базы: основной акцент
+scheme-color-icon_datum_secondary = базы: дополнительный акцент
 
 # --- ГОРЯЧИЕ КЛАВИШИ ---
 hotkeys-title = Горячие клавиши

@@ -18,13 +18,16 @@ pub struct ResolvedIcon {
     pub pack_id: String,
     /// Monotonically increasing revision counter (invalidates texture cache on edits).
     pub revision: u64,
+    /// Palette fingerprint used during token resolution.
+    pub palette_fingerprint: u64,
 }
 
 /// Central manager for icon themes and priority cascade.
-#[derive(Default)]
 pub struct IconManager {
     /// Active icon packs in descending priority (index 0 is highest priority).
     active_stack: Vec<IconPack>,
+    /// Active palette for CSS variable preprocessing.
+    palette: qymcad_scheme::Palette,
     /// Cache of resolved icons by `IconId`.
     cache: HashMap<IconId, ResolvedIcon>,
     /// Whether file watch mode is toggled globally.
@@ -37,6 +40,21 @@ pub struct IconManager {
     last_poll_time: Option<std::time::Instant>,
     /// Monotonically increasing revision counter for cache busting.
     pub revision: u64,
+}
+
+impl Default for IconManager {
+    fn default() -> Self {
+        Self {
+            active_stack: Vec::new(),
+            palette: qymcad_scheme::dark(),
+            cache: HashMap::new(),
+            dev_watch_enabled: false,
+            watched_pack_ids: Vec::new(),
+            last_seen_snapshots: HashMap::new(),
+            last_poll_time: None,
+            revision: 0,
+        }
+    }
 }
 
 pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_QICONS};
@@ -57,6 +75,19 @@ pub fn load_default_pack() -> Option<IconPack> {
 }
 
 impl IconManager {
+    /// Update the active palette and invalidate resolution cache if palette changed.
+    pub fn set_palette(&mut self, palette: qymcad_scheme::Palette) {
+        if self.palette.fingerprint() != palette.fingerprint() {
+            self.palette = palette;
+            self.clear_cache();
+        }
+    }
+
+    /// Read-only reference to the active palette.
+    pub fn palette(&self) -> &qymcad_scheme::Palette {
+        &self.palette
+    }
+
     /// Create a new icon manager with the built-in default pack at the base of the cascade.
     pub fn new() -> Self {
         let mut mgr = Self::default();
@@ -201,11 +232,10 @@ impl IconManager {
         let mut had_transient_read_failure = false;
 
         for pack in &self.active_stack {
-            if let Some(mut data) = pack.get_svg_for_id(id) {
-                if pack.manifest.color_mode == ColorMode::Monochrome {
-                    data = prepare_monochrome_svg(&data);
-                }
-                let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision };
+            if let Some(data) = pack.get_svg_for_id(id) {
+                let is_mono = pack.manifest.color_mode == ColorMode::Monochrome;
+                let data = resolve_icon_tokens(&data, &self.palette, is_mono);
+                let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
                 if !had_transient_read_failure {
                     self.cache.insert(id, res.clone());
                 }
@@ -219,12 +249,9 @@ impl IconManager {
 
         // The default pack embedded into the binary is always at the base of the active stack,
         // and contains all 106 icons. If somehow not found, provide a minimal fallback SVG.
-        let fallback = ResolvedIcon {
-            data: b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>".to_vec(),
-            color_mode: ColorMode::Monochrome,
-            pack_id: "builtin-fallback".to_string(),
-            revision: self.revision,
-        };
+        let fallback_raw = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>";
+        let data = resolve_icon_tokens(fallback_raw, &self.palette, true);
+        let fallback = ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "builtin-fallback".to_string(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
         // Avoid permanently poisoning cache if custom pack file on disk failed to read transiently
         if !had_transient_read_failure {
             self.cache.insert(id, fallback.clone());
@@ -239,6 +266,19 @@ pub(crate) static GLOBAL_ICON_MANAGER: RwLock<Option<IconManager>> = RwLock::new
 pub fn set_global_icon_manager(mgr: IconManager) {
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
         *g = Some(mgr);
+    }
+}
+
+/// Set or update the active palette on the global icon manager, clearing the cache on change.
+pub fn set_global_icon_palette(palette: qymcad_scheme::Palette) {
+    if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
+        if let Some(mgr) = g.as_mut() {
+            mgr.set_palette(palette);
+        } else {
+            let mut mgr = IconManager::new();
+            mgr.set_palette(palette);
+            *g = Some(mgr);
+        }
     }
 }
 
@@ -260,15 +300,15 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
     }
     if let Some(def) = load_default_pack() {
         if let Some(data) = def.get_svg_for_id(id) {
-            return ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "default".to_string(), revision: 0 };
+            let pal = qymcad_scheme::dark();
+            let is_mono = def.manifest.color_mode == ColorMode::Monochrome;
+            let data = resolve_icon_tokens(&data, &pal, is_mono);
+            return ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "default".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() };
         }
     }
-    ResolvedIcon {
-        data: b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>".to_vec(),
-        color_mode: ColorMode::Monochrome,
-        pack_id: "builtin-fallback".to_string(),
-        revision: 0,
-    }
+    let pal = qymcad_scheme::dark();
+    let data = resolve_icon_tokens(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>", &pal, true);
+    ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "builtin-fallback".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() }
 }
 
 /// Invalidate all cached icon resolutions across active packs.
@@ -408,4 +448,73 @@ pub fn prepare_monochrome_svg(data: &[u8]) -> Vec<u8> {
         }
         Err(_) => data.to_vec(),
     }
+}
+
+/// Preprocess SVG bytes by resolving CSS color variables (`var(--token, fallback)`)
+/// and `currentColor` using the active palette.
+pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette, is_monochrome: bool) -> Vec<u8> {
+    let has_var = data.windows(4).any(|w| w == b"var(");
+    let has_current_color = data.windows(12).any(|w| w == b"currentColor");
+    let needs_mono_tint =
+        is_monochrome && (data.windows(12).any(|w| w == b"fill=\"white\"") || data.windows(14).any(|w| w == b"fill=\"#ffffff\"") || data.windows(14).any(|w| w == b"fill=\"#FFFFFF\""));
+
+    if !has_var && !has_current_color && !needs_mono_tint {
+        return data.to_vec();
+    }
+
+    let Ok(text) = std::str::from_utf8(data) else {
+        return data.to_vec();
+    };
+
+    let stroke_hex = palette.format_icon_color("icon-stroke").unwrap_or_else(|| "#E0E0E0".to_string());
+
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(start_idx) = rest.find("var(") {
+        result.push_str(&rest[..start_idx]);
+        let after_var = &rest[start_idx + 4..];
+        let mut depth = 0usize;
+        let mut close_idx = None;
+        for (idx, ch) in after_var.char_indices() {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                if depth == 0 {
+                    close_idx = Some(idx);
+                    break;
+                }
+                depth -= 1;
+            }
+        }
+
+        if let Some(end_idx) = close_idx {
+            let inner = &after_var[..end_idx];
+            let replaced_color = if let Some((tok, fallback)) = inner.split_once(',') {
+                let tok_trimmed = tok.trim();
+                let fallback_trimmed = fallback.trim();
+                palette.format_icon_color(tok_trimmed).unwrap_or_else(|| fallback_trimmed.to_string())
+            } else {
+                let tok_trimmed = inner.trim();
+                palette.format_icon_color(tok_trimmed).unwrap_or_else(|| stroke_hex.clone())
+            };
+            result.push_str(&replaced_color);
+            rest = &after_var[end_idx + 1..];
+        } else {
+            result.push_str("var(");
+            rest = after_var;
+        }
+    }
+    result.push_str(rest);
+
+    if result.contains("currentColor") {
+        result = result.replace("currentColor", &stroke_hex);
+    }
+
+    if is_monochrome && !text.contains("var(") && (result.contains("fill=\"white\"") || result.contains("fill=\"#ffffff\"") || result.contains("fill=\"#FFFFFF\"")) {
+        let stroke_attr = format!("fill=\"{stroke_hex}\"");
+        result = result.replace("fill=\"white\"", &stroke_attr).replace("fill=\"#ffffff\"", &stroke_attr).replace("fill=\"#FFFFFF\"", &stroke_attr);
+    }
+
+    result.into_bytes()
 }

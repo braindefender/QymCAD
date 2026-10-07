@@ -13427,7 +13427,7 @@ pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bo
 
 pub fn icon_image(ui: &egui::Ui, icon: IconId, size: f32) -> egui::Image<'static> {
     let resolved = icons::resolve_global_icon(icon);
-    let uri = format!("bytes://qicons/{}/r{}/{}.svg", resolved.pack_id, resolved.revision, icon.relative_path());
+    let uri = format!("bytes://qicons/{}/p{:016x}_r{}/{}.svg", resolved.pack_id, resolved.palette_fingerprint, resolved.revision, icon.relative_path());
     let id_key = egui::Id::new("icon_image_prev_uri").with(icon);
     let to_forget = ui.data_mut(|d| {
         let prev = d.get_temp::<String>(id_key);
@@ -13441,12 +13441,7 @@ pub fn icon_image(ui: &egui::Ui, icon: IconId, size: f32) -> egui::Image<'static
     if let Some(prev) = to_forget {
         ui.ctx().forget_image(&prev);
     }
-    let mut img = egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(size, size));
-    if resolved.color_mode == icons::ColorMode::Monochrome {
-        let text_color = ui.visuals().text_color();
-        img = img.tint(text_color);
-    }
-    img
+    egui::Image::from_bytes(uri, resolved.data).fit_to_exact_size(egui::vec2(size, size))
 }
 
 pub fn icon_button(ui: &mut egui::Ui, icon: IconId, size: f32, selected: bool) -> egui::Response {
@@ -13812,6 +13807,8 @@ pub fn apply_theme(scheme: &mut SchemeUi, set: &Settings, ctx: &egui::Context) {
     // would stay factory-coloured. Schemes with no interface colours of their own get exactly that
     // same factory look.
     put_look(ctx, &scheme.pal);
+    icons::set_global_icon_palette(scheme.pal.clone());
+    icons::clear_global_icon_cache();
     // THE INTERFACE SCALE IS NOT APPLIED HERE: it has nothing to do with the theme. The coupling was
     // hidden and harmful — because of it "adopt the settings" would work even without its own call to
     // the scale, and the guard would stay silent. The scale is applied by those whose business it is:

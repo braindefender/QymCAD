@@ -281,6 +281,20 @@ scheme-color-cam_op3 = operation 3 toolpath
 scheme-color-cam_op4 = operation 4 toolpath
 scheme-color-cam_op5 = operation 5 toolpath
 scheme-color-cam_op6 = operation 6 toolpath
+scheme-group-icons = Icons
+scheme-color-icon_stroke = icon outline
+scheme-color-icon_neutral = icon neutral body
+scheme-color-icon_accent = icon universal accent
+scheme-color-icon_sketch_primary = sketch primary accent
+scheme-color-icon_sketch_secondary = sketch secondary accent
+scheme-color-icon_constraint_primary = constraint primary accent
+scheme-color-icon_constraint_secondary = constraint secondary accent
+scheme-color-icon_part_primary = part primary accent
+scheme-color-icon_part_secondary = part secondary accent
+scheme-color-icon_assembly_primary = assembly primary accent
+scheme-color-icon_assembly_secondary = assembly secondary accent
+scheme-color-icon_datum_primary = datum primary accent
+scheme-color-icon_datum_secondary = datum secondary accent
 
 # --- KEYBOARD SHORTCUTS ---
 hotkeys-title = Keyboard shortcuts

@@ -298,100 +298,54 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-fn monochrome_paint(value: &str) -> bool {
-    let value = value.trim();
-    value == "currentColor" || matches!(value.to_ascii_lowercase().as_str(), "white" | "#fff" | "#ffffff" | "none" | "rgb(255,255,255)" | "rgb(255, 255, 255)")
-}
-
-fn validate_monochrome_svg(data: &[u8]) -> Result<(), String> {
-    let mut reader = quick_xml::Reader::from_reader(data);
-    let mut inherited_fill = vec![false];
-    loop {
-        use quick_xml::events::Event;
-        let event = reader.read_event().map_err(|err| format!("cannot parse SVG colors: {err}"))?;
-        let (element, is_empty) = match &event {
-            Event::Start(element) => (element, false),
-            Event::Empty(element) => (element, true),
-            Event::End(_) => {
-                inherited_fill.pop();
-                continue;
-            }
-            Event::Eof => break,
-            _ => continue,
-        };
-        let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid SVG element name: {err}"))?.to_ascii_lowercase();
-        if matches!(name.as_str(), "style" | "lineargradient" | "radialgradient" | "pattern" | "filter" | "use" | "animate" | "animatetransform" | "animatecolor" | "set") || name.starts_with("fe") {
-            return Err(format!("monochrome icon cannot use <{name}> because its colors cannot be checked"));
-        }
-        let mut fill_safe = *inherited_fill.last().unwrap_or(&false);
-        for attr in element.attributes() {
-            let attr = attr.map_err(|err| format!("invalid SVG color attribute: {err}"))?;
-            let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid SVG color attribute name: {err}"))?.to_ascii_lowercase();
-            let value = attr.unescape_value().map_err(|err| format!("invalid SVG color attribute value: {err}"))?;
-            if key == "class" || value.to_ascii_lowercase().contains("url(") {
-                return Err(format!("monochrome icon cannot use {key}={value:?} because its colors cannot be checked"));
-            }
-            if key == "style" {
-                for declaration in value.split(';').filter(|part| !part.trim().is_empty()) {
-                    let (property, paint) = declaration.split_once(':').ok_or_else(|| format!("invalid monochrome style declaration: {declaration}"))?;
-                    let property = property.trim().to_ascii_lowercase();
-                    let paint = paint.trim();
-                    const CLIP_RULE_PROPERTY: &str = concat!("clip", "-rule");
-                    if !matches!(
-                        property.as_str(),
-                        "fill"
-                            | "stroke"
-                            | "color"
-                            | "opacity"
-                            | "fill-opacity"
-                            | "stroke-opacity"
-                            | "stroke-width"
-                            | "stroke-linecap"
-                            | "stroke-linejoin"
-                            | "stroke-miterlimit"
-                            | "stroke-dasharray"
-                            | "stroke-dashoffset"
-                            | "fill-rule"
-                            | CLIP_RULE_PROPERTY
-                            | "transform"
-                            | "display"
-                            | "visibility"
-                    ) {
-                        return Err(format!("monochrome icon cannot use style property {property:?} because its colors cannot be checked"));
-                    }
-                    if matches!(property.as_str(), "fill" | "stroke" | "color" | "stop-color" | "flood-color" | "lighting-color") || property.ends_with("-color") {
-                        if paint != "inherit" && !monochrome_paint(paint) {
-                            return Err(format!("monochrome icon has unsupported {property}={paint:?}; use white, currentColor, or none"));
-                        }
-                        if property == "fill" && paint != "inherit" {
-                            fill_safe = true;
-                        }
-                    }
-                }
-            } else if matches!(key.as_str(), "fill" | "stroke" | "color" | "stop-color" | "flood-color" | "lighting-color") || key.ends_with("-color") {
-                if value != "inherit" && !monochrome_paint(&value) {
-                    return Err(format!("monochrome icon has unsupported {key}={value:?}; use white, currentColor, or none"));
-                }
-                if key == "fill" && value != "inherit" {
-                    fill_safe = true;
-                }
-            }
-        }
-        if matches!(name.as_str(), "path" | "rect" | "circle" | "ellipse" | "polygon" | "polyline" | "text" | "tspan") && !fill_safe {
-            return Err(format!("monochrome <{name}> uses the implicit black fill; set fill to white, currentColor, or none"));
-        }
-        if !is_empty {
-            inherited_fill.push(fill_safe);
-        }
-    }
+pub fn validate_icon_svg(data: &[u8], _color_mode: ColorMode) -> Result<(), String> {
+    validate_svg(data)?;
+    validate_icon_tokens(data)?;
     Ok(())
 }
 
-pub fn validate_icon_svg(data: &[u8], color_mode: ColorMode) -> Result<(), String> {
-    validate_svg(data)?;
-    if color_mode == ColorMode::Monochrome {
-        validate_monochrome_svg(data)?;
+/// Check that any CSS `var(...)` references in the SVG use valid approved tokens and specify fallbacks.
+pub fn validate_icon_tokens(data: &[u8]) -> Result<(), String> {
+    if !data.windows(4).any(|w| w == b"var(") {
+        return Ok(());
     }
+    let text = std::str::from_utf8(data).map_err(|err| format!("invalid UTF-8 in SVG: {err}"))?;
+    let mut rest = text;
+
+    while let Some(start_idx) = rest.find("var(") {
+        let after_var = &rest[start_idx + 4..];
+        let mut depth = 0usize;
+        let mut close_idx = None;
+        for (idx, ch) in after_var.char_indices() {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                if depth == 0 {
+                    close_idx = Some(idx);
+                    break;
+                }
+                depth -= 1;
+            }
+        }
+        let end_idx = close_idx.ok_or_else(|| "SVG has unclosed var(...) expression".to_string())?;
+        let inner = &after_var[..end_idx];
+        let (tok, fallback) = inner.split_once(',').ok_or_else(|| format!("icon variable `{}` must specify a fallback color, e.g. var({}, #HEX)", inner.trim(), inner.trim()))?;
+
+        let tok_trimmed = tok.trim();
+        let fallback_trimmed = fallback.trim();
+        if fallback_trimmed.is_empty() {
+            return Err(format!("icon variable `{tok_trimmed}` has an empty fallback color"));
+        }
+
+        let token_name = tok_trimmed.strip_prefix("--").ok_or_else(|| format!("icon variable `{tok_trimmed}` must start with '--', e.g. --icon-stroke"))?;
+
+        if !qymcad_scheme::ICON_TOKENS.contains(&token_name) {
+            return Err(format!("unknown icon token `{tok_trimmed}`; supported tokens are {:?}", qymcad_scheme::ICON_TOKENS));
+        }
+
+        rest = &after_var[end_idx + 1..];
+    }
+
     Ok(())
 }
 
