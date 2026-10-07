@@ -933,6 +933,14 @@ fn manager_theme_card(ui: &mut egui::Ui, id: &str, selected: bool, content: impl
     (foreground.clicked() || background.clicked(), rect)
 }
 
+fn draw_manager_card_title(ui: &mut egui::Ui, text_width: f32, title: &str, hover_text: &str) {
+    ui.allocate_ui_with_layout(egui::vec2(text_width, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.add(egui::Label::new(title).truncate().halign(egui::Align::Min));
+    })
+    .response
+    .on_hover_text(hover_text);
+}
+
 fn manager_sidebar_shell(ui: &mut egui::Ui, actions: impl FnOnce(&mut egui::Ui)) -> egui::ScrollArea {
     egui::Panel::bottom("icon_manager_actions").resizable(false).exact_size(44.0).show(ui, actions);
     egui::ScrollArea::vertical().id_salt("mgr_sidebar_scroll").auto_shrink([false, false])
@@ -1062,7 +1070,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 ui.vertical(|ui| {
                                     let name = pack_opt.map(|p| p.manifest.name_for_locale(&locale)).unwrap_or(id.as_str());
                                     let title = format!("{:02}  {name}", idx + 1);
-                                    ui.add_sized([text_width, 26.0], egui::Label::new(title).truncate()).on_hover_text(name);
+                                    draw_manager_card_title(ui, text_width, &title, name);
                                     if let Some(p) = pack_opt {
                                         ui.horizontal(|ui| {
                                             draw_bundle_format_badge(ui, p.format(), p.is_tampered);
@@ -1110,7 +1118,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             ui.vertical(|ui| {
                                 let name = base_pack.map(|pack| pack.manifest.name_for_locale(&locale).to_string()).unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base"));
                                 let description = base_pack.map(|pack| pack.manifest.description_for_locale(&locale).to_string()).unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base-desc"));
-                                ui.add_sized([text_width, 26.0], egui::Label::new(name).truncate()).on_hover_text(description);
+                                draw_manager_card_title(ui, text_width, &name, &description);
                                 draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
                             });
                         });
@@ -1143,7 +1151,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 draw_pack_icon(ui, p, 36.0);
                                 ui.vertical(|ui| {
                                     let name = p.manifest.name_for_locale(&locale);
-                                    ui.add_sized([text_width, 26.0], egui::Label::new(name).truncate()).on_hover_text(name);
+                                    draw_manager_card_title(ui, text_width, name, name);
                                     ui.horizontal(|ui| {
                                         draw_bundle_format_badge(ui, p.format(), p.is_tampered);
                                         if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
@@ -1601,6 +1609,40 @@ mod tests {
         let translated = default.manifest.name_for_locale("ru");
         assert!(output.shapes.iter().any(|shape| has_sidebar_text(&shape.shape, translated)), "base card must show its bundle's Russian name");
         crate::i18n::set_language(&previous_language);
+    }
+
+    #[test]
+    fn theme_card_titles_are_left_aligned_in_sidebar() {
+        let _lock = lock_theme_test();
+        use crate::gui::App;
+
+        let mut app = App::default();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        open_icon_manager(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let dirs = [bundled_themes_dir()];
+        let mut draw = || {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs))
+        };
+        let _ = draw();
+        let output = draw();
+        fn find_sidebar_text_pos(shape: &egui::epaint::Shape, expected: &str) -> Option<egui::Pos2> {
+            match shape {
+                egui::epaint::Shape::Text(text) if text.pos.x < 360.0 && text.galley.text() == expected => Some(text.pos),
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().find_map(|s| find_sidebar_text_pos(s, expected)),
+                _ => None,
+            }
+        }
+        let default = load_default_pack().expect("embedded default theme");
+        let name = default.manifest.name_for_locale(&crate::i18n::language());
+        let badge_text = crate::i18n::tr("bundle-format-embedded");
+        let title_pos = output.shapes.iter().find_map(|shape| find_sidebar_text_pos(&shape.shape, name)).expect("base card title");
+        let badge_pos = output.shapes.iter().find_map(|shape| find_sidebar_text_pos(&shape.shape, &badge_text)).expect("embedded badge text");
+        // Title starts flush with the content column, while badge has a 5px inner margin + gear icon, so title_pos.x is <= badge_pos.x
+        assert!(title_pos.x <= badge_pos.x, "title pos x ({}) must be left-aligned before or flush with badge ({})", title_pos.x, badge_pos.x);
+        assert!((badge_pos.x - title_pos.x) < 28.0, "title pos x ({}) must be directly above badge ({})", title_pos.x, badge_pos.x);
     }
 
     #[test]
