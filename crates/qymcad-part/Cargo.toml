@@ -2,6 +2,7 @@
 name = "qymcad-part"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 # THE PART WORKBENCH. The feature commands - extrude, revolve, sweep, loft, fillet, chamfer, shell, the
 # array, the thread, the hole, the split - their option bars, their popups at the geometry and their
@@ -11,7 +12,7 @@ edition = "2021"
 # below them (the records, the picking, the drawing).
 [dependencies]
 egui = "0.35"
-egui-phosphor = "0.11"
+egui-phosphor = "0.13"
 qymcad-core = { path = "../qymcad-core" }
 qymcad-kernel = { path = "../qymcad-kernel" }
 qymcad-meshfit = { path = "../qymcad-meshfit" }

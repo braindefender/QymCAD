@@ -92,6 +92,7 @@ pub(crate) fn command_search_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui
     let sel = wc.win.cmd_search_sel;
     let wb_code = crate::gui::workbench_code(&wc.workbench);
     egui::Window::new(format!("{} {}", ph::MAGNIFYING_GLASS, crate::i18n::tr("cs-title")))
+        .id(egui::Id::new("win_command_search"))
         .title_bar(false)
         .resizable(false)
         .fixed_size(egui::vec2(460.0, 0.0))

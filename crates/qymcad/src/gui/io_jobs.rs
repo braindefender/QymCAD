@@ -973,9 +973,13 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
     }
     let mut open = true;
     let (mut do_save, mut cancel) = (false, false);
-    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("io-save-as-part"))).collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| {
+    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("io-save-as-part")))
+        .id(egui::Id::new("win_save_as_part"))
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
             let Some(d) = wc.parts.save.as_mut() else { return }; // the window may have closed
                                                                   // the preview texture is loaded lazily
             if d.tex.is_none() {
@@ -1034,8 +1038,7 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
                 }
                 ui.label(egui::RichText::new(crate::i18n::tr("io-to-my-parts")).weak().small());
             });
-        },
-    );
+        });
     if do_save {
         match crate::gui::commit_save_part(wc.parts, wc.project, wc.tex_graveyard) {
             Ok(p) => *wc.status = crate::i18n::tr1("io-part-saved", "path", &p),

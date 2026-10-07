@@ -335,7 +335,7 @@ pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
     let Some(mut ask) = wc.win.import_scale.take() else { return };
     let mut keep = ctx.input(|i| i.key_pressed(egui::Key::Enter));
     let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    egui::Window::new(format!("{} {}", ph::RULER, crate::i18n::tr("import-scale-title")))
+    egui::Window::new(format!("{} {}", ph::RULER, crate::i18n::tr("import-scale-title"))).id(egui::Id::new("win_import_scale"))
         .collapsible(false)
         .resizable(false)
         // at the bottom, not in the middle: the middle of the view is where the model it asks about stands

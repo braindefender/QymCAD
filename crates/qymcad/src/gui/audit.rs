@@ -365,7 +365,6 @@ mod live_session {
             app.tools.place.dim = Some(0);
             app.tools.pending_import.draw_pts = Some(Vec::new());
             app.tools.corner.at = Some((0, 0, false));
-            app.tools.corner.only = Some(std::collections::HashSet::new());
             app.tools.armed = qymcad_ui_state::Armed::Measure;
             app.tools.measure.pts.push(qymcad_core::geom::Point2::new(1.0, 2.0));
             app.tools.armed = qymcad_ui_state::Armed::Pattern(1);
@@ -403,7 +402,7 @@ mod live_session {
             if app.tools.pending_import.draw_pts.is_some() {
                 t.push("the unfinished import")
             }
-            if app.tools.corner.at.is_some() || app.tools.corner.only.is_some() {
+            if app.tools.corner.at.is_some() {
                 t.push("the corner popup")
             }
             if app.tools.armed.measuring() || !app.tools.measure.pts.is_empty() {

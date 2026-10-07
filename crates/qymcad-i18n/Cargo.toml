@@ -2,6 +2,7 @@
 name = "qymcad-i18n"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 # THE DICTIONARY IS A RESOURCE, AND A RESOURCE BELONGS TO NO WORKBENCH. Every workbench asks it for words,
 # so it cannot live inside any one of them; and it must not know what a panel is, or the rule "no string is

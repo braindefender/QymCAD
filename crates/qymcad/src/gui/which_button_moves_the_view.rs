@@ -192,7 +192,7 @@ mod tests {
         let title = egui::pos2(500.0, 210.0); // on the window's title bar, over the canvas
 
         let draw = |app: &mut App, ui: &mut egui::Ui| {
-            egui::Window::new("probe").default_pos(egui::pos2(400.0, 200.0)).show(&ui.ctx().clone(), |ui| {
+            egui::Window::new("probe").id(egui::Id::new("probe")).default_pos(egui::pos2(400.0, 200.0)).show(&ui.ctx().clone(), |ui| {
                 ui.label("probe");
             });
             app.viewport(ui);

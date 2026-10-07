@@ -70,7 +70,14 @@ mod tests {
                 }
             }
         }
-        for (pat, handle) in [("set_sk_tool(", "sk"), ("BarAsk::SketchTool(", "sk"), ("set_dim_tool(", "dim"), ("set_click_op(", "click"), ("modify_button(", "mod")] {
+        for (pat, handle) in [
+            ("set_sk_tool(", "sk"),
+            ("BarAsk::SketchTool(", "sk"),
+            ("set_dim_tool(", "dim"),
+            ("set_click_op(", "click"),
+            ("start_corner_tool(", "click"),
+            ("modify_button(", "mod"),
+        ] {
             let mut rest = src;
             while let Some(i) = rest.find(pat) {
                 let t = &rest[i + pat.len()..];
@@ -200,6 +207,9 @@ mod tests {
             }
         }
         assert!(hints.len() > 60, "suspiciously few toolbar hints were found: {}", hints.len());
+        // the wiring of the corner tools is `start_corner_tool(4/5)` rather than `set_click_op(4/5)`: the button takes
+        // the tool AND offers the corner the chosen lines already name, in one call. A button is numbered by either
+        // spelling, as it was for the fillet and the chamfer before the pair of them was bound together.
         let launchers = [
             "start_feat_cmd(",
             "BarAsk::FeatCmd(",
@@ -209,6 +219,7 @@ mod tests {
             "BarAsk::SketchTool(",
             "set_dim_tool(",
             "set_click_op(",
+            "start_corner_tool(",
             "modify_button(",
         ];
         let mut bad: Vec<String> = Vec::new();

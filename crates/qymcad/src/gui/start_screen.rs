@@ -57,6 +57,7 @@ pub(crate) fn start_screen(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context
     const COL_L: f32 = 300.0;
     const COL_R: f32 = 240.0;
     let shown = egui::Window::new(format!("{} {}", ph::HOUSE, crate::i18n::tr("start-title")))
+        .id(egui::Id::new("win_start"))
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])

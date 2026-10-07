@@ -74,7 +74,14 @@ mod tests {
                 }
             }
         }
-        for (pat, handle) in [("set_sk_tool(", "sk"), ("BarAsk::SketchTool(", "sk"), ("set_dim_tool(", "dim"), ("set_click_op(", "click"), ("modify_button(", "mod")] {
+        for (pat, handle) in [
+            ("set_sk_tool(", "sk"),
+            ("BarAsk::SketchTool(", "sk"),
+            ("set_dim_tool(", "dim"),
+            ("set_click_op(", "click"),
+            ("start_corner_tool(", "click"),
+            ("modify_button(", "mod"),
+        ] {
             let mut rest = src;
             while let Some(i) = rest.find(pat) {
                 let tail = &rest[i + pat.len()..];

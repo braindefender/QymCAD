@@ -2,6 +2,7 @@
 name = "qymcad-ui-state"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 # THE STATE OF THE INTERFACE, AND NOTHING ELSE. Eighty records: the tools with parameters of their own,
 # the selection, the view, the caches, the settings. It draws nothing, decides nothing and knows no
@@ -17,7 +18,7 @@ edition = "2021"
 [dependencies]
 ab_glyph = "0.2.32"
 egui = "0.35"
-egui-phosphor = "0.11"
+egui-phosphor = "0.13"
 serde = { version = "1", features = ["derive"] }
 bytemuck = { version = "1", features = ["derive"] }
 qymcad-core = { path = "../qymcad-core" }

@@ -64,81 +64,88 @@ pub(crate) fn hotkeys_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Conte
     // the title bar. Held by min and max because egui keeps a window's size between runs and only ever grows it to
     // the content: a width saved while the window could still be dragged wider came back at every start. The saved
     // height, the one a person drags, is kept.
-    egui::Window::new(crate::i18n::tr("hotkeys-title")).open(&mut open).resizable([false, true]).default_height(520.0).min_width(WINDOW_W).max_width(WINDOW_W).show(ctx, |ui| {
-        ui.vertical(|ui| {
-            // laid out from the right: the reset button takes what it needs, the filter the rest - no guessed width.
-            // Inside a one-row `horizontal`: a right-to-left layout of its own would take the whole remaining height
-            // and centre the row in it.
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if !wc.set.hotkeys.is_empty() && ui.button(crate::i18n::tr("hotkeys-reset-all")).clicked() {
-                        wc.set.hotkeys.clear();
-                        settle(wc.hotkeys);
+    egui::Window::new(crate::i18n::tr("hotkeys-title")).id(egui::Id::new("win_hotkeys")).open(&mut open).resizable([false, true]).default_height(520.0).min_width(WINDOW_W).max_width(WINDOW_W).show(
+        ctx,
+        |ui| {
+            ui.vertical(|ui| {
+                // laid out from the right: the reset button takes what it needs, the filter the rest - no guessed width.
+                // Inside a one-row `horizontal`: a right-to-left layout of its own would take the whole remaining height
+                // and centre the row in it.
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if !wc.set.hotkeys.is_empty() && ui.button(crate::i18n::tr("hotkeys-reset-all")).clicked() {
+                            wc.set.hotkeys.clear();
+                            settle(wc.hotkeys);
+                        }
+                        let glass = ui.fonts_mut(|f| f.layout_no_wrap(ph::MAGNIFYING_GLASS.to_string(), egui::TextStyle::Body.resolve(ui.style()), egui::Color32::WHITE).size().x);
+                        // THE WHOLE FIELD, margins included: `desired_width` is the width of the text alone, and the field's
+                        // own margins on top of it pushed the row, and the body with it, past the title bar
+                        let field = (ui.available_width() - glass - ui.spacing().item_spacing.x).max(60.0);
+                        let side = ui.spacing().interact_size.y;
+                        // the right margin keeps the text clear of the clear icon drawn over the field's right end, and is
+                        // kept while the field is empty too, so the text does not move when the icon appears
+                        let edit = egui::TextEdit::singleline(&mut wc.hotkeys.filter).hint_text(crate::i18n::tr("hotkeys-filter-hint")).margin(egui::Margin {
+                            left: 4,
+                            right: 4 + side as i8,
+                            top: 2,
+                            bottom: 2,
+                        });
+                        let resp = ui.add_sized([field, side], edit);
+                        filter_clear(ui, &resp, &mut wc.hotkeys.filter);
+                        ui.label(ph::MAGNIFYING_GLASS);
+                    });
+                });
+                ui.separator();
+                let q = crate::i18n::search::query(&wc.hotkeys.filter);
+                let mut shown = 0;
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    // measured inside the scroll area: whatever margin it keeps around its content is not the table's
+                    let cols = columns(wc.set, ui, ui.available_width());
+                    for area in AREAS {
+                        let rows: Vec<&HotkeyRow> = HOTKEYS.iter().filter(|r| r.area == area && row_matches(wc.set, r, &q)).collect();
+                        if rows.is_empty() {
+                            continue;
+                        }
+                        shown += rows.len();
+                        area_header(wc, ui, area);
+                        egui::Grid::new(format!("hk_{area}")).num_columns(3).min_col_width(0.0).spacing([GRID_GAP, 4.0]).striped(true).show(ui, |ui| {
+                            for r in rows {
+                                key_cell(wc, ui, r, cols.key);
+                                // A GRID CELL LAYS ITS CONTENT OUT LEFT TO RIGHT (the grid lives in a `horizontal`), so the
+                                // lines under the description are stacked by an explicit `vertical`. Inside the row's own
+                                // cell rather than a grid row of their own: an extra row shifted every row below it, and
+                                // the grid sized each row from the height the previous frame had at that index.
+                                // The `vertical` is the cell itself, not wrapped in a `scope`: a scope takes the whole cell
+                                // at the previous frame's row height in the grid's centred layout, and a row that had just
+                                // lost its waiting line stood 24 pt tall for one frame instead of 18, every row below 6 pt
+                                // low.
+                                ui.vertical(|ui| {
+                                    ui.set_width(cols.what);
+                                    ui.add(egui::Label::new(hotkey_what(r)).wrap());
+                                    row_status(wc, ui, r.action);
+                                });
+                                row_tools(wc, ui, r);
+                                ui.end_row();
+                            }
+                        });
+                        ui.add_space(10.0);
                     }
-                    let glass = ui.fonts_mut(|f| f.layout_no_wrap(ph::MAGNIFYING_GLASS.to_string(), egui::TextStyle::Body.resolve(ui.style()), egui::Color32::WHITE).size().x);
-                    // THE WHOLE FIELD, margins included: `desired_width` is the width of the text alone, and the field's
-                    // own margins on top of it pushed the row, and the body with it, past the title bar
-                    let field = (ui.available_width() - glass - ui.spacing().item_spacing.x).max(60.0);
-                    let side = ui.spacing().interact_size.y;
-                    // the right margin keeps the text clear of the clear icon drawn over the field's right end, and is
-                    // kept while the field is empty too, so the text does not move when the icon appears
-                    let edit =
-                        egui::TextEdit::singleline(&mut wc.hotkeys.filter).hint_text(crate::i18n::tr("hotkeys-filter-hint")).margin(egui::Margin { left: 4, right: 4 + side as i8, top: 2, bottom: 2 });
-                    let resp = ui.add_sized([field, side], edit);
-                    filter_clear(ui, &resp, &mut wc.hotkeys.filter);
-                    ui.label(ph::MAGNIFYING_GLASS);
+                    if shown == 0 {
+                        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
+                    }
+                    ui.separator();
+                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
+                    // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
+                    // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
+                    // only way to reach a tool from there. Not saying so in the hotkey reference means
+                    // hiding half the rule: U is pressed in the length field, nothing happens, and the
+                    // conclusion drawn is about the program.
+                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
+                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
                 });
             });
-            ui.separator();
-            let q = crate::i18n::search::query(&wc.hotkeys.filter);
-            let mut shown = 0;
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                // measured inside the scroll area: whatever margin it keeps around its content is not the table's
-                let cols = columns(wc.set, ui, ui.available_width());
-                for area in AREAS {
-                    let rows: Vec<&HotkeyRow> = HOTKEYS.iter().filter(|r| r.area == area && row_matches(wc.set, r, &q)).collect();
-                    if rows.is_empty() {
-                        continue;
-                    }
-                    shown += rows.len();
-                    area_header(wc, ui, area);
-                    egui::Grid::new(format!("hk_{area}")).num_columns(3).min_col_width(0.0).spacing([GRID_GAP, 4.0]).striped(true).show(ui, |ui| {
-                        for r in rows {
-                            key_cell(wc, ui, r, cols.key);
-                            // A GRID CELL LAYS ITS CONTENT OUT LEFT TO RIGHT (the grid lives in a `horizontal`), so the
-                            // lines under the description are stacked by an explicit `vertical`. Inside the row's own
-                            // cell rather than a grid row of their own: an extra row shifted every row below it, and
-                            // the grid sized each row from the height the previous frame had at that index.
-                            // The `vertical` is the cell itself, not wrapped in a `scope`: a scope takes the whole cell
-                            // at the previous frame's row height in the grid's centred layout, and a row that had just
-                            // lost its waiting line stood 24 pt tall for one frame instead of 18, every row below 6 pt
-                            // low.
-                            ui.vertical(|ui| {
-                                ui.set_width(cols.what);
-                                ui.add(egui::Label::new(hotkey_what(r)).wrap());
-                                row_status(wc, ui, r.action);
-                            });
-                            row_tools(wc, ui, r);
-                            ui.end_row();
-                        }
-                    });
-                    ui.add_space(10.0);
-                }
-                if shown == 0 {
-                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
-                }
-                ui.separator();
-                ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
-                // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
-                // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
-                // only way to reach a tool from there. Not saying so in the hotkey reference means
-                // hiding half the rule: U is pressed in the length field, nothing happens, and the
-                // conclusion drawn is about the program.
-                ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
-                ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
-            });
-        });
-    });
+        },
+    );
     if !open {
         // closing the window drops whatever it was in the middle of: a later press must not land in it
         settle(wc.hotkeys);

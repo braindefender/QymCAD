@@ -8,7 +8,11 @@ use std::collections::HashMap;
 
 use crate::errors::ExprError;
 
-/// Evaluate the expression `src`, substituting parameters from `vars`. Names are case-insensitive.
+/// Evaluate the expression `src`, substituting parameters from `vars`.
+///
+/// A parameter name is matched exactly: `H` and `h` are two parameters. The names of the functions and constants
+/// are not, `SIN(30)` and `PI` read as `sin(30)` and `pi`; a parameter named `E` or `Pi` is still found under its own
+/// name, since the constant gives way to it in any case but its own.
 pub fn eval(src: &str, vars: &HashMap<String, f64>) -> Result<f64, ExprError> {
     let toks = tokenize(src)?;
     let mut p = Parser { toks: &toks, pos: 0, vars };
@@ -94,7 +98,7 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, ExprError> {
                     i += 1;
                 }
                 let txt: String = cs[start..i].iter().collect();
-                out.push(Tok::Ident(txt.to_lowercase()));
+                out.push(Tok::Ident(txt));
             }
             _ => return Err(ExprError::UnknownChar(c.to_string())),
         }
@@ -216,12 +220,12 @@ impl<'a> Parser<'a> {
                     if !matches!(self.bump(), Some(Tok::RParen)) {
                         return Err(ExprError::ExpectedParenAfterArgs);
                     }
-                    call_fn(&name, &args)
+                    call_fn(&name.to_lowercase(), &args)
                 } else {
                     // Without parentheses this is a name, not a function. `UnknownFn` used to be returned
                     // here, so a bare `w` in a formula answered "unknown function: w" — advice about the wrong
                     // thing, since a parameter was meant.
-                    constant(&name).or_else(|| self.vars.get(&name).copied()).ok_or_else(|| ExprError::UnknownName(name.clone()))
+                    constant(&name).or_else(|| self.vars.get(&name).copied()).or_else(|| constant(&name.to_lowercase())).ok_or_else(|| ExprError::UnknownName(name.clone()))
                 }
             }
             // The end of input is not a token. `format!("{other:?}")` on `None` produced "Unexpected token
@@ -396,6 +400,27 @@ mod tests {
         assert!((ev("sin(90)") - 1.0).abs() < 1e-9); // degrees
         assert!((ev("max(3, 7)") - 7.0).abs() < 1e-9);
         assert!((ev("2 * pi") - std::f64::consts::TAU).abs() < 1e-9);
+        assert!((ev("SQRT(16) + Max(1, 2)") - 6.0).abs() < 1e-9, "a function is read in any case");
+        assert!((ev("2 * PI") - std::f64::consts::TAU).abs() < 1e-9, "a constant is read in any case");
+    }
+
+    /// A parameter named like a constant in another case is found under its own name: `E` is the parameter,
+    /// `e` the constant.
+    #[test]
+    fn a_parameter_is_not_shadowed_by_a_constant_in_another_case() {
+        let mut v = HashMap::new();
+        v.insert("E".to_string(), 5.0);
+        assert!((eval("E", &v).unwrap() - 5.0).abs() < 1e-9);
+        assert!((eval("e", &v).unwrap() - std::f64::consts::E).abs() < 1e-9);
+    }
+
+    /// Names that differ only in case are two parameters.
+    #[test]
+    fn a_name_is_matched_in_its_own_case() {
+        let mut v = HashMap::new();
+        v.insert("H".to_string(), 40.0);
+        v.insert("h".to_string(), 20.0);
+        assert!((eval("H - h", &v).unwrap() - 20.0).abs() < 1e-9);
     }
 
     #[test]
@@ -405,7 +430,7 @@ mod tests {
         v.insert("h".to_string(), 20.0);
         assert!((eval("w / 2", &v).unwrap() - 25.0).abs() < 1e-9);
         assert!((eval("w + h", &v).unwrap() - 70.0).abs() < 1e-9);
-        assert!((eval("W*2", &v).unwrap() - 100.0).abs() < 1e-9); // case-insensitive
+        assert!(eval("W*2", &v).is_err(), "W is not the parameter w");
     }
 
     #[test]

@@ -68,10 +68,13 @@ probe! {
         menu_item(&mut s, 7.07, 7.07, None, "sk-arc-length-dim");
         let kinds = s.document().sketches[0].constraint_kinds.clone();
         assert!(kinds.iter().any(|k| k == "ArcLength"), "the arc has no dimension of its length: {kinds:?}");
-        // a quarter of a circle of radius 10 is 15.708 long, and that is what the dimension shows
-        assert!(s.find("L15.7", SHEET).is_some(), "the length of the arc is not written on the sheet; on screen: {:?}", s.words());
-        type_into_dimension(&mut s, "L15.7", "20");
-        assert!(s.find("L20.0", SHEET).is_some(), "the arc did not take the length that was typed; on screen: {:?}", s.words());
+        // a quarter of a circle of radius 10 is 15.708 long, and that is what the dimension shows: the number, with the
+        // arc mark drawn over it (where it stands is checked on its geometry, `arc_length_dim_geom`)
+        assert!(s.find("15.7", SHEET).is_some(), "the length of the arc is not written on the sheet; on screen: {:?}", s.words());
+        // the arc holds by its length now: no radius is labelled beside it as if it held by that
+        assert!(s.find("R10.0", SHEET).is_none(), "a radius the arc does not hold by is still labelled beside it; on screen: {:?}", s.words());
+        type_into_dimension(&mut s, "15.7", "20");
+        assert!(s.find("20.0", SHEET).is_some(), "the arc did not take the length that was typed; on screen: {:?}", s.words());
     }
 }
 

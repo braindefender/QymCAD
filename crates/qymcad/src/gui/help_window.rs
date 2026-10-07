@@ -209,84 +209,87 @@ pub(crate) fn window(ctx: &mut HelpCtx, ui_ctx: &egui::Context) {
     let mut back = false;
     let mut site = false;
     let mut link: Option<String> = None;
-    egui::Window::new(format!("{} {}", ph::BOOK_OPEN, crate::i18n::tr("help-title"))).open(&mut open).resizable(true).default_width(860.0).default_height(600.0).show(ui_ctx, |ui| {
-        // THE CONTENTS ON THE LEFT — AS A PANEL OF ITS OWN of fixed width: the help is not one
-        // page, and without a permanent list there is no knowing what is in it at all.
-        egui::Panel::left("help_toc").resizable(false).exact_size(240.0).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(ph::MAGNIFYING_GLASS);
-                ui.add(egui::TextEdit::singleline(&mut ctx.win.query).desired_width(f32::INFINITY).hint_text(crate::i18n::tr("help-search")));
-            });
-            ui.separator();
-            egui::ScrollArea::vertical().id_salt("help_toc_scroll").show(ui, |ui| {
-                let q = ctx.win.query.trim().to_string();
-                if q.is_empty() {
-                    for (dir, items) in crate::help::sections() {
-                        if !dir.is_empty() {
-                            ui.add_space(4.0);
-                            ui.label(egui::RichText::new(crate::i18n::tr(&format!("help-section-{dir}"))).strong());
+    egui::Window::new(format!("{} {}", ph::BOOK_OPEN, crate::i18n::tr("help-title"))).id(egui::Id::new("win_help")).open(&mut open).resizable(true).default_width(860.0).default_height(600.0).show(
+        ui_ctx,
+        |ui| {
+            // THE CONTENTS ON THE LEFT — AS A PANEL OF ITS OWN of fixed width: the help is not one
+            // page, and without a permanent list there is no knowing what is in it at all.
+            egui::Panel::left("help_toc").resizable(false).exact_size(240.0).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(ph::MAGNIFYING_GLASS);
+                    ui.add(egui::TextEdit::singleline(&mut ctx.win.query).desired_width(f32::INFINITY).hint_text(crate::i18n::tr("help-search")));
+                });
+                ui.separator();
+                egui::ScrollArea::vertical().id_salt("help_toc_scroll").show(ui, |ui| {
+                    let q = ctx.win.query.trim().to_string();
+                    if q.is_empty() {
+                        for (dir, items) in crate::help::sections() {
+                            if !dir.is_empty() {
+                                ui.add_space(4.0);
+                                ui.label(egui::RichText::new(crate::i18n::tr(&format!("help-section-{dir}"))).strong());
+                            }
+                            for a in items {
+                                if ui.selectable_label(a == article, crate::help::title(&a)).clicked() {
+                                    go = Some(a);
+                                }
+                            }
                         }
-                        for a in items {
+                    } else {
+                        // THE SEARCH REPLACES THE CONTENTS rather than adding to them: two lists at
+                        // once are read as one and clicked in the wrong place.
+                        let found = crate::help::search(&q);
+                        if found.is_empty() {
+                            ui.label(egui::RichText::new(crate::i18n::tr1("help-nothing-found", "q", &q)).weak().small());
+                        }
+                        for a in found {
                             if ui.selectable_label(a == article, crate::help::title(&a)).clicked() {
                                 go = Some(a);
                             }
                         }
                     }
-                } else {
-                    // THE SEARCH REPLACES THE CONTENTS rather than adding to them: two lists at
-                    // once are read as one and clicked in the wrong place.
-                    let found = crate::help::search(&q);
-                    if found.is_empty() {
-                        ui.label(egui::RichText::new(crate::i18n::tr1("help-nothing-found", "q", &q)).weak().small());
-                    }
-                    for a in found {
-                        if ui.selectable_label(a == article, crate::help::title(&a)).clicked() {
-                            go = Some(a);
-                        }
-                    }
-                }
-            });
-        });
-        // THE ARTICLE GOES INTO A PANEL OF ITS OWN. A panel inside a window leaves the cursor
-        // exactly on its divider, and the "Back" row was pressed against the line (issue #16); the
-        // central panel brings the margin that the contents keep on their own side.
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if ui.add_enabled(!ctx.win.back.is_empty(), egui::Button::new(format!("{} {}", ph::ARROW_LINE_UP, crate::i18n::tr("help-back")))).clicked() {
-                    back = true;
-                }
-                ui.label(egui::RichText::new(crate::help::title(&article)).weak().small());
-                // "OPEN ON THE SITE" GOES ON THE RIGHT, BY THE ARTICLE ITSELF. A link is wanted for a
-                // particular reason: to show a colleague, to leave open on a second monitor, to put
-                // into a task. The button must lead to THAT SAME article and not to the title page of
-                // the site.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(format!("{} {}", ph::ARROW_SQUARE_OUT, crate::i18n::tr("help-open-on-site"))).on_hover_text(crate::help::web_url(&article)).clicked() {
-                        site = true;
-                    }
                 });
             });
-            ui.separator();
-            egui::ScrollArea::vertical().id_salt("help_body").show(ui, |ui| {
-                // MARGINS AROUND THE TEXT. An article nailed to the very edge of the panel is harder
-                // to read: the eye has nothing to catch on when the line comes back. The indent goes
-                // on both sides and not only on the left — the right edge ran into the scrollbar just
-                // the same.
-                egui::Frame::NONE.inner_margin(egui::Margin { left: HELP_PAD, right: HELP_PAD, top: 0, bottom: 0 }).show(ui, |ui| match crate::help::article(&article) {
-                    Some(md) => {
-                        if let Some(to) = markdown(ctx.pal, ui, md) {
-                            link = Some(to);
+            // THE ARTICLE GOES INTO A PANEL OF ITS OWN. A panel inside a window leaves the cursor
+            // exactly on its divider, and the "Back" row was pressed against the line (issue #16); the
+            // central panel brings the margin that the contents keep on their own side.
+            egui::CentralPanel::default().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!ctx.win.back.is_empty(), egui::Button::new(format!("{} {}", ph::ARROW_LINE_UP, crate::i18n::tr("help-back")))).clicked() {
+                        back = true;
+                    }
+                    ui.label(egui::RichText::new(crate::help::title(&article)).weak().small());
+                    // "OPEN ON THE SITE" GOES ON THE RIGHT, BY THE ARTICLE ITSELF. A link is wanted for a
+                    // particular reason: to show a colleague, to leave open on a second monitor, to put
+                    // into a task. The button must lead to THAT SAME article and not to the title page of
+                    // the site.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(format!("{} {}", ph::ARROW_SQUARE_OUT, crate::i18n::tr("help-open-on-site"))).on_hover_text(crate::help::web_url(&article)).clicked() {
+                            site = true;
                         }
-                    }
-                    // THERE IS NO ARTICLE — IT IS SAID IN WORDS. An empty window is read as a
-                    // breakage of the program rather than as "this article is not written yet".
-                    None => {
-                        ui.label(egui::RichText::new(crate::i18n::tr1("help-missing", "what", &article)).color(ctx.pal.error_mild()));
-                    }
+                    });
+                });
+                ui.separator();
+                egui::ScrollArea::vertical().id_salt("help_body").show(ui, |ui| {
+                    // MARGINS AROUND THE TEXT. An article nailed to the very edge of the panel is harder
+                    // to read: the eye has nothing to catch on when the line comes back. The indent goes
+                    // on both sides and not only on the left — the right edge ran into the scrollbar just
+                    // the same.
+                    egui::Frame::NONE.inner_margin(egui::Margin { left: HELP_PAD, right: HELP_PAD, top: 0, bottom: 0 }).show(ui, |ui| match crate::help::article(&article) {
+                        Some(md) => {
+                            if let Some(to) = markdown(ctx.pal, ui, md) {
+                                link = Some(to);
+                            }
+                        }
+                        // THERE IS NO ARTICLE — IT IS SAID IN WORDS. An empty window is read as a
+                        // breakage of the program rather than as "this article is not written yet".
+                        None => {
+                            ui.label(egui::RichText::new(crate::i18n::tr1("help-missing", "what", &article)).color(ctx.pal.error_mild()));
+                        }
+                    });
                 });
             });
-        });
-    });
+        },
+    );
     if site {
         let a = article.clone();
         on_site(ctx, &a);

@@ -608,27 +608,55 @@ impl Sketch {
     ///
     /// One source of truth on purpose: spelled out by hand in six places the set drifts apart, some copies
     /// forgetting the origin and others the axes.
-    /// THE CORNERS OF A RECTANGLE LEFT AS VIRTUAL SHARPS: a corner rounded or cut away stays a point of the rectangle -
-    /// its centre stands on the middle of the corners, its turn is told by them - but no line of it ends there any
-    /// more. Such a point is the rectangle's own, not geometry: it is not drawn and not picked. Shown, a rectangle
-    /// rounded all round carried four points out in the air beyond its arcs.
-    pub fn virtual_sharps(&self) -> std::collections::HashSet<Id> {
-        let ends: std::collections::HashSet<Id> = self
+    /// THE CONSTRAINTS A CUT CORNER HOLDS ITSELF BY, by their index: the virtual sharp standing on the extension of each
+    /// side (`PointOnLine` of a point no geometry ends at), the legs of a symmetric chamfer kept equal on it (`Equal` from
+    /// the sharp to the two ends of the cut line), and the arc of a fillet touching the lines it ends on (`Tangent` of a
+    /// line to the arc that ends at one of its points). They are the corner's own, as the turn of a rectangle is the
+    /// rectangle's: shown, a chamfer of 3 carried two "=" and a point-on-line badge out in the air beside its cut, and a
+    /// fillet a tangency badge on each line. A dimension a person measured to the sharp is not among them.
+    pub fn corner_holders(&self) -> std::collections::HashSet<usize> {
+        let drawn: std::collections::HashSet<Id> = self
             .entities
             .iter()
-            .filter(|e| !e.construction)
             .flat_map(|e| match e.kind {
-                EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => vec![a, b],
-                _ => Vec::new(),
+                EntityKind::Line { a, b } => vec![a, b],
+                EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
+                EntityKind::Circle { center, .. } => vec![center],
+                EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
             })
             .collect();
-        self.rects.iter().flat_map(|r| r.corners).filter(|c| !ends.contains(c)).collect()
+        let cut = |x: Id, y: Id| self.entities.iter().any(|e| matches!(e.kind, EntityKind::Line { a, b } if (a == x && b == y) || (a == y && b == x)));
+        self.constraints
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| match **c {
+                Constraint::PointOnLine { p, .. } => !drawn.contains(&p) && !self.system_ids().contains(&p),
+                Constraint::Equal { a, b, c, d } => a == c && !drawn.contains(&a) && cut(b, d),
+                Constraint::Tangent { a, b, c, .. } => {
+                    self.entities.iter().any(|e| matches!(e.kind, EntityKind::Arc { center, a: x, b: y, .. } if center == c && [x, y].iter().any(|q| *q == a || *q == b)))
+                }
+                _ => false,
+            })
+            .map(|(i, _)| i)
+            .collect()
     }
 
-    /// The points not drawn among the sketch's own: the frame of reference (drawn by the axis marker) and the virtual
-    /// sharps of rectangles.
+    /// WHETHER THE CIRCLE OR ARC ABOUT `centre` CARRIES A SIZE OF ITS OWN: a radius or a diameter, the length of the arc,
+    /// or the chord between its two ends. Where it does, no passive radius is labelled beside it: a fillet sized by its
+    /// chord or its arc length showed an R it does not hold by as well.
+    pub fn rim_sized(&self, centre: Id) -> bool {
+        let chord = |x: Id, y: Id| self.entities.iter().any(|e| matches!(e.kind, EntityKind::Arc { center, a, b, .. } if center == centre && ((a == x && b == y) || (a == y && b == x))));
+        self.constraints.iter().any(|c| match *c {
+            Constraint::Diameter { c, .. } | Constraint::ArcLength { c, .. } => c == centre,
+            Constraint::Distance { a, b, .. } => chord(a, b),
+            _ => false,
+        })
+    }
+
+    /// The points not drawn among the sketch's own: the frame of reference, drawn by the axis marker. The virtual sharp of
+    /// a cut corner is drawn, and picked, like any point.
     pub fn unseen_points(&self) -> std::collections::HashSet<Id> {
-        self.system_ids().into_iter().chain(self.virtual_sharps()).collect()
+        self.system_ids().into_iter().collect()
     }
 
     pub fn system_ids(&self) -> Vec<Id> {
@@ -714,6 +742,59 @@ impl Sketch {
                 _ => None,
             })
             .collect()
+    }
+
+    /// WHAT GOES WITH THE POINT `centre` WHEN IT IS DRAGGED, as a circle goes with its centre: the corners of a rectangle
+    /// it is the centre of, the two ends of an arc it is the centre of, every point of a slot it is the centre of an end
+    /// of (a slot's two arcs are held to one radius, `EqualRadius`), and the axis ends of an ellipse. Left behind, the
+    /// drag pulled the centre alone: an arc and a slot were refused the drag, and an ellipse turned and changed shape.
+    /// The centre of a fillet - an arc touching its lines (`Tangent`) with no partner of one radius - carries nothing:
+    /// the lines it touches hold it. Empty for any other point.
+    pub fn carried_with(&self, centre: Id) -> Vec<Id> {
+        let rect: Vec<Id> = self.rects.iter().filter(|r| r.centre == centre).flat_map(|r| r.corners).collect();
+        if !rect.is_empty() {
+            return rect;
+        }
+        if let Some((ma, mi)) = self.entities.iter().find_map(|e| match e.kind {
+            EntityKind::Ellipse { c, ma, mi } if c == centre => Some((ma, mi)),
+            _ => None,
+        }) {
+            return vec![ma, mi];
+        }
+        let Some(arc) = self.entities.iter().find(|e| matches!(e.kind, EntityKind::Arc { center, .. } if center == centre)) else { return Vec::new() };
+        let touches = self.constraints.iter().any(|c| matches!(*c, Constraint::Tangent { c, .. } if c == centre));
+        let partner = self.constraints.iter().find_map(|c| match *c {
+            Constraint::EqualRadius { c1, c2 } if c1 == centre => Some(c2),
+            Constraint::EqualRadius { c1, c2 } if c2 == centre => Some(c1),
+            _ => None,
+        });
+        match (touches, partner) {
+            // a slot: every point of the shape the arc is part of, the centres of its arcs with them
+            (_, Some(_)) => {
+                let mut shape = vec![arc.id];
+                let mut k = 0;
+                while k < shape.len() {
+                    let here = self.entities.iter().find(|e| e.id == shape[k]).map_or(Vec::new(), entity_points);
+                    for e in &self.entities {
+                        if !shape.contains(&e.id) && entity_points(e).iter().any(|p| here.contains(p)) {
+                            shape.push(e.id);
+                        }
+                    }
+                    k += 1;
+                }
+                let mut out: Vec<Id> = shape.iter().flat_map(|id| self.entities.iter().find(|e| e.id == *id).map_or(Vec::new(), entity_points)).filter(|p| *p != centre).collect();
+                out.sort_unstable();
+                out.dedup();
+                out
+            }
+            // a fillet: held by the lines it touches
+            (true, None) => Vec::new(),
+            // an arc of its own: its two ends
+            (false, None) => match arc.kind {
+                EntityKind::Arc { a, b, .. } => vec![a, b],
+                _ => Vec::new(),
+            },
+        }
     }
 
     /// EVERYTHING AN EDITING TOOL MUST LEAVE WHERE IT IS: the frame, the driven projections, and whatever
@@ -1906,7 +1987,7 @@ pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleT
 mod tess;
 mod timeline;
 mod sketch;
-pub use sketch::{ChamferLegs, FilletBy, FilletSize, TextSpec};
+pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, FilletBy, FilletSize, TextSpec};
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
@@ -2026,18 +2107,24 @@ impl Project {
     /// Fillet the corner at vertex `pid`, when exactly two edges meet there. The inner side is chosen by
     /// the bisector of the chords. Used both by click-on-corner and by the chain command. Returns whether
     /// it succeeded.
-    /// THE LARGEST FILLET RADIUS OR CHAMFER LEG A CORNER OF TWO LINES TAKES: the point of touching lies r / tan(theta / 2)
-    /// from the corner (theta the angle between the lines), and a leg lies along the line - neither may reach the far
-    /// end of the shorter line. `None` for a corner not made of two lines. The field of the tool refuses a value past it
+    /// THE LARGEST VALUE A CORNER OF TWO LINES TAKES for `tool`: a fillet's point of touching lies r / tan(theta / 2) from
+    /// the corner (theta the angle between the lines), a chamfer's leg along the line, and the cut of a symmetric chamfer
+    /// is 2 sin(theta / 2) times its leg - none may reach the far end of the shorter line. `None` for a corner not made of two lines. The field of the tool refuses a value past it
     /// in words, where the corner used to take it and do nothing, or cut it down without a word.
-    pub fn corner_limit(&self, si: usize, pid: Id, chamfer: bool) -> Option<f64> {
-        let edges = self.vertex_edges(si, pid);
-        if edges.len() != 2 {
-            return None;
-        }
+    pub fn corner_limit(&self, si: usize, pid: Id, tool: CornerTool) -> Option<f64> {
+        // Where more than two edges meet, there is a corner for every pair, and the field must refuse a value that
+        // is too big for AT LEAST ONE of them: the tightest corner is the one that bounds it.
+        self.vertex_pairs(si, pid).iter().filter_map(|pair| self.corner_limit_of_pair(si, pid, *pair, tool)).fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.min(v))))
+    }
+    /// The bound of the one corner the point `(x, y)` stands in, where more than two edges meet at `pid`.
+    pub fn corner_limit_near(&self, si: usize, pid: Id, tool: CornerTool, x: f64, y: f64) -> Option<f64> {
+        self.vertex_pair(si, pid, Some((x, y))).and_then(|pair| self.corner_limit_of_pair(si, pid, pair, tool))
+    }
+    /// The bound of one named pair of edges at `pid`.
+    pub fn corner_limit_of_pair(&self, si: usize, pid: Id, (e1, e2): (Id, Id), tool: CornerTool) -> Option<f64> {
         let (pcx, pcy) = self.point_xy(si, pid)?;
         let mut dirs = Vec::new();
-        for e in edges {
+        for e in [e1, e2] {
             let (a, b) = self.line_ends(si, e)?;
             let other = if a == pid { b } else { a };
             let (ox, oy) = self.point_xy(si, other)?;
@@ -2047,19 +2134,23 @@ impl Project {
             }
             dirs.push(((ox - pcx) / l, (oy - pcy) / l, l));
         }
-        let shorter = dirs[0].2.min(dirs[1].2);
-        if chamfer {
-            return Some(shorter);
+        if dirs.len() != 2 {
+            return None;
         }
+        let shorter = dirs[0].2.min(dirs[1].2);
         let theta = (dirs[0].0 * dirs[1].0 + dirs[0].1 * dirs[1].1).clamp(-1.0, 1.0).acos();
-        Some(shorter * (theta / 2.0).tan())
+        Some(match tool {
+            CornerTool::Fillet => shorter * (theta / 2.0).tan(),
+            CornerTool::Chamfer(crate::feature::ChamferMode::Symmetric) => shorter * 2.0 * (theta / 2.0).sin(),
+            CornerTool::Chamfer(_) => shorter,
+        })
     }
 
-    /// THE LARGEST RADIUS "FILLET ALL" TAKES on the corners of a set of lines (every line of the sketch with `None`): a
-    /// line between two corners being rounded spends both touching points on itself, r / tan(a / 2) + r / tan(b / 2) of
-    /// its length, and a line with one corner rounded spends one. `None` when there is no corner of two lines to round.
-    /// A rectangle 40 x 30 takes up to 15, half its short side, where one corner alone takes 30.
-    pub fn all_corners_limit(&self, si: usize, only: Option<&std::collections::HashSet<Id>>) -> Option<f64> {
+    /// THE LARGEST VALUE `tool` TAKES on the corners of a set of lines at once (every line of the sketch with `None`): a
+    /// line between two corners being cut spends both on itself - for a fillet r / tan(a / 2) + r / tan(b / 2) of its
+    /// length - and a line with one corner cut spends one. `None` when there is no corner of two lines to cut. A
+    /// rectangle 40 x 30 takes a radius up to 15, half its short side, where one corner alone takes 30.
+    pub fn all_corners_limit(&self, si: usize, only: Option<&std::collections::HashSet<Id>>, tool: CornerTool) -> Option<f64> {
         let s = self.sketches.get(si)?;
         let lines: Vec<(Id, Id, Id)> = s
             .entities
@@ -2070,14 +2161,15 @@ impl Project {
                 _ => None,
             })
             .collect();
-        // the cotangent of half the angle at every corner of two lines, the corners being the points two lines of the set meet at
+        // what one unit of the value spends along each line at every corner of two lines - the cotangent of half the angle for
+        // a fillet - the corners being the points two lines of the set meet at
         let mut cot: std::collections::HashMap<Id, f64> = std::collections::HashMap::new();
         for &(_, a, b) in &lines {
             for p in [a, b] {
                 if cot.contains_key(&p) || lines.iter().filter(|(_, x, y)| *x == p || *y == p).count() != 2 || self.vertex_edges(si, p).len() != 2 {
                     continue;
                 }
-                if let Some(l) = self.corner_limit(si, p, false) {
+                if let Some(l) = self.corner_limit(si, p, tool) {
                     let (pcx, pcy) = self.point_xy(si, p)?;
                     let ends: Vec<f64> = self
                         .vertex_edges(si, p)
@@ -2087,7 +2179,7 @@ impl Project {
                         .map(|(ox, oy)| (ox - pcx).hypot(oy - pcy))
                         .collect();
                     let shorter = ends.iter().copied().fold(f64::INFINITY, f64::min);
-                    cot.insert(p, shorter / l); // corner_limit = shorter * tan(theta / 2)
+                    cot.insert(p, shorter / l); // corner_limit = shorter / (what one unit spends)
                 }
             }
         }
@@ -2114,9 +2206,14 @@ impl Project {
         if edges.len() != 2 {
             return None;
         }
+        self.corner_sweep_of_pair(si, pid, (edges[0], edges[1]))
+    }
+
+    /// The same for the corner the two named edges make at `pid`, where more than two edges may meet.
+    pub fn corner_sweep_of_pair(&self, si: usize, pid: Id, (e1, e2): (Id, Id)) -> Option<f64> {
         let (pcx, pcy) = self.point_xy(si, pid)?;
         let mut dirs = Vec::new();
-        for e in edges {
+        for e in [e1, e2] {
             let (a, b) = self.edge_end_ids(si, e)?;
             let (ox, oy) = self.point_xy(si, if a == pid { b } else { a })?;
             let l = (ox - pcx).hypot(oy - pcy);
@@ -2138,7 +2235,7 @@ impl Project {
             FilletBy::Radius => size.value,
             _ => {
                 let Some(r) = self.corner_sweep(si, pid).and_then(|sweep| size.radius_on(sweep)) else { return false };
-                if self.corner_limit(si, pid, false).is_some_and(|l| r >= l * (1.0 - 1e-9)) {
+                if self.corner_limit(si, pid, CornerTool::Fillet).is_some_and(|l| r >= l * (1.0 - 1e-9)) {
                     return false;
                 }
                 r
@@ -2153,6 +2250,39 @@ impl Project {
         true
     }
 
+    /// CUT EVERY CORNER OF A SET WITH ONE ANSWER, OR NONE OF THEM: a fillet of the size on every corner - a chord or an
+    /// arc length makes its own radius on each and is kept as it was given - or a chamfer of the legs, its first line
+    /// the one nearer `toward`. A corner the cut does not fit leaves the sketch as it was and answers 0: cut on the
+    /// corners that took it and left whole on the one that did not, the set was a half-made drawing nobody asked for.
+    /// Answers how many corners were cut.
+    pub fn cut_corner_set(&mut self, si: usize, corners: &[CornerAt], cut: CornerCut, toward: Option<crate::geom::Point2>) -> usize {
+        let Some(before) = self.sketches.get(si).cloned() else { return 0 };
+        for corner in corners {
+            let done = match cut {
+                CornerCut::Chamfer(legs) => self.chamfer_lines_of_pair(si, corner.pair, legs, toward),
+                CornerCut::Fillet(size) if size.by == FilletBy::Radius => self.fillet_at_pair(si, corner.pair, size.value),
+                CornerCut::Fillet(size) => self.fillet_pair_by(si, *corner, size),
+            };
+            if !done {
+                self.sketches[si] = before;
+                self.regen_sketch(si);
+                return 0;
+            }
+        }
+        corners.len()
+    }
+
+    /// A FILLET OF THE CORNER OF A SET BY ITS CHORD OR ITS ARC LENGTH: the radius the size makes on this corner, as the
+    /// preview of the corner draws it, and the size kept as it was given.
+    fn fillet_pair_by(&mut self, si: usize, corner: CornerAt, size: FilletSize) -> bool {
+        let Some((_, r)) = self.corner_blend(si, corner.point, corner.pair, CornerCut::Fillet(size)).and_then(|b| b.arc) else { return false };
+        if !self.fillet_at_pair(si, corner.pair, r) {
+            return false;
+        }
+        self.give_fillet_its_size(si, size);
+        true
+    }
+
     /// THE LAST FILLET LAID KEEPS ITS SIZE AS IT WAS GIVEN: its radius dimension is put in place of a distance between
     /// the two points of touching (a chord) or of an arc length dimension, and the sketch is solved.
     pub(super) fn give_fillet_its_size(&mut self, si: usize, size: FilletSize) {
@@ -2160,23 +2290,37 @@ impl Project {
         let Some(last) = s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).max_by_key(|e| e.id).copied() else { return };
         let EntityKind::Arc { center: centre, a, b, ccw } = last.kind else { return };
         let Some(ci) = self.fillet_radius_constraint(si, last.id) else { return };
+        let end = |id: Id| self.point_xy(si, id).map(|(x, y)| sketch::DimEnd { id, at: crate::geom::Point2::new(x, y) });
+        let (Some(end_a), Some(end_b), Some((cx, cy))) = (end(a), end(b), self.point_xy(si, centre)) else { return };
+        // THE CHORD STANDS OUTSIDE THE SHAPE, on the side of the arc away from its centre: written as the arc ran, it
+        // stood inside the shape on one corner out of two
+        let [ca, cb] = sketch::ends_facing([end_a, end_b], sketch::Side::AwayFrom(crate::geom::Point2::new(cx, cy)));
         self.sketches[si].constraints[ci] = match size.by {
-            FilletBy::Chord => Constraint::Distance { a, b, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+            FilletBy::Chord => Constraint::Distance { a: ca, b: cb, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
             _ => Constraint::ArcLength { c: centre, a, b, ccw, len: size.value, off: 0.0, expr: String::new(), driven: false },
         };
         self.solve_sketch(si);
     }
 
     fn fillet_round(&mut self, si: usize, pid: Id, r: f64) -> bool {
-        let edges = self.vertex_edges(si, pid);
-        if edges.len() != 2 {
-            return false;
-        }
-        let (e1, e2) = (edges[0], edges[1]);
-        let Some((pcx, pcy)) = self.point_xy(si, pid) else { return false };
+        let Some(pair) = self.vertex_pair(si, pid, None) else { return false };
+        self.fillet_at_pair(si, pair, r)
+    }
+
+    /// Fillet the corner at `pid` that the point `(x, y)` stands in, where more than two edges meet there.
+    pub fn fillet_at_vertex_near(&mut self, si: usize, pid: Id, r: f64, x: f64, y: f64) -> bool {
+        let Some(pair) = self.vertex_pair(si, pid, Some((x, y))) else { return false };
+        self.fillet_at_pair(si, pair, r)
+    }
+
+    /// Fillet the corner the two named edges make at a shared vertex. The arc goes on the side of their bisector,
+    /// which is what the fillet at a vertex has always done.
+    pub fn fillet_at_pair(&mut self, si: usize, (e1, e2): (Id, Id), r: f64) -> bool {
+        let Some(shared) = self.corner_of_pair(si, e1, e2) else { return false };
+        let Some((pcx, pcy)) = self.point_xy(si, shared) else { return false };
         let dir = |me: &Self, eid: Id| -> Option<(f64, f64)> {
             let (a, b) = me.edge_end_ids(si, eid)?;
-            let other = if a == pid { b } else { a };
+            let other = if a == shared { b } else { a };
             let (ox, oy) = me.point_xy(si, other)?;
             let (dx, dy) = (ox - pcx, oy - pcy);
             let l = (dx * dx + dy * dy).sqrt();
@@ -2197,16 +2341,17 @@ impl Project {
     }
 
     /// Solve the sketch constraints (moving the points) and re-tessellate the contour.
-    /// Map of global parameter names (lower-cased) to values, used to evaluate feature and command
-    /// dimension expressions through [`crate::expr::eval`], the same way sketch dimensions are evaluated.
+    /// Map of global parameter names to values, used to evaluate feature and command dimension expressions
+    /// through [`crate::expr::eval`], the same way sketch dimensions are evaluated. A name is a key as written: `H`
+    /// and `h` are two parameters.
     pub fn param_map(&self) -> std::collections::HashMap<String, f64> {
-        let mut m: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.to_lowercase(), p.value)).collect();
+        let mut m: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.clone(), p.value)).collect();
         // Named driving dimensions (the skeleton sketch of an assembly): a name resolves to a dimension
         // value, which parts then consume through expressions.
         for nd in &self.named_dims {
             if !nd.name.is_empty() {
                 if let Some(v) = self.named_dim_value(nd) {
-                    m.insert(nd.name.to_lowercase(), v);
+                    m.insert(nd.name.clone(), v);
                 }
             }
         }
@@ -2257,7 +2402,7 @@ impl Project {
         if nm.is_empty() {
             return false;
         }
-        self.parameters.iter().any(|p| p.name.eq_ignore_ascii_case(nm)) || self.named_dims.iter().any(|n| n.name.eq_ignore_ascii_case(nm) && n.target != *target)
+        self.parameters.iter().any(|p| p.name == nm) || self.named_dims.iter().any(|n| n.name == nm && n.target != *target)
     }
 
     /// The same for a sketch dimension, addressed by entities the way the popup addresses it.
@@ -2390,6 +2535,13 @@ impl Project {
         self.feat_dims.get(&id).and_then(|m| m.get(key)).map(|s| s.as_str())
     }
 
+    /// Value of dimension `key` of feature `id` as the rebuild takes it: the expression evaluated against `vars`
+    /// when there is one, otherwise `stored`, the number kept in the node. The number in the node is what was typed
+    /// last and does not follow a parameter; whatever shows a size of a built feature reads it through here.
+    pub fn feat_dim_value(&self, id: Id, key: &str, stored: f64, vars: &std::collections::HashMap<String, f64>) -> f64 {
+        eval_dim(self.feat_dims.get(&id), key, stored, vars)
+    }
+
     /// Mark as dirty the features whose expressions reference parameter `name`, and their consumers.
     ///
     /// Marking every feature that has any expression means rebuilding a project with a hundred dimensions
@@ -2433,7 +2585,7 @@ impl Project {
         let mut vars = self.param_map();
         for p in &self.parameters {
             if !p.name.is_empty() {
-                vars.insert(p.name.to_lowercase(), p.value); // seed with the previous value
+                vars.insert(p.name.clone(), p.value); // seed with the previous value
             }
         }
         // Fixed point over the dependencies (up to eight passes).
@@ -2444,7 +2596,7 @@ impl Project {
                     continue;
                 }
                 if let Ok(v) = eval(&p.expr, &vars) {
-                    let key = p.name.to_lowercase();
+                    let key = p.name.clone();
                     if vars.get(&key).is_none_or(|o| (o - v).abs() > 1e-12) {
                         changed = true;
                     }
@@ -2504,7 +2656,7 @@ impl Project {
     }
 
     /// Evaluate an arbitrary expression in the context of the project parameters, for validating a
-    /// dimension field in the interface. Parameter names are case-insensitive.
+    /// dimension field in the interface. A parameter name is matched as written.
     pub fn eval_expr(&self, src: &str) -> Result<f64, crate::errors::ExprError> {
         // Going through `param_map` exposes both the global parameters and the named driving dimensions of
         // a skeleton sketch.
@@ -2888,20 +3040,20 @@ impl Project {
     /// length the role of an area, so descriptive queries ("along the axis", "the longest") work on edges
     /// without any separate code.
     pub fn edge_pool(&self, body: Id) -> Vec<crate::refs::Candidate> {
-        self.regen_edges
-            .get(&body)
-            .map(|es| {
-                es.iter()
-                    .map(|e| crate::refs::Candidate {
-                        desc: e.id,
-                        centroid: e.mid,
-                        normal: e.dir,
-                        area: ((e.b[0] - e.a[0]).powi(2) + (e.b[1] - e.a[1]).powi(2) + (e.b[2] - e.a[2]).powi(2)).sqrt(),
-                        edge: Some(crate::refs::EdgeGeom { a: e.a, b: e.b, center: e.center, axis: e.axis, radius: e.radius }),
-                    })
-                    .collect()
+        self.regen_edges.get(&body).map(|es| Self::edge_candidates(es)).unwrap_or_default()
+    }
+
+    /// A list of edges as resolution sees it, wherever the list came from.
+    fn edge_candidates(es: &[crate::geom::MeshEdge]) -> Vec<crate::refs::Candidate> {
+        es.iter()
+            .map(|e| crate::refs::Candidate {
+                desc: e.id,
+                centroid: e.mid,
+                normal: e.dir,
+                area: ((e.b[0] - e.a[0]).powi(2) + (e.b[1] - e.a[1]).powi(2) + (e.b[2] - e.a[2]).powi(2)).sqrt(),
+                edge: Some(crate::refs::EdgeGeom { a: e.a, b: e.b, center: e.center, axis: e.axis, radius: e.radius }),
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Every vertex of a body as resolution sees it: a point plus a name derived from its edges.
@@ -2971,6 +3123,15 @@ impl Project {
     /// is always phrased through faces ("every edge of this face", "the seam between these two sets").
     pub fn resolve_edge_refs(&self, body: Id, r: &crate::refs::Ref, what: &str) -> Result<Vec<u32>, crate::refs::RefError> {
         r.resolve(what, &self.edge_pool(body), &self.names, &self.face_pool(body))
+    }
+
+    /// The same against an explicit list of the body's edges, as the kernel holds them now.
+    ///
+    /// `regen_edges` is filled by the post pass of a rebuild and is not written into a bundle: in the middle of
+    /// a pass it holds the previous state of the body, and right after a file is opened it holds nothing. A
+    /// query resolved against it there found no edges at all, while the faces it is phrased through were known.
+    pub fn resolve_edge_refs_in(&self, body: Id, edges: &[crate::geom::MeshEdge], r: &crate::refs::Ref, what: &str) -> Result<Vec<u32>, crate::refs::RefError> {
+        r.resolve(what, &Self::edge_candidates(edges), &self.names, &self.face_pool(body))
     }
 
     /// Resolve a reference to a single face into a descriptor, a centre and a normal, or into a named

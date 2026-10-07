@@ -90,6 +90,8 @@ By making a contribution to this project, I certify that:
 - **All checks green** — the existing ones and the new ones. A pull request with a red check is not merged.
 - **Comments and assertion messages are in English.** Interface strings go through the `i18n/`
   catalogue only, never inline in the code.
+- **New interface strings are required in English only.** If you know other languages of the catalogue, add
+  the strings in them too; the maintainers fill in the rest.
 - **Formatted by rustfmt.** Run `cargo fmt` before sending; the layout is set by `rustfmt.toml` and the
   checks refuse a tree `cargo fmt --check` would change. Once after cloning, `git config core.hooksPath
   tools/hooks` makes every commit check the layout (a second) and every push search for anything personal.

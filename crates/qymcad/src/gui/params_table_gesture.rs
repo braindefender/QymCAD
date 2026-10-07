@@ -219,6 +219,23 @@ mod tests {
         assert!(t.shows("h"), "the name typed vanished from the field: {:?}", t.drawn);
     }
 
+    /// A NAME HELD BY ANOTHER PARAMETER IN ANOTHER CASE IS REFUSED AS TAKEN, NOT AS BAD: `H` and `h` are two
+    /// parameters, so renaming `h` to `H` runs into the other one, and the line has to say who holds it.
+    #[test]
+    fn a_name_taken_in_another_case_says_who_holds_it() {
+        let mut app = app_with_params();
+        app.project.parameters.push(Param { name: "H".into(), expr: "7".into(), value: 7.0 });
+        let mut t = Table::new();
+        t.enter_name(&mut app, 1);
+        t.type_text("H").frame(&mut app);
+        t.key(egui::Key::Enter).frame(&mut app);
+        t.frame(&mut app);
+
+        assert_eq!(app.project.parameters[1].name, "h", "a taken name was applied after all - there are two \"H\" in the project");
+        let said = crate::i18n::tr2("par-name-taken", "name", "H", "where", &crate::i18n::tr("par-owner-project"));
+        assert!(t.shows(&said), "\"{said}\" was expected, and the frame holds {:?}", t.drawn);
+    }
+
     /// A NAME UNUSABLE IN A FORMULA IS REFUSED WITH AN EXPLANATION AS WELL.
     #[test]
     fn a_name_that_cannot_be_a_formula_is_refused() {

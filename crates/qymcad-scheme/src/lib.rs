@@ -262,6 +262,12 @@ pub struct Palette {
     pub preview_axis: [u8; 3],
     /// helper geometry inside a preview: a datum, a mirror plane, the grid of copies
     pub preview_datum: [u8; 3],
+    /// THE NEWEST CORNER OF A SET - the one named last, the one a further pick can still re-aim. A corner is the
+    /// newest because it was named last: the state is the fact, and the scheme says what that state looks like.
+    pub preview_corner_new: [u8; 3],
+    /// A CORNER ALREADY FIXED - the pair of lines that makes it is remembered, so the next pick cannot move it.
+    /// Drawn apart from the newest one so that a person can see at a glance what a further click will still change.
+    pub preview_corner_fixed: [u8; 3],
     /// THE MEASURING LINE - ONE FOR THE WHOLE PROGRAM. It used to be amber in 3D and green in a sketch:
     /// one tool, two colours, which is not a design but a disagreement. It was merged into the green one
     /// by decision, so that one colour sets it everywhere.
@@ -610,6 +616,8 @@ readers!(
     preview_array,
     preview_axis,
     preview_datum,
+    preview_corner_new,
+    preview_corner_fixed,
     measure,
     cut_line,
     gizmo_label,
@@ -838,6 +846,9 @@ pub fn dark() -> Palette {
         preview_array: [120, 210, 235],
         preview_axis: [180, 160, 250],
         preview_datum: [150, 200, 255],
+        // the newest corner says "a pick may still move this one", the fixed one says "this one is remembered"
+        preview_corner_new: [240, 200, 90],
+        preview_corner_fixed: [157, 122, 235],
         measure: [120, 220, 160], // green, both in 3D and in a sketch
         cut_line: [255, 210, 120],
         gizmo_label: [245, 230, 150],

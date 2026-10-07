@@ -1810,7 +1810,11 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     }
     let col = if pn.tool.construction { pn.scheme.pal.sketch_construction() } else { pn.scheme.pal.sketch_line() };
     let stroke = Stroke::new(1.3, col);
-    for p in &pn.tool.pts {
+    // THE CLICKS THAT ARE NOTHING YET ARE MARKED, and of a chain of lines only the corner the next segment goes from: the
+    // corners already laid are points of the sketch and drawn as such, and the solve after an automatic constraint moves
+    // them - marked again where they were clicked, a second dot stood beside every corner of the chain.
+    let marked = if pn.armed.draw_kind() == 1 { pn.tool.pts.len().saturating_sub(1) } else { 0 };
+    for p in &pn.tool.pts[marked..] {
         painter.circle_filled(sh.at(*p), 3.0, col);
     }
     let Some(cur) = pn.cursor else { return };
@@ -2596,19 +2600,22 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
                 }
                 text_turned(painter, g.text, label.clone(), font.clone(), dim_col, g.angle);
             }
-            Constraint::ArcLength { c, a, b, off, len, .. } => {
-                // the arc length: a leader from the middle of the arc
-                let (Some(cp), Some(pa), Some(pb)) = (qymcad_ui_state::sketch_pt(pn.project, si, c), qymcad_ui_state::sketch_pt(pn.project, si, a), qymcad_ui_state::sketch_pt(pn.project, si, b))
-                else {
-                    continue;
-                };
-                let r = ((pa.x - cp.x).powi(2) + (pa.y - cp.y).powi(2)).sqrt();
-                let mid = Point2::new((pa.x + pb.x) / 2.0 - cp.x, (pa.y + pb.y) / 2.0 - cp.y);
-                let ml = (mid.x * mid.x + mid.y * mid.y).sqrt().max(1e-9);
-                let edge = Point2::new(cp.x + mid.x / ml * r, cp.y + mid.y / ml * r);
-                let ed = sh.at(edge);
-                let _ = len;
-                painter.text((ed.to_vec2() + egui::vec2(2.0, -8.0 + off as f32 * sc)).to_pos2(), egui::Align2::LEFT_CENTER, label.clone(), font.clone(), dim_col);
+            Constraint::ArcLength { .. } => {
+                // the arc length as the drawing standards draw it: a dimension arc, extension lines, arrows, the number
+                // and the arc mark over it - one geometry with the taking of its text
+                let Some(g) = qymcad_ui_state::arc_length_dim_geom(pn.project, si, ci, &sh, pn.set) else { continue };
+                for e in g.ext {
+                    painter.line_segment(e, Stroke::new(0.7, dim_col));
+                }
+                painter.add(egui::Shape::line(g.arc.clone(), Stroke::new(1.2, dim_col)));
+                for (tip, dir) in g.arrows {
+                    let side = egui::vec2(-dir.y, dir.x);
+                    let back = tip - dir * 6.0;
+                    painter.line_segment([tip, back + side * 2.5], Stroke::new(1.0, dim_col));
+                    painter.line_segment([tip, back - side * 2.5], Stroke::new(1.0, dim_col));
+                }
+                painter.add(egui::Shape::line(g.mark, Stroke::new(1.0, dim_col)));
+                painter.text(g.text, egui::Align2::CENTER_CENTER, label.clone(), font.clone(), dim_col);
             }
             _ => {}
         }
@@ -2641,8 +2648,8 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
                 }
             }
             EntityKind::Arc { center, a, b, .. } => {
-                // if the arc already carries a radius or diameter dimension (a Diameter constraint), that loop above draws it
-                let has_dim = s.constraints.iter().any(|x| matches!(x, Constraint::Diameter { c, .. } if *c == center));
+                // if the arc already carries a size of its own - a radius, an arc length or a chord - that loop above draws it
+                let has_dim = s.rim_sized(center);
                 // a fillet radius: an R leader from the centre to the middle of the arc, the label beyond
                 // the rim (r+14) - the same style and position that passive_radius_label_at grabs, otherwise
                 // the two would not line up.

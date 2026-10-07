@@ -39,9 +39,10 @@ mod tests {
             // and the check failed on a perfectly good hint: it guarded not "is dragging mentioned" but
             // "is that word typed exactly so".
             //
-            // The Russian stems below are lookup keys into the language catalogue and stay as they are:
-            // translating them would match nothing.
-            let says_drag = hint.contains("протя") || hint.contains("протащ") || hint.contains("drag");
+            // The Cyrillic stems below are lookup keys into the language catalogue and stay as they are:
+            // translating them would match nothing. The first covers the Russian and the Ukrainian hint, the
+            // second the Kazakh one.
+            let says_drag = ["протя", "сүйре", "drag"].iter().any(|stem| hint.contains(stem));
             assert!(says_drag, "in language {code} the trim hint says nothing about dragging: {hint}");
         }
         crate::i18n::set_language(&prev);

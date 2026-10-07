@@ -2,6 +2,7 @@
 name = "qymcad-scheme"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 # COLOUR SCHEMES ARE A RESOURCE: a person brings a file and picks it, without rebuilding the program. Every
 # workbench paints in the same colours, so the schemes belong to none of them.

@@ -308,6 +308,7 @@ io-svg-write-failed = SVG: writing failed: { $v }
 io-dxf-empty-sketch = DXF: the sketch is empty
 io-dxf-write-failed = DXF: writing failed: { $v }
 error-edges-not-found = Not one of the { $asked } named edges is left in the body. Their names came from an operation higher in the timeline and it has changed — pick the edges again.
+error-described-edges-not-found = The edges were picked through a face or an edge that is no longer in the body: an operation higher in the timeline has changed it — pick the edges again.
 error-op-failed-patch = A surface will not span these edges
 error-shell-thickness-over-round = A { $t } mm wall is thicker than the smallest round on the body ({ $r } mm): the offset consumes it entirely and the shell cannot be built. Use a wall thinner than { $r } mm or enlarge the round
 error-operation-split-body = The operation split the part into { $n } bodies: a part holds exactly one body. Reduce the value or apply the operation to a different face

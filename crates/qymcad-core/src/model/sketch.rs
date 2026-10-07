@@ -22,9 +22,9 @@ pub struct TextSpec {
     pub font: crate::model::FontRef,
 }
 
-/// THE SIZE OF A SKETCH CHAMFER, as the chamfer of a part is given: how (`ChamferMode`), the first leg - along the first
-/// line - and the second value: the second leg for two legs, the angle from the first line in degrees for a leg and an
-/// angle, nothing for equal legs.
+/// THE SIZE OF A SKETCH CHAMFER: how (`ChamferMode`), the first value and the second. For a symmetric chamfer the first
+/// is the length of the cut itself and there is no second; for two legs, the first leg - along the first line - and the
+/// second; for a leg and an angle, the first leg and the angle from the first line in degrees.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ChamferLegs {
     pub mode: crate::feature::ChamferMode,
@@ -33,7 +33,7 @@ pub struct ChamferLegs {
 }
 
 impl ChamferLegs {
-    /// Equal legs of `d`.
+    /// A symmetric chamfer whose cut is `d` long.
     pub fn equal(d: f64) -> Self {
         ChamferLegs { mode: crate::feature::ChamferMode::Symmetric, first: d, second: 0.0 }
     }
@@ -41,20 +41,50 @@ impl ChamferLegs {
     /// The two legs along the lines of a corner whose angle is `corner` (radians); `None` where the size cannot be
     /// laid: a leg of no length, or an angle that with the corner leaves no triangle (law of sines).
     pub fn along(&self, corner: f64) -> Option<(f64, f64)> {
-        let d1 = self.first;
-        let d2 = match self.mode {
-            crate::feature::ChamferMode::Symmetric => d1,
-            crate::feature::ChamferMode::TwoDist => self.second,
+        let (d1, d2) = match self.mode {
+            // the cut is the base of an isosceles triangle whose apex is the corner: each leg is cut / (2 sin(corner / 2))
+            crate::feature::ChamferMode::Symmetric => {
+                let base = 2.0 * (corner / 2.0).sin();
+                if base <= 1e-9 {
+                    return None;
+                }
+                (self.first / base, self.first / base)
+            }
+            crate::feature::ChamferMode::TwoDist => (self.first, self.second),
             crate::feature::ChamferMode::DistAngle => {
                 let a = self.second.to_radians();
                 if a <= 0.0 || a + corner >= std::f64::consts::PI - 1e-9 {
                     return None;
                 }
-                d1 * a.sin() / (a + corner).sin()
+                (self.first, self.first * a.sin() / (a + corner).sin())
             }
         };
         (d1 > 1e-9 && d2 > 1e-9 && d1.is_finite() && d2.is_finite()).then_some((d1, d2))
     }
+}
+
+/// WHICH OF THE TWO CORNER TOOLS A VALUE IS FOR, and for a chamfer how its first value is read: the length of the cut for a
+/// symmetric one, a leg for the others. What the most a corner takes is depends on it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CornerTool {
+    Fillet,
+    Chamfer(crate::feature::ChamferMode),
+}
+
+/// THE CUT OF A CORNER: a fillet of its size - a radius, a chord or an arc length - or a chamfer of its legs. The same
+/// cut is what the corner is shown with before it is made and what is made: a fillet by its chord was shown as a
+/// fillet of that radius.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CornerCut {
+    Fillet(FilletSize),
+    Chamfer(ChamferLegs),
+}
+
+/// ONE CORNER OF A SET: the point it stands at and the two edges that make it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CornerAt {
+    pub point: Id,
+    pub pair: (Id, Id),
 }
 
 /// HOW A SKETCH FILLET IS GIVEN: by its radius, by its chord - the straight distance between the two points where it
@@ -169,6 +199,15 @@ pub(crate) fn rect_own_constraints(c0: Id, c1: Id, c2: Id, c3: Id, centre: Id, d
         Constraint::Orientation { a: c0, b: c3, deg: deg + 90.0 },
         Constraint::Midpoint { p: centre, a: c0, b: c2 },
     ]
+}
+
+/// WHAT A FILLET OR A CHAMFER WOULD LEAVE AT A CORNER: the point of the corner, the two ends the edges will be cut
+/// at, and the arc that will stand between them (`None` for a chamfer, which is a straight cut).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CornerBlend {
+    pub vertex: [f64; 2],
+    pub ends: [[f64; 2]; 2],
+    pub arc: Option<([f64; 2], f64)>,
 }
 
 impl Project {
@@ -539,10 +578,16 @@ impl Project {
         let radii = self.entity_radii(si);
         let mut active: Vec<Constraint> = s.constraints.iter().filter(|x| !x.is_driven()).cloned().collect();
         active.extend(intr.iter().cloned());
-        let (dof_before, _) = crate::solver::dof(&s.points, &radii, &active);
-        let mut with = active;
+        let mut with = active.clone();
         with.push(c.clone());
-        let (dof_after, _) = crate::solver::dof(&s.points, &radii, &with);
+        // JUDGED WHERE THE CONSTRAINTS HOLD, on a copy solved with the new one: at the geometry as clicked, nearly but not
+        // quite satisfying what is laid, constraints that follow from each other read as independent. A U drawn with
+        // Line, its corners squared, got a Parallel between its legs on top of the two Perpendiculars that imply it, and
+        // once solved all of them stood redundant.
+        let (mut points, mut held_radii) = (s.points.clone(), radii.clone());
+        crate::solver::solve_full(&mut points, &mut held_radii, &with, None);
+        let (dof_before, _) = crate::solver::dof(&points, &held_radii, &active);
+        let (dof_after, _) = crate::solver::dof(&points, &held_radii, &with);
         if dof_after < dof_before {
             self.sketches[si].constraints.push(c);
             true
@@ -941,6 +986,7 @@ impl Project {
         // A RECTANGLE LOSING A SIDE IS BROKEN: its diagonals go with the side, its centre with them, and the constraints
         // it held itself by - four plain lines are left, with nothing of the rectangle on them.
         let mut eids = eids.to_vec();
+        let before: Vec<crate::model::SketchRect> = self.sketches.get(si).map(|s| s.rects.clone()).unwrap_or_default();
         if let Some(s) = self.sketches.get_mut(si) {
             let broken: Vec<crate::model::SketchRect> = s.rects.iter().filter(|r| r.sides.iter().chain(r.diagonals.iter().flatten()).any(|e| eids.contains(e))).cloned().collect();
             s.rects.retain(|r| !broken.contains(r));
@@ -991,6 +1037,8 @@ impl Project {
             s.constraints.retain(|c| constraint_point_ids(c).iter().all(|id| alive.contains(id)));
         }
         self.regen_sketch(si);
+        // the sides a broken rectangle leaves keep what they plainly have, as they do in a sketch of plain lines
+        self.relate_lines_left(si, &before);
     }
     /// Toggle the selected entities between ordinary and construction geometry. Construction geometry never
     /// reaches a profile. Returns the new state.
@@ -1092,6 +1140,9 @@ impl Project {
             s.constraints.retain(|k| !(matches!(k, Constraint::Orientation { .. }) && is_rect_own(&r, k)));
             let [c0, c1, c2, c3] = r.corners;
             s.constraints.extend(rect_free_constraints(c0, c1, c2, c3));
+            // the dimensions of its sides go round with the sides the angle is about to turn
+            let along = axis_dims_of_whole_sides(s, &|id| r.corners.contains(&id));
+            lay_along_their_sides(s, &along, 0.0);
         }
     }
     /// AFTER A CONSTRAINT IS DELETED, the rectangles it was part of: one of a rectangle's own constraints deleted breaks
@@ -1133,7 +1184,65 @@ impl Project {
     /// Delete constraint `ci` of a sketch. For a midpoint constraint the orphaned midpoint is pruned as well
     /// (nothing else uses it and it is not a system point), so no debris is left behind. The sketch is then
     /// re-solved.
+    /// THE LINES A BROKEN RECTANGLE LEAVES GET WHAT THEY PLAINLY HAVE, as lines drawn by hand get it with auto-constraints
+    /// on: of every rectangle of `before` the sketch no longer holds, the sides still standing are laid Horizontal or
+    /// Vertical where they stand so, then Perpendicular and Parallel between them, then Equal between those of one
+    /// length - each only where it constrains something (`add_constraint_if_independent`), so nothing is over-defined.
+    /// Left as plain lines, a rectangle broken by deleting a side still stood level and square, held by nothing: a corner
+    /// dragged pulled it out of shape. Answers how many constraints were laid.
+    pub fn relate_lines_left(&mut self, si: usize, before: &[crate::model::SketchRect]) -> usize {
+        let Some(s) = self.sketches.get(si) else { return 0 };
+        let lines: Vec<(Id, Id)> = before
+            .iter()
+            .filter(|r| !s.rects.iter().any(|k| k.id == r.id))
+            .flat_map(|r| r.sides)
+            .filter_map(|side| match s.entities.iter().find(|e| e.id == side)?.kind {
+                EntityKind::Line { a, b } => Some((a, b)),
+                _ => None,
+            })
+            .collect();
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+        let dirs: Vec<Option<(f64, f64, f64)>> = lines
+            .iter()
+            .map(|&(a, b)| {
+                let ((ax, ay), (bx, by)) = (at(a)?, at(b)?);
+                let len = (bx - ax).hypot(by - ay);
+                (len > 1e-9).then(|| ((bx - ax) / len, (by - ay) / len, len))
+            })
+            .collect();
+        // a relation is read off geometry the rectangle held exactly, so the tolerance is the solver's, not the hand's
+        const TOL: f64 = 1e-6;
+        let mut wanted: Vec<Constraint> = Vec::new();
+        for (&(a, b), d) in lines.iter().zip(&dirs) {
+            let Some((ux, uy, _)) = *d else { continue };
+            if uy.abs() < TOL {
+                wanted.push(Constraint::Horizontal { a, b });
+            } else if ux.abs() < TOL {
+                wanted.push(Constraint::Vertical { a, b });
+            }
+        }
+        for i in 0..lines.len() {
+            for j in i + 1..lines.len() {
+                let (Some((ux, uy, lu)), Some((vx, vy, lv))) = (dirs[i], dirs[j]) else { continue };
+                let ((a, b), (c, d)) = (lines[i], lines[j]);
+                if (ux * vx + uy * vy).abs() < TOL {
+                    wanted.push(Constraint::Perpendicular { a, b, c, d });
+                } else if (ux * vy - uy * vx).abs() < TOL {
+                    wanted.push(Constraint::Parallel { a, b, c, d });
+                }
+                if (lu - lv).abs() < TOL * lu.max(lv) {
+                    wanted.push(Constraint::Equal { a, b, c, d });
+                }
+            }
+        }
+        let laid = wanted.into_iter().filter(|c| self.add_constraint_if_independent(si, c.clone())).count();
+        if laid > 0 {
+            self.solve_sketch(si);
+        }
+        laid
+    }
     pub fn delete_sketch_constraint(&mut self, si: usize, ci: usize) -> bool {
+        let before: Vec<crate::model::SketchRect> = self.sketches.get(si).map(|s| s.rects.clone()).unwrap_or_default();
         {
             let Some(s) = self.sketches.get_mut(si) else { return false };
             if ci >= s.constraints.len() {
@@ -1157,6 +1266,8 @@ impl Project {
             self.settle_rects_after(si, &removed);
         }
         self.solve_sketch(si);
+        // a rectangle broken by losing one of its own constraints leaves its sides what they plainly have
+        self.relate_lines_left(si, &before);
         true
     }
     /// The points of `eids` an editing tool is allowed to shift: everything except what the sketch holds
@@ -1164,9 +1275,21 @@ impl Project {
     fn movable_of(&self, si: usize, eids: &[Id]) -> Vec<Id> {
         let held = self.sketches.get(si).map(|s| s.held_points()).unwrap_or_default();
         let mut pts = self.entity_point_ids(si, eids);
+        // A RECTANGLE TAKEN BY ALL ITS SIDES MOVES AS ONE SHAPE, with what its corners became: rounded or cut, a corner
+        // is a virtual sharp no side ends at, and the arc or the cut between two sides is a piece of the same contour.
+        // Left behind, the sharps and the arcs held the sides by their tangencies and dimensions, and Rotate of a
+        // rectangle 45 x 35 rounded R3 all round was refused as held.
+        let taken: Vec<crate::model::SketchRect> = self.sketches.get(si).map(|s| s.rects.iter().filter(|r| r.sides.iter().all(|e| eids.contains(e))).cloned().collect()).unwrap_or_default();
+        for r in &taken {
+            pts.extend(r.corners);
+            let contour: Vec<Id> = self.connected_entities(si, r.sides[0]).into_iter().collect();
+            pts.extend(self.entity_point_ids(si, &contour));
+        }
         // A RECTANGLE MOVES AS ONE SHAPE: with all its corners its centre goes too. Left behind, the centre held the
         // middle of the diagonal back, and a rectangle moved by 5 came out moved by 4.
         pts.extend(self.whole_rects(si, &pts).iter().map(|r| r.centre));
+        pts.sort_unstable();
+        pts.dedup();
         pts.into_iter().filter(|id| !held.contains(id)).collect()
     }
     /// The rectangles of sketch `si` whose four corners are all among `pts`.
@@ -1210,16 +1333,19 @@ impl Project {
         let (sn, cs) = (deg.to_radians().sin(), deg.to_radians().cos());
         let pts = self.movable_of(si, eids);
         // THE ROTATE TOOL TURNS A RECTANGLE: the turn it holds itself by goes round with it. Kept, it pulled the
-        // rectangle back to where it stood.
-        let turned: Vec<Id> = self.whole_rects(si, &pts).iter().flat_map(|r| r.corners).collect();
+        // rectangle back to where it stood. It is the turn of every side whose two points go round - on the corners, or
+        // on the points of touching a rounded corner carried it to, where a turn kept at 0 deg pulled a rectangle 45 x 35
+        // rounded R3 back to the axes and flipped its arcs outward.
         if let Some(s) = self.sketches.get_mut(si) {
             for c in s.constraints.iter_mut() {
                 if let Constraint::Orientation { a, b, deg: held } = c {
-                    if turned.contains(a) && turned.contains(b) {
+                    if pts.contains(a) && pts.contains(b) {
                         *held += deg;
                     }
                 }
             }
+            // read before the points go round: which dimensions measure a whole side along its axis
+            let along = axis_dims_of_whole_sides(s, &|id| pts.contains(&id));
             for p in s.points.iter_mut() {
                 if pts.contains(&p.id) {
                     let (x, y) = (p.x - cx, p.y - cy);
@@ -1227,6 +1353,7 @@ impl Project {
                     p.y = cy + x * sn + y * cs;
                 }
             }
+            lay_along_their_sides(s, &along, deg);
         }
         self.solve_sketch(si); // regenerates as well, on the positions the constraints allow
     }
@@ -2016,7 +2143,8 @@ impl Project {
         self.solve_sketch(si); // the edit ends at the solver, not at a rebuild: `regen_sketch` recomputes the contours and checks no constraint
         true
     }
-    pub(super) fn point_xy(&self, si: usize, id: Id) -> Option<(f64, f64)> {
+    /// WHERE A POINT STANDS in the drawing, or `None` where the sketch has no such point.
+    pub fn point_xy(&self, si: usize, id: Id) -> Option<(f64, f64)> {
         let s = self.sketches.get(si)?;
         s.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y))
     }
@@ -2272,11 +2400,9 @@ impl Project {
             let off = fillet_label_angle(&s.points, cen, t1, t2);
             s.constraints.push(Constraint::Diameter { c: cen, d: r, off, expr: String::new(), driven: false, diam: false, at: None });
         }
-        // Virtual corner (described in detail in `fillet_curves`): vertex `pc` is kept and the dimensions on it
-        // are left alone. It becomes the sharp corner on the extensions of both shortened lines, held by
-        // `PointOnLine`. An edge dimension is measured to the virtual corner and holds at any radius, while the
-        // contour stays closed and selectable.
-        self.keep_virtual_corner_lines(si, pc, o1, t1, o2, t2);
+        // The point of the corner (described in `settle_the_corner_point`): it goes with the corner, and what was
+        // stated about it goes with it. What is left on each shortened line is a real point of it.
+        self.settle_the_corner_point(si, pc, o1, t1, o2, t2);
         self.regen_sketch(si);
         true
     }
@@ -2306,7 +2432,22 @@ impl Project {
                     | Constraint::Orientation { a, b, .. }
                     | Constraint::Tangent { a, b, .. }
                     | Constraint::PointOnLine { a, b, .. } => (*a, *b) = pair(*a, *b),
-                    Constraint::Equal { a, b, c: cc, d } | Constraint::Parallel { a, b, c: cc, d } | Constraint::Perpendicular { a, b, c: cc, d } | Constraint::Collinear { a, b, c: cc, d } => {
+                    // AN EQUALITY IS A LENGTH: it is carried onto the pieces the cut leaves only where they are still
+                    // equal - both sides of the corner shortened alike. Carried regardless, it said 55 = 58 for a chamfer
+                    // of 3 on one of two equal sides of 58, and the solver bent everything tied to the drawing to satisfy
+                    // it. Otherwise it stays on the corner, which then stays as the virtual sharp.
+                    Constraint::Equal { a, b, c: cc, d } => {
+                        let (ab, cd) = (pair(*a, *b), pair(*cc, *d));
+                        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+                        let len = |(u, v): (Id, Id)| Some((at(u)?.0 - at(v)?.0).hypot(at(u)?.1 - at(v)?.1));
+                        if let (Some(l1), Some(l2)) = (len(ab), len(cd)) {
+                            if (l1 - l2).abs() <= 1e-9 * l1.max(l2).max(1.0) {
+                                ((*a, *b), (*cc, *d)) = (ab, cd);
+                            }
+                        }
+                    }
+                    // a direction is the same along the whole line, so it is carried as it is
+                    Constraint::Parallel { a, b, c: cc, d } | Constraint::Perpendicular { a, b, c: cc, d } | Constraint::Collinear { a, b, c: cc, d } => {
                         (*a, *b) = pair(*a, *b);
                         (*cc, *d) = pair(*cc, *d);
                     }
@@ -2315,50 +2456,39 @@ impl Project {
             }
         }
     }
-    /// Virtual corner for a fillet or a chamfer between two lines: the vanished vertex `pc` is held on the
-    /// extensions of both shortened edges (o1 to t1, o2 to t2) by `PointOnLine`, provided `pc` no longer belongs
-    /// to any entity.
+    /// THE POINT OF A CORNER THAT HAS BEEN TAKEN OFF: it stays, as the VIRTUAL SHARP on the extensions of both shortened
+    /// lines - drawn and picked like any point, so a dimension or a constraint can be measured to the corner at any time.
     ///
-    /// This keeps the dimensions and constraints on the corner valid while `pc` never reaches the contour. A
-    /// real vertex, still needed by a third edge, is left alone.
-    pub(super) fn keep_virtual_corner_lines(&mut self, si: usize, pc: Id, o1: Id, t1: Id, o2: Id, t2: Id) {
-        // a construction line ending at the corner - the diagonal of a rectangle - does not keep the corner a vertex of the
-        // contour; it holds on to the virtual sharp, below
-        let pc_still_used = self.sketches.get(si).is_some_and(|s| {
-            s.entities.iter().filter(|e| !e.construction).any(|e| match e.kind {
-                EntityKind::Line { a, b } => a == pc || b == pc,
-                EntityKind::Arc { center, a, b, .. } => center == pc || a == pc || b == pc,
-                EntityKind::Circle { center, .. } => center == pc,
-                EntityKind::Ellipse { c, ma, mi } => c == pc || ma == pc || mi == pc,
-            })
-        });
-        if pc_still_used {
-            return;
-        }
+    /// Where four lines met at the point and two of them have just been cut, the other two still end at it and the point
+    /// stays their vertex - and the two cut lines are tied to it all the same, as to any sharp.
+    pub(super) fn settle_the_corner_point(&mut self, si: usize, pc: Id, o1: Id, t1: Id, o2: Id, t2: Id) {
+        // THE TWO CUT LINES ARE TIED TO THE CORNER EVEN WHERE OTHER LINES STILL END AT IT. Skipped there, the first cut
+        // of a cross left its two lines on nothing: their constraints still named the point, the lines no longer did,
+        // and dragging the point swung them loose by 4 mm.
         self.carry_edge_constraints(si, pc, Some((o1, t1)), Some((o2, t2)));
-        // the vertex stays, as the virtual sharp on both extensions, only while a dimension or another constraint still
-        // stands on it
-        // a corner of a rectangle kept as one shape stays as its virtual sharp: its centre stands on the middle of the
-        // corners, and a move or a turn of the rectangle is told by them
-        let referenced = self.corner_still_held(si, pc);
+        // THE CORNER STAYS, ALWAYS, as the virtual sharp on the extensions of both shortened lines: drawn and picked, so a
+        // dimension or a constraint can be measured to it at any time, as in the professional systems. Kept only while
+        // something stood on it, a chamfer left its sharp and a fillet did not, and a rectangle's were hidden: three
+        // rules for one point.
         if let Some(s) = self.sketches.get_mut(si) {
-            if referenced {
-                s.constraints.push(Constraint::PointOnLine { p: pc, a: o1, b: t1 });
-                s.constraints.push(Constraint::PointOnLine { p: pc, a: o2, b: t2 });
-            } else {
-                s.points.retain(|p| p.id != pc); // nothing stands on the vanished vertex any more
-            }
+            s.constraints.push(Constraint::PointOnLine { p: pc, a: o1, b: t1 });
+            s.constraints.push(Constraint::PointOnLine { p: pc, a: o2, b: t2 });
         }
     }
-    /// IS THE VANISHED CORNER `pc` STILL HELD - by a constraint or a dimension on it, by a construction line ending at
-    /// it (the diagonal of a rectangle), or as a corner of a rectangle kept as one shape? Then it stays, as the virtual
-    /// sharp on the extensions of its sides.
-    fn corner_still_held(&self, si: usize, pc: Id) -> bool {
+    /// Whether any entity of the sketch stands on the point `pid` - an end of a line or an arc, a centre of one.
+    pub fn point_used_by_geometry(&self, si: usize, pid: Id) -> bool {
         self.sketches.get(si).is_some_and(|s| {
-            s.constraints.iter().any(|c| c.points().contains(&pc))
-                || s.entities.iter().any(|e| matches!(e.kind, EntityKind::Line { a, b } if a == pc || b == pc))
-                || s.rects.iter().any(|r| r.corners.contains(&pc))
+            s.entities.iter().any(|e| match e.kind {
+                EntityKind::Line { a, b } => a == pid || b == pid,
+                EntityKind::Arc { center, a, b, .. } => center == pid || a == pid || b == pid,
+                EntityKind::Circle { center, .. } => center == pid,
+                EntityKind::Ellipse { c, ma, mi } => c == pid || ma == pid || mi == pid,
+            }) || s.splines.iter().any(|sp| sp.points.contains(&pid))
         })
+    }
+    /// HOW MANY CONSTRAINTS STATE SOMETHING ABOUT THE POINT `pid` - a dimension measured to a corner above all.
+    pub fn constraints_on_point(&self, si: usize, pid: Id) -> usize {
+        self.sketches.get(si).map(|s| s.constraints.iter().filter(|c| constraint_point_ids(c).contains(&pid)).count()).unwrap_or(0)
     }
     /// Chamfer between two segments sharing a vertex, with setback `d`.
     pub fn chamfer_lines(&mut self, si: usize, e1: Id, e2: Id, legs: ChamferLegs) -> bool {
@@ -2400,21 +2530,43 @@ impl Project {
                 }
             }
             s.entities.push(SketchEntity { id: seg, kind: EntityKind::Line { a: t1, b: t2 }, construction: false });
-            // THE CHAMFER KEEPS ITS SIZE AS DIMENSIONS, measured from the sharp corner, so it can be changed afterwards and
-            // the cut follows: the first leg, then the second leg - equal to the first for equal legs - or the angle from
-            // the first line. Standing on the corner, they keep it as the virtual sharp below.
-            let leg = |a: Id, b: Id, d: f64| Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
-            s.constraints.push(leg(pc, t1, d1));
-            s.constraints.push(match legs.mode {
-                crate::feature::ChamferMode::Symmetric => Constraint::Equal { a: pc, b: t1, c: pc, d: t2 },
-                crate::feature::ChamferMode::TwoDist => leg(pc, t2, d2),
+            // THE CHAMFER KEEPS ITS SIZE AS DIMENSIONS, so it can be changed afterwards and the cut follows. A symmetric
+            // one is sized by the cut itself, between its two ends, and held symmetric by its legs kept equal; two legs,
+            // or a leg and the angle from the first line, are measured from the sharp corner. Whatever stands on the
+            // corner keeps it as the virtual sharp below.
+            // EVERY DIMENSION OF THE CHAMFER STANDS OUTSIDE THE SHAPE: the cut on the side of the sharp, a leg on the side
+            // of its line away from the cut. Written as they came, the dimension of a chamfer on one corner of a triangle
+            // dipped into the triangle, and one leg of two on a square stood inside it.
+            let (sharp, at1, at2) = (Point2::new(px, py), Point2::new(t1x, t1y), Point2::new(t2x, t2y));
+            let leg = |ends: [DimEnd; 2], side: Side, d: f64| {
+                let [a, b] = ends_facing(ends, side);
+                Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }
+            };
+            let (end_c, end_1, end_2) = (DimEnd { id: pc, at: sharp }, DimEnd { id: t1, at: at1 }, DimEnd { id: t2, at: at2 });
+            match legs.mode {
+                crate::feature::ChamferMode::Symmetric => {
+                    s.constraints.push(leg([end_1, end_2], Side::Toward(sharp), legs.first));
+                    s.constraints.push(Constraint::Equal { a: pc, b: t1, c: pc, d: t2 });
+                }
+                crate::feature::ChamferMode::TwoDist => {
+                    s.constraints.push(leg([end_c, end_1], Side::AwayFrom(at2), d1));
+                    s.constraints.push(leg([end_c, end_2], Side::AwayFrom(at1), d2));
+                }
                 // the angle between the first line, run towards the corner, and the cut: what a drawing of the chamfer gives
-                crate::feature::ChamferMode::DistAngle => Constraint::AngleLines { a: o1, b: t1, c: t1, d: t2, deg: legs.second, expr: String::new(), driven: false, off: 0.0, at: None },
-            });
+                crate::feature::ChamferMode::DistAngle => {
+                    s.constraints.push(leg([end_c, end_1], Side::AwayFrom(at2), d1));
+                    // THE ARC OF THE ANGLE STANDS PAST THE END OF THE CUT, 1.25 of its length out, both sides carried to it:
+                    // at the radius of every angle, 24 px, it was a tick tucked between the cut and the line
+                    let off = 1.25 * (t2x - t1x).hypot(t2y - t1y);
+                    s.constraints.push(Constraint::AngleLines { a: o1, b: t1, c: t1, d: t2, deg: legs.second, expr: String::new(), driven: false, off, at: None });
+                }
+            }
         }
         // Virtual corner: the vertex is held on the extensions of both lines, so dimensions to the corner stay
         // valid and the contour stays whole.
-        self.keep_virtual_corner_lines(si, pc, o1, t1, o2, t2);
+        self.settle_the_corner_point(si, pc, o1, t1, o2, t2);
+        // SOLVED, not only drawn: the legs and the angle are laid as dimensions above, and a chamfer of two legs or of a
+        // leg and an angle stands by them only once the sketch is solved
         self.solve_sketch(si);
         true
     }
@@ -2661,39 +2813,18 @@ impl Project {
         // never reaches a contour or a profile.
         //
         // `pc` is held against every support: a line by `PointOnLine` on its extension, an arc or circle by
-        // `PointOnCircle`. When `pc` is still needed by a third edge (three or more edges met at the corner) it
-        // is a real vertex already and is left alone.
-        // a construction line ending at the corner - the diagonal of a rectangle - does not keep it a vertex of the contour
-        let pc_still_used = self.sketches.get(si).is_some_and(|s| {
-            s.entities.iter().filter(|e| !e.construction).any(|e| match e.kind {
-                EntityKind::Line { a, b } => a == pc || b == pc,
-                EntityKind::Arc { center, a, b, .. } => center == pc || a == pc || b == pc,
-                EntityKind::Circle { center, .. } => center == pc,
-                EntityKind::Ellipse { c, ma, mi } => c == pc || ma == pc || mi == pc,
-            })
-        });
-        if !pc_still_used {
-            let side = |sup: &Sup, o: Id, t: Id| matches!(sup, Sup::Line { .. }).then_some((o, t));
-            self.carry_edge_constraints(si, pc, side(&s1c, o1, t1), side(&s2c, o2, t2));
-        }
-        // the vertex stays, as the virtual sharp on both supports, only while a dimension or another constraint stands on it
-        let referenced = self.corner_still_held(si, pc);
-        if !pc_still_used && !referenced {
-            // nothing stands on the vanished vertex any more: it goes, rather than stay a point of its own
-            if let Some(s) = self.sketches.get_mut(si) {
-                s.points.retain(|p| p.id != pc);
+        // `PointOnCircle` - also where a third edge still ends at it and it stays that edge's vertex: the two cut
+        // edges no longer end there, and untied they swing loose when the point is dragged.
+        let side = |sup: &Sup, o: Id, t: Id| matches!(sup, Sup::Line { .. }).then_some((o, t));
+        self.carry_edge_constraints(si, pc, side(&s1c, o1, t1), side(&s2c, o2, t2));
+        if let Some(s) = self.sketches.get_mut(si) {
+            match s1c {
+                Sup::Line { .. } => s.constraints.push(Constraint::PointOnLine { p: pc, a: o1, b: t1 }),
+                Sup::Circle { center, .. } => s.constraints.push(Constraint::PointOnCircle { p: pc, c: center }),
             }
-        }
-        if !pc_still_used && referenced {
-            if let Some(s) = self.sketches.get_mut(si) {
-                match s1c {
-                    Sup::Line { .. } => s.constraints.push(Constraint::PointOnLine { p: pc, a: o1, b: t1 }),
-                    Sup::Circle { center, .. } => s.constraints.push(Constraint::PointOnCircle { p: pc, c: center }),
-                }
-                match s2c {
-                    Sup::Line { .. } => s.constraints.push(Constraint::PointOnLine { p: pc, a: o2, b: t2 }),
-                    Sup::Circle { center, .. } => s.constraints.push(Constraint::PointOnCircle { p: pc, c: center }),
-                }
+            match s2c {
+                Sup::Line { .. } => s.constraints.push(Constraint::PointOnLine { p: pc, a: o2, b: t2 }),
+                Sup::Circle { center, .. } => s.constraints.push(Constraint::PointOnCircle { p: pc, c: center }),
             }
         }
         self.regen_sketch(si);
@@ -2734,31 +2865,311 @@ impl Project {
             .map(|e| e.id)
             .collect()
     }
+    /// WHETHER AN EDGE STANDS AT A POINT, which is `vertex_edges` asked the other way round.
+    ///
+    /// Which of the lines of a point were named by a hand and which were let in by the point itself is decided by
+    /// this: a line named by the hand takes its place among the lines of the point it arrives at.
+    /// THE TWO POINTS AN EDGE STANDS ON, which is what the pairing of the chosen lines walks along.
+    pub fn edge_ends(&self, si: usize, eid: Id) -> Option<(Id, Id)> {
+        self.edge_end_ids(si, eid)
+    }
+
+    pub fn edge_stands_at(&self, si: usize, eid: Id, pid: Id) -> bool {
+        self.edge_end_ids(si, eid).is_some_and(|(x, y)| x == pid || y == pid)
+    }
+    /// THE CORNER TWO EDGES SHARE: the point that is an end of both of them, when there is one.
+    ///
+    /// Two lines crossing without a point in common share no corner. That is the whole question the fillet and the
+    /// chamfer ask of a chosen pair, and it is asked here once rather than at each place a pair is chosen.
+    pub fn shared_vertex(&self, si: usize, e1: Id, e2: Id) -> Option<Id> {
+        let (Some((a1, b1)), Some((a2, b2))) = (self.edge_end_ids(si, e1), self.edge_end_ids(si, e2)) else { return None };
+        if a1 == a2 || a1 == b2 {
+            Some(a1)
+        } else if b1 == a2 || b1 == b2 {
+            Some(b1)
+        } else {
+            None
+        }
+    }
+    /// THE CORNER A NAMED PAIR OF EDGES MAKES: the point they meet at, where they make one.
+    ///
+    /// A shared point is not enough: two lines lying along ONE straight line through it share a vertex and no angle
+    /// at all - there is nothing to round between them and nothing to cut. That pair names no corner, and a pair that
+    /// names none is not an error: the search for a corner goes on with the second line as the first of the next pair.
+    pub fn corner_of_pair(&self, si: usize, e1: Id, e2: Id) -> Option<Id> {
+        let pid = self.shared_vertex(si, e1, e2)?;
+        let (pcx, pcy) = self.point_xy(si, pid)?;
+        let dir = |me: &Self, eid: Id| -> Option<(f64, f64)> {
+            let (a, b) = me.edge_end_ids(si, eid)?;
+            let other = if a == pid { b } else { a };
+            let (ox, oy) = me.point_xy(si, other)?;
+            let (dx, dy) = (ox - pcx, oy - pcy);
+            let l = (dx * dx + dy * dy).sqrt();
+            (l > 1e-9).then_some((dx / l, dy / l))
+        };
+        let (Some((x1, y1)), Some((x2, y2))) = (dir(self, e1), dir(self, e2)) else { return None };
+        // parallel means one straight line: the angle between them is 180 degrees, and there is no corner in it
+        ((x1 * y2 - y1 * x2).abs() > 1e-9).then_some(pid)
+    }
+    /// THE CORNERS A NAMED SET OF LINES MAKES: every pair of them that meets, two at a time, in the order they
+    /// were named.
+    ///
+    /// **WHERE TWO OF THEM MEET THERE IS ONE CORNER**, and one pair is that corner — three lines of a triangle make
+    /// three points and so three corners, which is the whole of a closed contour. A line that meets nothing of the
+    /// set makes none: a line named on its own is half of the next corner, waiting for whatever answers it.
+    ///
+    /// **WHERE MORE THAN TWO OF THEM STAND ON ONE POINT** — a cross of four lines, a T-joint — every pair of them is
+    /// a corner of that point, and taking all of them would round one place six times. So they are taken **as they
+    /// were named, two at a time**: the first with the second, the third with the fourth, and a line left over alone
+    /// stands there until another one is named beside it. That is what makes a third line joining a corner two lines
+    /// have already made add nothing, and a fourth beside it make a second corner.
+    ///
+    /// The order is the rule, so it is the order the lines were named in and not the order a map hands them back:
+    /// a set read off a hash would pair them by accident of the hashing, and the same drawing would round different
+    /// corners on a second run.
+    pub fn corners_of_lines(&self, si: usize, lines: &[Id]) -> Vec<(Id, Id)> {
+        // THE LINES AS THEY WERE NAMED, one line named twice being one line: a line standing twice at the same
+        // point would be paired with itself.
+        let mut set: Vec<Id> = Vec::new();
+        // a construction line is no side of a corner - the diagonal of a rectangle ends at its corners - so a picked one
+        // takes no part in the pairing
+        let construction = |me: &Self, l: Id| me.sketches.get(si).is_some_and(|s| s.entities.iter().any(|e| e.id == l && e.construction));
+        for &l in lines {
+            if !set.contains(&l) && !construction(self, l) {
+                set.push(l);
+            }
+        }
+        let here = |me: &Self, p: Id| -> Vec<usize> { (0..set.len()).filter(|&m| me.edge_end_ids(si, set[m]).is_some_and(|(x, y)| x == p || y == p)).collect() };
+        let mut out: Vec<(Id, Id)> = Vec::new();
+        let mut seen: Vec<Id> = Vec::new(); // the points already asked about, so a line asks about each of its ends once
+        for &l in &set {
+            let Some((x, y)) = self.edge_end_ids(si, l) else { continue };
+            for p in [x, y] {
+                if seen.contains(&p) {
+                    continue;
+                }
+                seen.push(p);
+                for two in here(self, p).chunks(2) {
+                    // A PAIR LYING ALONG ONE STRAIGHT LINE SHARES ITS POINT AND MAKES NO ANGLE: it is not a corner,
+                    // and naming it as one would offer a cut where there is nothing to cut.
+                    if let [m, n] = two {
+                        if self.corner_of_pair(si, set[*m], set[*n]).is_some() {
+                            out.push((set[*m], set[*n]));
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+    /// WHAT A CORNER WOULD LOOK LIKE IF THE VALUE WERE APPLIED: the point of the corner, where the two named
+    /// edges will be cut, and the arc that will stand between them — a chamfer is a straight cut and has none.
+    ///
+    /// Nothing is changed here. The edges keep their ends and the point of the corner stays where it is: this is
+    /// only what a person is shown before answering for it, drawn exactly as the operation will leave it — or not
+    /// drawn at all when the value does not fit the corner.
+    ///
+    /// `None` when the pair is not a corner, when the value is not one, or when it is too big for the corner.
+    pub fn corner_blend(&self, si: usize, pid: Id, (e1, e2): (Id, Id), cut: CornerCut) -> Option<CornerBlend> {
+        // THE PAIR MUST BE THE CORNER: two lines that meet nowhere, or that lie along one straight line, are not a
+        // corner and there is nothing to show where they are not.
+        if self.corner_of_pair(si, e1, e2) != Some(pid) {
+            return None;
+        }
+        let (pcx, pcy) = self.point_xy(si, pid)?;
+        // the direction away from the corner along each edge, and how long that edge is
+        let dir = |me: &Self, eid: Id| -> Option<(f64, f64, f64)> {
+            let (a, b) = me.edge_end_ids(si, eid)?;
+            let other = if a == pid { b } else { a };
+            let (ox, oy) = me.point_xy(si, other)?;
+            let (dx, dy) = (ox - pcx, oy - pcy);
+            let l = (dx * dx + dy * dy).sqrt();
+            (l > 1e-9).then_some((dx / l, dy / l, l))
+        };
+        let (Some((d1x, d1y, l1)), Some((d2x, d2y, l2))) = (dir(self, e1), dir(self, e2)) else { return None };
+        let shorter = l1.min(l2);
+        let theta = (d1x * d2x + d1y * d2y).clamp(-1.0, 1.0).acos();
+        let at = |dx: f64, dy: f64, d: f64| [pcx + dx * d, pcy + dy * d];
+        // THE MOST THE CORNER TAKES: a chamfer's legs short of the far end of each line, a radius whose touching points
+        // stand at r / tan(theta / 2) from the corner for a fillet. Past this there is nothing to show.
+        let value = match cut {
+            CornerCut::Chamfer(legs) => {
+                let (a, b) = legs.along(theta)?;
+                if a >= l1 * (1.0 - 1e-9) || b >= l2 * (1.0 - 1e-9) {
+                    return None;
+                }
+                return Some(CornerBlend { vertex: [pcx, pcy], ends: [at(d1x, d1y, a), at(d2x, d2y, b)], arc: None });
+            }
+            // the radius the size makes on this corner, whose arc turns through pi less the angle of its edges
+            CornerCut::Fillet(size) => size.radius_on(std::f64::consts::PI - theta)?,
+        };
+        let limit = shorter * (theta / 2.0).tan();
+        if value <= 1e-6 || !limit.is_finite() || value >= limit * (1.0 - 1e-9) {
+            return None;
+        }
+        let half = (theta / 2.0).max(1e-6);
+        let along = value / half.tan(); // where the arc touches each line
+        let (bx, by) = (d1x + d2x, d1y + d2y);
+        let bl = (bx * bx + by * by).sqrt();
+        if bl < 1e-9 {
+            return None;
+        }
+        let out = value / half.sin(); // the centre stands this far from the corner, along the bisector
+        Some(CornerBlend { vertex: [pcx, pcy], ends: [at(d1x, d1y, along), at(d2x, d2y, along)], arc: Some(([pcx + bx / bl * out, pcy + by / bl * out], value)) })
+    }
+    /// THE TWO EDGES OF THE CORNER AT `pid`, out of every edge that meets there.
+    ///
+    /// Where exactly two edges meet, they are the corner and nothing is asked. Where more of them meet - two squares
+    /// sharing a single point, four lines through it - there is a corner for every PAIR, and the pair is the two
+    /// edges that bracket the point `near` (the cursor, in the drawing's own coordinates): the angle the cursor is
+    /// standing in is the corner being pointed at. Without such a point (`None`) a vertex of more than two edges
+    /// names no corner: which of them is meant is not knowable from the geometry alone, and the caller that only
+    /// wants a bound asks `corner_limit`, which takes the tightest of them all.
+    pub fn vertex_pair(&self, si: usize, pid: Id, near: Option<(f64, f64)>) -> Option<(Id, Id)> {
+        let (pcx, pcy) = self.point_xy(si, pid)?;
+        // each edge that meets at the vertex, with its direction AWAY from it
+        let dirs: Vec<(Id, f64, f64)> = self
+            .vertex_edges(si, pid)
+            .into_iter()
+            .filter_map(|eid| {
+                let (a, b) = self.edge_end_ids(si, eid)?;
+                let other = if a == pid { b } else { a };
+                let (ox, oy) = self.point_xy(si, other)?;
+                let (dx, dy) = (ox - pcx, oy - pcy);
+                let l = (dx * dx + dy * dy).sqrt();
+                (l > 1e-9).then_some((eid, dx / l, dy / l))
+            })
+            .collect();
+        if dirs.len() < 2 {
+            return None;
+        }
+        if dirs.len() == 2 {
+            return self.corner_of_pair(si, dirs[0].0, dirs[1].0).map(|_| (dirs[0].0, dirs[1].0));
+        }
+        let (nx, ny) = near?;
+        let (tx, ty) = (nx - pcx, ny - pcy);
+        if (tx * tx + ty * ty).sqrt() < 1e-9 {
+            return None; // the cursor stands ON the vertex: no side of it to read
+        }
+        // sorted by the angle of the direction; the pair that brackets the cursor is the one before it and the
+        // one after it, round the circle
+        let mut v: Vec<(Id, f64)> = dirs.iter().map(|(id, ux, uy)| (*id, uy.atan2(*ux))).collect();
+        v.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let at = v.partition_point(|(_, a)| *a <= ty.atan2(tx)) % v.len();
+        let pair = (v[(at + v.len() - 1) % v.len()].0, v[at].0);
+        // the two sides bracketing the cursor are a corner unless they lie along one straight line
+        self.corner_of_pair(si, pair.0, pair.1).map(|_| pair)
+    }
+    /// THE CORNER OF ONE NAMED EDGE AT `pid`, on the side the point `near` stands.
+    ///
+    /// Where several edges meet at one point every pair of them is a corner, and `vertex_pair` lets the cursor say
+    /// which. Where the corner has been named by an edge AND the point together there are fewer corners to say it
+    /// about - only the ones this edge takes part in - and the cursor says which of them by the sector it stands in:
+    /// the two corners of an edge are the two sectors either side of it.
+    ///
+    /// Without a point to read (`near` is `None` - the pointer is not over the sheet, which happens while the value
+    /// is being typed) the neighbour after it stands. The drawing has to begin somewhere, and a corner is as good a
+    /// beginning as any; refusing outright would leave a field open with nothing behind it.
+    pub fn vertex_pair_through(&self, si: usize, pid: Id, eid: Id, near: Option<(f64, f64)>) -> Option<(Id, Id)> {
+        let (pcx, pcy) = self.point_xy(si, pid)?;
+        // every edge at the point with the angle of its direction away from it, in the turn of the circle
+        let mut v: Vec<(Id, f64)> = self
+            .vertex_edges(si, pid)
+            .into_iter()
+            .filter_map(|e| {
+                let (a, b) = self.edge_end_ids(si, e)?;
+                let other = if a == pid { b } else { a };
+                let (ox, oy) = self.point_xy(si, other)?;
+                let (dx, dy) = (ox - pcx, oy - pcy);
+                let l = (dx * dx + dy * dy).sqrt();
+                (l > 1e-9).then_some((e, dy.atan2(dx)))
+            })
+            .collect();
+        if v.len() < 2 {
+            return None; // one edge at the point is not a corner of anything
+        }
+        v.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let at = v.iter().position(|(id, _)| *id == eid)?;
+        let len = v.len();
+        // THE TWO SECTORS THIS EDGE BOUNDS, one on either side of it in the turn of the circle, each measured as the
+        // turn from the edge named so that neither breaks where the angles run out
+        let a0 = v[at].1;
+        let up = {
+            let x = v[(at + 1) % len].1;
+            if x > a0 {
+                x - a0
+            } else {
+                x + std::f64::consts::TAU - a0
+            }
+        };
+        let down = {
+            let x = v[(at + len - 1) % len].1;
+            if x < a0 {
+                a0 - x
+            } else {
+                a0 + std::f64::consts::TAU - x
+            }
+        };
+        // THE SECTOR THE CURSOR STANDS IN, and where it stands in neither, the one it is nearer the middle of - the
+        // pointer may be in a sector that belongs to two other edges altogether. The two are equally far apart when
+        // the cursor is opposite the edge named, and the one after it in the turn of the circle stands then.
+        let forward = near.is_none_or(|(nx, ny)| {
+            let mut d = (ny - pcy).atan2(nx - pcx) - a0;
+            if d < 0.0 {
+                d += std::f64::consts::TAU;
+            }
+            (d - up / 2.0).abs() <= (d - (std::f64::consts::TAU - down / 2.0)).abs()
+        });
+        let other = if forward { v[(at + 1) % len].0 } else { v[(at + len - 1) % len].0 };
+        let pair = (eid, other);
+        self.corner_of_pair(si, pair.0, pair.1).map(|_| pair)
+    }
+    /// EVERY PAIR OF EDGES THAT COULD BE THE CORNER at `pid`, for the bounds that do not name a pair.
+    pub fn vertex_pairs(&self, si: usize, pid: Id) -> Vec<(Id, Id)> {
+        let edges = self.vertex_edges(si, pid);
+        let mut out = Vec::new();
+        for i in 0..edges.len() {
+            for j in (i + 1)..edges.len() {
+                out.push((edges[i], edges[j]));
+            }
+        }
+        out
+    }
     /// Chamfer the corner at vertex `pid`, where exactly two lines meet. Returns whether it succeeded.
     ///
     /// THE FIRST LINE is the one `toward` stands nearer to - the side of the corner that was clicked: the first leg is
     /// laid along it, and for a leg and an angle the angle is measured from it. With no point given, the line drawn
     /// first.
     pub fn chamfer_at_vertex(&mut self, si: usize, pid: Id, legs: ChamferLegs, toward: Option<Point2>) -> bool {
-        let edges = self.vertex_edges(si, pid);
-        if edges.len() != 2 {
-            return false;
+        let Some(pair) = self.vertex_pair(si, pid, None) else { return false };
+        self.chamfer_lines_of_pair(si, pair, legs, toward)
+    }
+    /// Chamfer the corner at `pid` that the point `(x, y)` stands in, where more than two edges meet there.
+    pub fn chamfer_at_vertex_near(&mut self, si: usize, pid: Id, legs: ChamferLegs, x: f64, y: f64, toward: Option<Point2>) -> bool {
+        let Some(pair) = self.vertex_pair(si, pid, Some((x, y))) else { return false };
+        self.chamfer_lines_of_pair(si, pair, legs, toward)
+    }
+    /// The cut of `legs` off the corner the two named edges make, both of them straight: the chamfer of a sketch is a
+    /// straight cut, and an arc in the pair is refused rather than cut as if it were a line.
+    pub fn chamfer_lines_of_pair(&mut self, si: usize, (e1, e2): (Id, Id), legs: ChamferLegs, toward: Option<Point2>) -> bool {
+        if self.corner_of_pair(si, e1, e2).is_none() {
+            return false; // two lines in one straight line: nothing is cut, and the cut would be along them
         }
-        // A chamfer is a straight cut between two lines.
-        let both_lines = edges.iter().all(|&eid| matches!(self.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).map(|e| e.kind), Some(EntityKind::Line { .. })));
+        let both_lines = [e1, e2].iter().all(|&eid| matches!(self.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).map(|e| e.kind), Some(EntityKind::Line { .. })));
         if !both_lines {
             return false;
         }
         // the line whose direction from the corner leans nearer to the click is the first
-        let lean = |eid: Id| -> f64 {
+        let lean = |me: &Self, eid: Id| -> f64 {
             let Some(toward) = toward else { return 0.0 };
-            let (Some((a, b)), Some((px, py))) = (self.line_ends(si, eid), self.point_xy(si, pid)) else { return f64::MAX };
-            let far = if a == pid { b } else { a };
-            let Some((fx, fy)) = self.point_xy(si, far) else { return f64::MAX };
+            let Some(shared) = me.corner_of_pair(si, e1, e2) else { return f64::MAX };
+            let (Some((a, b)), Some((px, py))) = (me.line_ends(si, eid), me.point_xy(si, shared)) else { return f64::MAX };
+            let far = if a == shared { b } else { a };
+            let Some((fx, fy)) = me.point_xy(si, far) else { return f64::MAX };
             let (ux, uy, vx, vy) = (fx - px, fy - py, toward.x - px, toward.y - py);
             -(ux * vx + uy * vy) / (ux.hypot(uy) * vx.hypot(vy)).max(1e-12)
         };
-        let (first, second) = if lean(edges[1]) < lean(edges[0]) { (edges[1], edges[0]) } else { (edges[0], edges[1]) };
+        let (first, second) = if lean(self, e2) < lean(self, e1) { (e2, e1) } else { (e1, e2) };
         self.chamfer_lines(si, first, second, legs)
     }
     /// Connected shape: every entity reachable from `eid` through shared endpoints — a rectangle from one of
@@ -2944,7 +3355,7 @@ impl Project {
             crate::model::DimTarget::Feature { node, key } => {
                 if let Some(e) = self.feat_dim(*node, key) {
                     if !e.trim().is_empty() {
-                        let vars: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.to_lowercase(), p.value)).collect();
+                        let vars: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.clone(), p.value)).collect();
                         return crate::expr::eval(e, &vars).ok();
                     }
                 }
@@ -3044,11 +3455,13 @@ impl Project {
                 (q.x, q.y) = (m.at.x, m.at.y);
             }
         }
-        // A RECTANGLE DRAGGED BY ITS CENTRE GOES WITH IT AS A WHOLE, as a circle goes with its centre: its corners are
-        // carried by the move of the centre before the solve. Left where they stood, the drag pulled the centre alone,
-        // the middle of the diagonal pulled it back by the two corners on it, and the rectangle hardly moved.
+        // A SHAPE DRAGGED BY ITS CENTRE GOES WITH IT AS A WHOLE, as a circle goes with its centre: what the centre
+        // carries (`Sketch::carried_with` - the corners of a rectangle, the ends of an arc, a slot, the axis ends of an
+        // ellipse) is moved by the move of the centre before the solve. Left where they stood, the drag pulled the
+        // centre alone: the middle of a rectangle's diagonal pulled it back by the two corners on it, and an ellipse
+        // turned and changed shape about its axis ends.
         if let Some((d, tx, ty)) = drag {
-            let carried: Vec<Id> = s.rects.iter().filter(|r| r.centre == d).flat_map(|r| r.corners).collect();
+            let carried: Vec<Id> = s.carried_with(d);
             if let Some((cx, cy)) = s.points.iter().find(|q| q.id == d).map(|q| (q.x, q.y)) {
                 if !carried.is_empty() {
                     let held = s.held_points();
@@ -3857,6 +4270,13 @@ impl Project {
     /// Add an arc entity (centre, start, end, direction).
     pub fn add_arc_entity(&mut self, si: usize, c: crate::geom::Point2, a: crate::geom::Point2, b: crate::geom::Point2, winding: crate::feature::Winding, purpose: crate::feature::Purpose) {
         let ((cx, cy), (ax, ay), (bx, by)) = ((c.x, c.y), (a.x, a.y), (b.x, b.y));
+        // THE END LANDS ON THE ARC: the point given for it says which way the arc runs to, and the end stands on the
+        // circle of the start's radius in that direction. Laid where it was clicked, the end of an arc drawn by its centre
+        // stood inside or outside the arc, away from its end (a third click at (0, 50) of an arc from (100, 0) about the
+        // origin left it at (0, 50), where the arc ends at (0, 100)).
+        let (r, (dx, dy)) = ((ax - cx).hypot(ay - cy), (bx - cx, by - cy));
+        let d = dx.hypot(dy);
+        let (bx, by) = if r > 1e-12 && d > 1e-12 { (cx + dx / d * r, cy + dy / d * r) } else { (bx, by) };
         let construction = purpose == crate::feature::Purpose::Construction;
         let ccw = winding == crate::feature::Winding::Ccw;
         let center = self.radius_center_at(si, cx, cy); // Its own centre node (see `radius_center_at`).
@@ -4655,14 +5075,103 @@ fn seam_cleaned(loop_: &[Point2]) -> Vec<Point2> {
     out
 }
 
+/// THE HORIZONTAL AND VERTICAL DIMENSIONS THAT MEASURE A WHOLE SIDE: a `Distance` along an axis (1 or 2) between two
+/// points that both turn (`turns`), the two standing on that axis's line, so the measure along the axis is the whole
+/// length between them. Answers their indices. A dimension of the projection of a slanted line is not among them: along
+/// the line it would say another number.
+pub(crate) fn axis_dims_of_whole_sides(s: &crate::model::Sketch, turns: &dyn Fn(Id) -> bool) -> Vec<usize> {
+    let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    s.constraints
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| match *c {
+            Constraint::Distance { a, b, axis: axis @ (1 | 2), .. } if turns(a) && turns(b) => {
+                let ((ax, ay), (bx, by)) = (at(a)?, at(b)?);
+                let (len, across) = ((bx - ax).hypot(by - ay), if axis == 1 { (by - ay).abs() } else { (bx - ax).abs() });
+                (len > 1e-9 && across <= 1e-6 * len).then_some(i)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// THE DIMENSIONS `dims` TURNED BY `deg` WITH THEIR SIDES, LAID ALONG THEM: a horizontal or vertical dimension of a
+/// side becomes one along the side (axis 0), on the side of it it stood, as far from it - its offset turned with the
+/// side and read across the side as it stands now. Left horizontal and vertical, the dimensions of a rectangle turned by
+/// 30 deg stayed on the axes where they stood, measuring along them rather than along the sides.
+pub(crate) fn lay_along_their_sides(s: &mut crate::model::Sketch, dims: &[usize], deg: f64) {
+    let (sn, cs) = (deg.to_radians().sin(), deg.to_radians().cos());
+    let at = |s: &crate::model::Sketch, id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    for &i in dims {
+        let Some(Constraint::Distance { a, b, axis, off, .. }) = s.constraints.get(i).cloned() else { continue };
+        let (Some((ax, ay)), Some((bx, by))) = (at(s, a), at(s, b)) else { continue };
+        // where the dimension stood off its side, in the world: down the screen is -y for a horizontal one, right +x for a
+        // vertical one; turned with the side
+        let (vx, vy) = if axis == 1 { (0.0, -off) } else { (off, 0.0) };
+        let (vx, vy) = (vx * cs - vy * sn, vx * sn + vy * cs);
+        // a dimension along its line stands off it along the world normal (dy, -dx) of its first end looking at its second
+        let (dx, dy) = (bx - ax, by - ay);
+        let len = dx.hypot(dy);
+        if len < 1e-9 {
+            continue;
+        }
+        if let Some(Constraint::Distance { axis, off, .. }) = s.constraints.get_mut(i) {
+            *axis = 0;
+            *off = (vx * dy - vy * dx) / len;
+        }
+    }
+}
+
+/// ONE END OF A LINEAR DIMENSION: its point and where the point stands.
+#[derive(Clone, Copy)]
+pub(crate) struct DimEnd {
+    pub(crate) id: Id,
+    pub(crate) at: Point2,
+}
+
+/// WHICH SIDE OF ITS TWO ENDS A LINEAR DIMENSION IS TO STAND ON: the side of a point, or the side away from one.
+#[derive(Clone, Copy)]
+pub(crate) enum Side {
+    Toward(Point2),
+    AwayFrom(Point2),
+}
+
+/// THE ORDER OF THE TWO ENDS OF A LINEAR DIMENSION THAT PUTS IT ON `side`: a linear dimension is drawn off to the left of
+/// its first end looking at the second, on screen - the world normal (dy, -dx) - so the order is the side.
+pub(crate) fn ends_facing([a, b]: [DimEnd; 2], side: Side) -> [Id; 2] {
+    let (dx, dy) = (b.at.x - a.at.x, b.at.y - a.at.y);
+    let (mx, my) = ((a.at.x + b.at.x) / 2.0, (a.at.y + b.at.y) / 2.0);
+    let (q, toward) = match side {
+        Side::Toward(q) => (q, true),
+        Side::AwayFrom(q) => (q, false),
+    };
+    let on_normal = dy * (q.x - mx) - dx * (q.y - my) > 0.0;
+    if on_normal == toward {
+        [a.id, b.id]
+    } else {
+        [b.id, a.id]
+    }
+}
+
+/// WHERE THE RADIUS OF A FILLET IS LED: from the centre out through its arc, a quarter of the arc off its middle towards
+/// the more level of its two ends. Its text stands on a level shelf past the arc, and led through the middle it stood
+/// over the sharp of the corner, which lies on the same bisector 0.41 r past the arc of a square corner. The answer is
+/// an angle on the screen, where y runs down: the angle of the world direction (x, y) is atan2(-y, x). Taken as
+/// atan2(y, -x) it pointed the other way, from the centre into the shape.
 fn fillet_label_angle(points: &[SketchPoint], cen: Id, t1: Id, t2: Id) -> f64 {
     let get = |id: Id| points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
     let (Some(c), Some(a), Some(b)) = (get(cen), get(t1), get(t2)) else { return 0.0 };
-    let (dx, dy) = ((a.0 - c.0) + (b.0 - c.0), (a.1 - c.1) + (b.1 - c.1));
-    if dx.hypot(dy) < 1e-9 {
+    let unit = |(x, y): (f64, f64)| {
+        let l = x.hypot(y);
+        (l > 1e-12).then(|| (x / l, y / l))
+    };
+    let (Some(ua), Some(ub)) = (unit((a.0 - c.0, a.1 - c.1)), unit((b.0 - c.0, b.1 - c.1))) else { return 0.0 };
+    let Some(mid) = unit((ua.0 + ub.0, ua.1 + ub.1)) else {
         return 0.0; // The tangency points are diametrically opposite, so there is no bisector.
-    }
-    dy.atan2(-dx)
+    };
+    let level = if ua.0.abs() >= ub.0.abs() { ua } else { ub };
+    let (x, y) = unit((mid.0 + level.0, mid.1 + level.1)).unwrap_or(mid);
+    (-y).atan2(x)
 }
 
 /// A CIRCLE OR AN ARC READ AS ONE THING: the centre, the radius, and for an arc the angular range.

@@ -126,6 +126,35 @@ pub fn nearest_vertex(pick: &PickCtx, rect: Rect, pos: Pos2, si: usize) -> Optio
     nearest_sketch_point(pick, rect, pos, si)
 }
 
+/// THE SAME POINT, WITH A WIDER REACH: the zone in which a click names a corner at that point rather than a line.
+///
+/// The reach of a pick of a point is right for PICKING a point and wrong for CONFIRMING a corner - a person aims
+/// at a point rather than at a spot inside a disc a shade wider than the dot, so the corner tools ask for the
+/// zone and the picks keep their own tolerance. One door: the rule about the frame of reference (the anchor and
+/// the guides are never handed out, and the origin yields to the person's own point in the same place) belongs
+/// to the point, not to the tolerance, so it is read from `nearest_sketch_point` rather than written out again.
+pub fn nearest_point_within(pick: &PickCtx, rect: Rect, pos: Pos2, si: usize, reach: f32) -> Option<Id> {
+    let s = pick.project.sketches.get(si)?;
+    let sh = qymcad_ui_state::Sheet { view: *pick.view, rect };
+    let is = |sys: Id, id: Id| sys != 0 && sys == id;
+    let mut best: Option<(f32, Id)> = None;
+    let mut best_origin: Option<(f32, Id)> = None;
+    for p in &s.points {
+        if is(s.frame, p.id) || s.axis_pts.iter().any(|g| is(*g, p.id)) {
+            continue; // the anchor and the guides are the frame, not the drawing
+        }
+        let d = sh.at(Point2::new(p.x, p.y)).distance(pos);
+        if d > reach {
+            continue;
+        }
+        let slot = if is(s.origin, p.id) { &mut best_origin } else { &mut best };
+        if slot.is_none_or(|(bd, _)| d < bd) {
+            *slot = Some((d, p.id));
+        }
+    }
+    best.or(best_origin).map(|(_, id)| id)
+}
+
 /// The nearest line entity -> the Id of the entity (for trimming).
 pub fn nearest_line_eid(pick: &PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<Id> {
     let sh = qymcad_ui_state::Sheet { view: *pick.view, rect };
@@ -280,12 +309,31 @@ pub fn nearest_equal_line(project: &Project, si: usize, p1: Point2, p2: Point2, 
     best.map(|(_, v)| v)
 }
 
-/// The ends of the nearest NON-axis line almost parallel to the segment p1-p2 (for the automatic
-/// parallel constraint).
+/// The ends of the NON-axis line of the segment's own shape most nearly parallel to the segment p1-p2 (for the
+/// automatic parallel constraint).
+///
+/// ONLY A LINE OF THE SAME SHAPE: one joined to the segment through a chain of shared points, the segment's ends found
+/// by their ids `ea`, `eb` or, in the preview where it has none yet, by where they stand. Any non-axis line of the
+/// sketch within 3.4 deg used to be taken wherever it stood, and a second triangle drawn beside the first was tied to it
+/// by three Parallels - an edit of one moved the other.
 pub fn nearest_parallel_line(project: &Project, si: usize, p1: Point2, p2: Point2, ea: Id, eb: Id) -> Option<(Id, Id)> {
     use qymcad_core::model::EntityKind;
     let s = project.sketches.get(si)?;
     let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let at_end = |q: &qymcad_core::model::SketchPoint| [p1, p2].iter().any(|p| (q.x - p.x).abs() < 1e-4 && (q.y - p.y).abs() < 1e-4);
+    let mut shape: std::collections::HashSet<Id> = s.points.iter().filter(|q| q.id == ea || q.id == eb || at_end(q)).map(|q| q.id).collect();
+    loop {
+        let before = shape.len();
+        for e in &s.entities {
+            let ends = qymcad_core::model::entity_points(e);
+            if ends.iter().any(|p| shape.contains(p)) {
+                shape.extend(ends);
+            }
+        }
+        if shape.len() == before {
+            break;
+        }
+    }
     let (vx, vy) = (p2.x - p1.x, p2.y - p1.y);
     let lv = (vx * vx + vy * vy).sqrt();
     if lv < 1e-6 {
@@ -296,6 +344,9 @@ pub fn nearest_parallel_line(project: &Project, si: usize, p1: Point2, p2: Point
         let EntityKind::Line { a, b } = e.kind else { continue };
         if (a == ea && b == eb) || (a == eb && b == ea) {
             continue;
+        }
+        if !shape.contains(&a) && !shape.contains(&b) {
+            continue; // a line of another shape
         }
         let (Some(pa), Some(pb)) = (pt(a), pt(b)) else { continue };
         let (ux, uy) = (pb.x - pa.x, pb.y - pa.y);
@@ -1524,7 +1575,8 @@ pub fn constraint_glyphs(pick: &PickCtx, rect: Rect, si: usize) -> Vec<(usize, P
         }
     };
     let mut push = |out: &mut Vec<(usize, Pos2, Gly)>, ci: usize, p: Option<Pos2>, g: Gly| place(out, &mut seen, ci, p, g);
-    for (ci, c) in s.constraints.iter().enumerate() {
+    let holders = s.corner_holders(); // a cut corner's own constraints show no badge: the corner holds itself by them
+    for (ci, c) in s.constraints.iter().enumerate().filter(|(ci, _)| !holders.contains(ci)) {
         match *c {
             Constraint::Horizontal { a, b } => push(&mut out, ci, mid(a, b), Gly::Horiz),
             Constraint::Vertical { a, b } => push(&mut out, ci, mid(a, b), Gly::Vert),

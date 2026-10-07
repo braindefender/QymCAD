@@ -63,6 +63,10 @@ LEVELS = {
     "release": [
         BUILDS,
         ("every crate's own checks", ["cargo", "test", "--workspace", "--exclude", "qymcad-acceptance", "--no-fail-fast"], {}),
+        # EVERY LANGUAGE WHOLE: a string missing in a language falls back to English, so the checks of every change pass
+        # with English alone and a contributor is asked for no language they do not know; before a release each
+        # language must hold every key of the reference
+        ("every language is whole", ["cargo", "test", "-p", "qymcad-i18n", "--test", "every_language_is_complete_for_a_release"], {"QYMCAD_TIER": "release"}),
         ORACLES,
         # the long chains: six of 150 steps a slot - see `chains::Tier`
         ("every acceptance probe", ACCEPTANCE, {"QYMCAD_TIER": "release"}),

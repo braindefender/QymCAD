@@ -71,6 +71,10 @@ def dim(text: str) -> str:
 
 
 PLACEHOLDER_RE = re.compile(r"\{\s*\$([a-zA-Z0-9_-]+)\s*\}")
+# A message of Fluent: its id, `=`, and its value on the same line or starting on the next ("key =" alone). Matched
+# by " = " instead, a message whose value starts on the next line was not seen, and its lines went to the message
+# before it: `par-name-taken` was missing from English and "extra" in the language that wrote it on one line.
+MESSAGE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)\s*=(.*)$")
 
 
 def parse_ftl(path: Path) -> dict:
@@ -100,7 +104,7 @@ def parse_ftl(path: Path) -> dict:
             if line.startswith((" ", "\t")):
                 if cur_key is not None:
                     cur_val.append(trimmed)
-            elif " = " in line and not line.startswith("-"):
+            elif MESSAGE_RE.match(line):
                 if cur_key is not None:
                     val_str = " ".join(cur_val)
                     entries[cur_key] = {
@@ -111,9 +115,9 @@ def parse_ftl(path: Path) -> dict:
                     }
                     comments = []
 
-                parts = line.split(" = ", 1)
-                cur_key = parts[0].strip()
-                cur_val = [parts[1].strip()]
+                m = MESSAGE_RE.match(line)
+                cur_key = m.group(1)
+                cur_val = [m.group(2).strip()] if m.group(2).strip() else []
                 cur_line = line_no
 
     if cur_key is not None:

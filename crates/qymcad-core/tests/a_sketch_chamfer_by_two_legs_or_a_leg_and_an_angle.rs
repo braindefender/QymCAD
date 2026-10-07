@@ -1,6 +1,7 @@
-//! A SKETCH CHAMFER IS GIVEN AS A PART'S IS: equal legs, two legs, or a leg and an angle - the first leg along the line
-//! the corner was clicked nearer to - and it keeps its size as dimensions from the sharp corner, so a dimension changed
-//! afterwards moves the cut. A size the corner cannot take is refused.
+//! A SKETCH CHAMFER IS GIVEN THREE WAYS: by the length of a symmetric cut, by two legs, or by a leg and an angle - the
+//! first leg along the line the corner was clicked nearer to. It keeps its size as dimensions - the cut on its two ends,
+//! the legs from the sharp corner - so a dimension changed afterwards moves the cut. A size the corner cannot take is
+//! refused.
 //!
 //! Reported (issue #35): the sketch chamfer took one distance only; a chamfer of 5 x 3, or of 5 at 30 deg, had to be built
 //! by hand from lines and dimensions.
@@ -57,18 +58,19 @@ fn a_chamfer_by_two_legs_or_a_leg_and_an_angle() {
     let mut sins = Vec::new();
     let two = |first: f64, second: f64| ChamferLegs { mode: ChamferMode::TwoDist, first, second };
 
-    // equal legs of 5; the first leg's dimension changed to 7 keeps them equal
+    // a symmetric cut of 5 on a square corner: legs of 5 / sqrt(2); its dimension changed to 7 keeps it symmetric
+    let leg = |cut: f64| cut / std::f64::consts::SQRT_2;
     match chamfered(ChamferLegs::equal(5.0), true) {
         Some((mut p, si)) => {
-            if !has_point(&p, si, 5.0, 0.0) || !has_point(&p, si, 0.0, 5.0) {
-                sins.push("equal legs of 5 do not cut 5 from both lines".to_string());
+            if !has_point(&p, si, leg(5.0), 0.0) || !has_point(&p, si, 0.0, leg(5.0)) {
+                sins.push(format!("a symmetric cut of 5 does not cut {:.4} from both lines", leg(5.0)));
             }
             set_dim(&mut p, si, 0, 7.0);
-            if !has_point(&p, si, 7.0, 0.0) || !has_point(&p, si, 0.0, 7.0) {
-                sins.push("equal legs: the dimension changed to 7 did not move both ends to 7".to_string());
+            if !has_point(&p, si, leg(7.0), 0.0) || !has_point(&p, si, 0.0, leg(7.0)) {
+                sins.push(format!("a symmetric cut: the dimension changed to 7 did not move both ends to {:.4}", leg(7.0)));
             }
         }
-        None => sins.push("equal legs of 5 refused".to_string()),
+        None => sins.push("a symmetric cut of 5 refused".to_string()),
     }
 
     // two legs, 5 along the line clicked nearer to and 3 along the other; the second changed to 4 moves its end

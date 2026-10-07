@@ -113,7 +113,7 @@ impl Project {
         if nm.is_empty() {
             return None;
         }
-        self.drivers().into_iter().find(|d| d.name.eq_ignore_ascii_case(nm))
+        self.drivers().into_iter().find(|d| d.name == nm)
     }
 
     /// Rename a driver and update the references that follow it.
@@ -133,17 +133,17 @@ impl Project {
             return Ok(0);
         }
         check_ident(&new).map_err(RenameError::Bad)?;
-        // Taken by somebody else. Changing the case of one's own name, `len` to `Len`, is not a conflict.
-        if self.name_owner(&new).is_some() && !new.eq_ignore_ascii_case(&old) {
+        // Taken by somebody else. `len` to `Len` is a rename to another name, free unless `Len` is held.
+        if self.name_owner(&new).is_some() {
             return Err(RenameError::Taken);
         }
 
         let mut found = false;
-        for p in self.parameters.iter_mut().filter(|p| p.name.eq_ignore_ascii_case(&old)) {
+        for p in self.parameters.iter_mut().filter(|p| p.name == old) {
             p.name = new.clone();
             found = true;
         }
-        for nd in self.named_dims.iter_mut().filter(|n| n.name.eq_ignore_ascii_case(&old)) {
+        for nd in self.named_dims.iter_mut().filter(|n| n.name == old) {
             nd.name = new.clone();
             found = true;
         }
@@ -250,12 +250,12 @@ impl Project {
     pub fn drivers(&self) -> Vec<DriverRef> {
         let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for p in self.parameters.iter().filter(|p| !p.name.is_empty()) {
-            *seen.entry(p.name.to_lowercase()).or_insert(0) += 1;
+            *seen.entry(p.name.clone()).or_insert(0) += 1;
         }
         for nd in self.named_dims.iter().filter(|n| !n.name.is_empty()) {
-            *seen.entry(nd.name.to_lowercase()).or_insert(0) += 1;
+            *seen.entry(nd.name.clone()).or_insert(0) += 1;
         }
-        let dup = |name: &str| seen.get(&name.to_lowercase()).copied().unwrap_or(0) > 1;
+        let dup = |name: &str| seen.get(name).copied().unwrap_or(0) > 1;
 
         let mut out: Vec<DriverRef> = self
             .parameters

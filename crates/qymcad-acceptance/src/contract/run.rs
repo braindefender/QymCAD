@@ -331,6 +331,21 @@ fn finish_with(s: &mut Session, tool: &Tool, field: &Field, text: &str) {
     }
 }
 
+/// THE WORDS DRAWN IN THE BOX A FIELD STANDS IN, below the field itself: what the box says about the value in it.
+///
+/// The search is bounded on purpose. Everything under the field on the sheet is not the box - the status line and the
+/// coordinates stand there too - so only the words that lie within a hand's width below the field and no higher than
+/// it are taken, and the field's own text is left out because the value is not a reason.
+fn words_in_the_box(s: &mut Session, field: &qymcad::Widget) -> Vec<String> {
+    let below = field.rect.max.y;
+    let limit = below + 40.0;
+    s.painted()
+        .into_iter()
+        .filter(|(r, text)| !text.is_empty() && r.min.y >= below - 2.0 && r.max.y <= limit && r.max.x >= field.rect.min.x - 40.0 && !text.trim().eq_ignore_ascii_case(field.value.trim()))
+        .map(|(_, text)| text)
+        .collect()
+}
+
 /// WHERE THE FIELD `f` STANDS on screen.
 fn field_of(s: &mut Session, f: &Field) -> qymcad::Widget {
     field_if_there(s, f).unwrap_or_else(|| panic!("no field shows or stands under {:?}", s.word(f.caption)))
@@ -1192,7 +1207,13 @@ fn invalid_values(tool: &Tool) {
             let field = field_of(&mut s, f);
             let apply = s.word("cmd-apply-enter");
             let apply_enabled = s.widgets().iter().any(|w| w.label == apply && w.enabled);
-            let reason = s.hint_at(pos2(field.rect.max.x + 10.0, field.rect.center().y));
+            // WHY THE VALUE IS REFUSED IS READ WHERE A PERSON READS IT: the words drawn in the box beside the field, and the
+            // hint that comes up over the mark next to it. The box was not read at all: a reason said only as a tooltip
+            // exists while the pointer rests on the glyph beside it, and a person reading back what they typed has
+            // their eyes on the field, not on a mark they have to find first - so the words stand in the box, and a
+            // check that looked for a tooltip and found none reported a tool that says nothing.
+            let mut reason = words_in_the_box(&mut s, &field);
+            reason.extend(s.hint_at(pos2(field.rect.max.x + 10.0, field.rect.center().y)));
             if f.when == When::Before {
                 finish(&mut s, tool);
             } else {

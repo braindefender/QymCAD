@@ -281,9 +281,14 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
     use qymcad_core::feature::FeatureKind;
     let Some(node) = project.timeline.get(ti) else { return String::new() };
     let kind = node.kind.clone();
+    // THE SIZES THE REBUILD USED. A size given by a formula is counted from it; the number kept in the node is what
+    // was typed last and does not follow a parameter. Reported behaviour: a parameter h changed from 20 to 40, the
+    // body was 40 high and the row still said h=20.0.
+    let vars = project.param_map();
+    let at = |key: &str, stored: f64| project.feat_dim_value(node.id, key, stored, &vars);
     let mut lbl = match kind {
-        FeatureKind::Extrude { height, .. } => format!("{} {}", ph::CUBE, crate::i18n::tr1("feat-extrude", "h", &crate::i18n::num(height, 1))),
-        FeatureKind::Revolve { angle, .. } => format!("{} {}", ph::CUBE, crate::i18n::tr1("feat-revolve", "angle", &crate::i18n::num(angle, 0))),
+        FeatureKind::Extrude { height, .. } => format!("{} {}", ph::CUBE, crate::i18n::tr1("feat-extrude", "h", &crate::i18n::num(at("height", height), 1))),
+        FeatureKind::Revolve { angle, .. } => format!("{} {}", ph::CUBE, crate::i18n::tr1("feat-revolve", "angle", &crate::i18n::num(at("angle", angle), 0))),
         FeatureKind::Sweep { .. } => format!("{} {}", ph::CUBE, crate::i18n::tr("feat-sweep")),
         FeatureKind::Loft { ref sketches, src, op, surface, .. } => {
             // A SURFACE IS VISIBLE IN THE TREE: a node with caps and a node without them are different
@@ -297,7 +302,7 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
             };
             format!("{} {}{}", ph::STACK, crate::i18n::tr1("feat-loft", "n", &sketches.len().to_string()), suf)
         }
-        FeatureKind::PushFace { dist, .. } => format!("{} {}", ph::ARROWS_OUT_LINE_VERTICAL, crate::i18n::tr1("feat-push-face", "d", &crate::i18n::num_signed(dist, 1))),
+        FeatureKind::PushFace { dist, .. } => format!("{} {}", ph::ARROWS_OUT_LINE_VERTICAL, crate::i18n::tr1("feat-push-face", "d", &crate::i18n::num_signed(at("dist", dist), 1))),
         FeatureKind::Trim { .. } => format!("{} {}", ph::SCISSORS, crate::i18n::tr("feat-trim")),
         FeatureKind::Stitch { ref parts, .. } => format!("{} {}", ph::INTERSECT_SQUARE, crate::i18n::tr1("feat-stitch", "n", &parts.len().to_string())),
         // A BODY MADE OF A MESH THAT DID NOT CLOSE says so in its own row; the viewport shows where
@@ -310,13 +315,14 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::Patch { ref edges, .. } => format!("{} {}", ph::BANDAIDS, crate::i18n::tr1("feat-patch", "n", &edges.query.picked_descs().len().to_string())),
         FeatureKind::SurfaceReplace { ref faces, .. } => format!("{} {}", ph::SWAP, crate::i18n::tr1("feat-surface-replace", "n", &faces.query.picked_descs().len().to_string())),
         FeatureKind::FaceCopy { ref faces, .. } => format!("{} {}", ph::COPY_SIMPLE, crate::i18n::tr1("feat-face-copy", "n", &faces.query.picked_descs().len().to_string())),
-        FeatureKind::OffsetSurface { dist, .. } => format!("{} {}", ph::SELECTION_FOREGROUND, crate::i18n::tr1("feat-offset-surface", "d", &crate::i18n::num(dist, 1))),
+        FeatureKind::OffsetSurface { dist, .. } => format!("{} {}", ph::SELECTION_FOREGROUND, crate::i18n::tr1("feat-offset-surface", "d", &crate::i18n::num(at("dist", dist), 1))),
         FeatureKind::RemoveFace { ref faces, .. } => format!("{} {}", ph::ERASER, crate::i18n::tr1("feat-remove-face", "n", &faces.query.picked_descs().len().to_string())),
         FeatureKind::SplitFace { offset, .. } => {
+            let offset = at("offset", offset);
             let off = if offset.abs() < 1e-9 { String::new() } else { format!(" {offset:+.1}") };
             format!("{} {}{off}", ph::GRID_FOUR, crate::i18n::tr("feat-split-face"))
         }
-        FeatureKind::Thicken { thickness, .. } => format!("{} {}", ph::STACK_SIMPLE, crate::i18n::tr1("feat-thicken", "d", &crate::i18n::num_signed(thickness, 1))),
+        FeatureKind::Thicken { thickness, .. } => format!("{} {}", ph::STACK_SIMPLE, crate::i18n::tr1("feat-thicken", "d", &crate::i18n::num_signed(at("thickness", thickness), 1))),
         FeatureKind::PartInstance { src_comp, .. } => {
             let name = project.components.iter().find(|c| c.id == src_comp).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
             // NOT AN ASSEMBLY ICON. This used to be `ph::STACK` - the very icon that marks ASSEMBLIES in the
@@ -330,26 +336,38 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
             format!("{} {}", crate::gui::feat_icon(&node.kind), crate::i18n::tr2("feat-comp-pattern", "name", &crate::i18n::name(&node.name), "n", &kind.count().to_string()))
         }
         FeatureKind::SplitBody { ref bodies, offset, .. } => {
+            let offset = at("offset", offset);
             let off = if offset.abs() < 1e-9 { String::new() } else { format!(" {offset:+.1}") };
             format!("{} {}{}", ph::SQUARE_SPLIT_HORIZONTAL, crate::i18n::tr1("feat-split-body", "n", &bodies.len().to_string()), off)
         }
         FeatureKind::Draft { ref faces, angle, .. } => {
-            format!("{} {}", ph::ANGLE, crate::i18n::trn("feat-draft", &[("angle", &crate::i18n::num(angle, 0)), ("n", &faces.query.picked_descs().len().to_string())]))
+            format!("{} {}", ph::ANGLE, crate::i18n::trn("feat-draft", &[("angle", &crate::i18n::num(at("angle", angle), 0)), ("n", &faces.query.picked_descs().len().to_string())]))
         }
         FeatureKind::Box3 { dx, dy, dz, .. } => {
-            format!("{} {}", ph::CUBE, crate::i18n::trn("feat-box", &[("x", &crate::i18n::num(dx, 0)), ("y", &crate::i18n::num(dy, 0)), ("z", &crate::i18n::num(dz, 0))]))
+            format!("{} {}", ph::CUBE, crate::i18n::trn("feat-box", &[("x", &crate::i18n::num(at("dx", dx), 0)), ("y", &crate::i18n::num(at("dy", dy), 0)), ("z", &crate::i18n::num(at("dz", dz), 0))]))
         }
-        FeatureKind::Cylinder { r, h, .. } => format!("{} {}", ph::CYLINDER, crate::i18n::trn("feat-cylinder", &[("d", &crate::i18n::num(2.0 * r, 0)), ("h", &crate::i18n::num(h, 0))])),
-        FeatureKind::Sphere { r, .. } => format!("{} {}", ph::CIRCLE, crate::i18n::tr1("feat-sphere", "d", &crate::i18n::num(2.0 * r, 0))),
+        FeatureKind::Cylinder { r, h, .. } => {
+            format!("{} {}", ph::CYLINDER, crate::i18n::trn("feat-cylinder", &[("d", &crate::i18n::num(2.0 * at("r", r), 0)), ("h", &crate::i18n::num(at("h", h), 0))]))
+        }
+        FeatureKind::Sphere { r, .. } => format!("{} {}", ph::CIRCLE, crate::i18n::tr1("feat-sphere", "d", &crate::i18n::num(2.0 * at("r", r), 0))),
         FeatureKind::Combine { op, height, .. } => {
             // the icon follows THE OPERATION: scissors only for a cut; a boss ADDS material (a cube);
             // an intersection has its own (everything used to be scissors, and a boss looked like a cut)
             let ic = [ph::SCISSORS, ph::CUBE, ph::INTERSECT][(op as usize).min(2)];
-            format!("{} {} h={}", ic, [crate::i18n::tr("bool-cut"), crate::i18n::tr("bool-boss"), crate::i18n::tr("bool-intersect-short")][(op as usize).min(2)], crate::i18n::num(height, 1))
+            format!(
+                "{} {} h={}",
+                ic,
+                [crate::i18n::tr("bool-cut"), crate::i18n::tr("bool-boss"), crate::i18n::tr("bool-intersect-short")][(op as usize).min(2)],
+                crate::i18n::num(at("height", height), 1)
+            )
         }
-        FeatureKind::Fillet { radius, ref edges, .. } => format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-fillet", &[("r", &crate::i18n::num(radius, 1)), ("which", &ref_summary(edges))])),
+        FeatureKind::Fillet { radius, ref edges, .. } => {
+            format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-fillet", &[("r", &crate::i18n::num(at("radius", radius), 1)), ("which", &ref_summary(edges))]))
+        }
         FeatureKind::Chamfer { dist, ref edges, mode, d2, .. } => {
             use qymcad_core::feature::ChamferMode;
+            let dist = at("dist", dist);
+            let d2 = at("d2", d2);
             let size = match mode {
                 ChamferMode::TwoDist => format!("{dist:.1}×{d2:.1}"),
                 ChamferMode::DistAngle => crate::i18n::trn("feat-chamfer-dist-angle", &[("d", &crate::i18n::num(dist, 1)), ("angle", &crate::i18n::num(d2, 0))]),
@@ -358,20 +376,26 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
             format!("{} {}", ph::TRIANGLE, crate::i18n::trn("feat-chamfer", &[("size", &size), ("which", &ref_summary(edges))]))
         }
         FeatureKind::Cone { r1, r2, h, .. } => {
-            format!("{} {}", ph::CUBE, crate::i18n::trn("feat-cone", &[("d1", &crate::i18n::num(2.0 * r1, 0)), ("d2", &crate::i18n::num(2.0 * r2, 0)), ("h", &crate::i18n::num(h, 0))]))
+            format!(
+                "{} {}",
+                ph::CUBE,
+                crate::i18n::trn("feat-cone", &[("d1", &crate::i18n::num(2.0 * at("r1", r1), 0)), ("d2", &crate::i18n::num(2.0 * at("r2", r2), 0)), ("h", &crate::i18n::num(at("h", h), 0))])
+            )
         }
-        FeatureKind::Torus { major, minor, .. } => format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-torus", &[("r", &crate::i18n::num(major, 0)), ("r2", &crate::i18n::num(minor, 0))])),
+        FeatureKind::Torus { major, minor, .. } => {
+            format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-torus", &[("r", &crate::i18n::num(at("major", major), 0)), ("r2", &crate::i18n::num(at("minor", minor), 0))]))
+        }
         FeatureKind::Prism { r, n, h, .. } => {
-            format!("{} {}", ph::HEXAGON, crate::i18n::trn("feat-prism", &[("n", &n.to_string()), ("d", &crate::i18n::num(2.0 * r, 0)), ("h", &crate::i18n::num(h, 0))]))
+            format!("{} {}", ph::HEXAGON, crate::i18n::trn("feat-prism", &[("n", &n.to_string()), ("d", &crate::i18n::num(2.0 * at("r", r), 0)), ("h", &crate::i18n::num(at("h", h), 0))]))
         }
         FeatureKind::Shell { thickness, ref faces, .. } => {
-            format!("{} {}", ph::BOUNDING_BOX, crate::i18n::trn("feat-shell", &[("t", &crate::i18n::num(thickness, 1)), ("n", &faces.query.picked_descs().len().to_string())]))
+            format!("{} {}", ph::BOUNDING_BOX, crate::i18n::trn("feat-shell", &[("t", &crate::i18n::num(at("thickness", thickness), 1)), ("n", &faces.query.picked_descs().len().to_string())]))
         }
         FeatureKind::LinearArray { count, count2, .. } => {
             format!("{} {}", ph::DOTS_THREE_OUTLINE, crate::i18n::tr1("feat-linear-array", "n", &if count2 > 1 { format!("×{count}×{count2}") } else { format!("×{count}") }))
         }
         FeatureKind::CircularArray { count, angle, .. } => {
-            format!("{} {}", ph::ARROWS_CLOCKWISE, crate::i18n::trn("feat-circular-array", &[("n", &count.to_string()), ("angle", &crate::i18n::num(angle, 0))]))
+            format!("{} {}", ph::ARROWS_CLOCKWISE, crate::i18n::trn("feat-circular-array", &[("n", &count.to_string()), ("angle", &crate::i18n::num(at("angle", angle), 0))]))
         }
         FeatureKind::Mirror { plane, datum, .. } => format!(
             "{} {}",
@@ -381,9 +405,13 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::Hole { diameter, depth, sketch, .. } => {
             if sketch != 0 {
                 let n = project.sketch_isolated_points(sketch).len();
-                format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-holes", &[("n", &n.to_string()), ("d", &crate::i18n::num(diameter, 1)), ("h", &crate::i18n::num(depth, 1))]))
+                format!(
+                    "{} {}",
+                    ph::CIRCLE,
+                    crate::i18n::trn("feat-holes", &[("n", &n.to_string()), ("d", &crate::i18n::num(at("diameter", diameter), 1)), ("h", &crate::i18n::num(at("depth", depth), 1))])
+                )
             } else {
-                format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-hole", &[("d", &crate::i18n::num(diameter, 1)), ("h", &crate::i18n::num(depth, 1))]))
+                format!("{} {}", ph::CIRCLE, crate::i18n::trn("feat-hole", &[("d", &crate::i18n::num(at("diameter", diameter), 1)), ("h", &crate::i18n::num(at("depth", depth), 1))]))
             }
         }
         FeatureKind::BodyBoolean { op, .. } => {
@@ -412,7 +440,7 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
                     &[
                         ("name", &name),
                         ("side", &if spec.internal { crate::i18n::tr("thread-internal") } else { crate::i18n::tr("thread-external") }),
-                        ("len", &crate::i18n::num(length, 0))
+                        ("len", &crate::i18n::num(at("length", length), 0))
                     ]
                 ),
                 if spec.starts > 1 { crate::i18n::tr1("count-starts", "n", &spec.starts.to_string()) } else { String::new() }
@@ -421,7 +449,7 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::Auger { spec, length, .. } => format!(
             "{} {}",
             ph::SPIRAL,
-            crate::i18n::trn("feat-auger", &[("d", &crate::i18n::num(spec.outer_d, 0)), ("pitch", &crate::i18n::num(spec.pitch, 0)), ("len", &crate::i18n::num(length, 0))])
+            crate::i18n::trn("feat-auger", &[("d", &crate::i18n::num(spec.outer_d, 0)), ("pitch", &crate::i18n::num(spec.pitch, 0)), ("len", &crate::i18n::num(at("length", length), 0))])
         ),
         // an import's row names the file it came from: editing it asks again about the file's units and scale
         FeatureKind::Import { source, .. } => {

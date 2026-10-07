@@ -214,9 +214,13 @@ pub(crate) fn report_window(
     let mut open = true;
     let mut collect = false;
     let mut to_form = false;
-    egui::Window::new(format!("{} {}", ph::BUG, crate::i18n::tr("report-title"))).open(&mut open).collapsible(false).default_width(540.0).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| {
+    egui::Window::new(format!("{} {}", ph::BUG, crate::i18n::tr("report-title")))
+        .id(egui::Id::new("win_report_problem"))
+        .open(&mut open)
+        .collapsible(false)
+        .default_width(540.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
             ui.add_space(4.0);
             ui.label(crate::i18n::tr("report-intro"));
             ui.add_space(8.0);
@@ -276,8 +280,7 @@ pub(crate) fn report_window(
                     ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(dir.to_string_lossy().into_owned())));
                 }
             }
-        },
-    );
+        });
     asked.collect = collect;
     asked.to_form = to_form;
     if !open {

@@ -49,7 +49,6 @@ mod random_session {
                 || app.tools.armed.measuring()
                 || !app.tools.measure.pts.is_empty()
                 || app.tools.corner.at.is_some()
-                || app.tools.corner.only.is_some()
                 || app.tools.armed.pat_op() != 0
                 || app.tools.armed.move_op() != 0
                 || app.tools.pending_import.draw_pts.is_some()
@@ -122,7 +121,6 @@ mod random_session {
                     7 => {
                         // an unfinished corner fillet popup
                         app.tools.corner.at = Some((r.pick(4), 0, false));
-                        app.tools.corner.only = Some(std::collections::HashSet::new());
                         "corner popup"
                     }
                     8 => {

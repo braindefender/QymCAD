@@ -1303,6 +1303,16 @@ impl Session {
         out
     }
 
+    /// HOW MANY THINGS OF THE SKETCH STAND LIT - the count a person would count by eye.
+    pub fn lit_in_sketch(&self) -> usize {
+        self.app.tools.sel_sk.items.len()
+    }
+
+    /// WHICH EDITING BUTTON IS IN HAND, by its own number: 4 the corner fillet, 5 the chamfer, 0 none of them.
+    pub fn editing_tool(&self) -> u8 {
+        self.app.tools.armed.click_op()
+    }
+
     /// Is a text field taking the keys - a person in the middle of typing, where Ctrl+Z is the field's own?
     pub fn typing(&self) -> bool {
         self.win.ctx.egui_wants_keyboard_input()

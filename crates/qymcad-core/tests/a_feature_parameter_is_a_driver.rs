@@ -87,6 +87,22 @@ fn the_value_follows_the_expression_when_there_is_one() {
     assert_eq!(p.param_map().get("vysota"), Some(&40.0), "the value did not follow the parameter it depends on");
 }
 
+/// The size of a built feature is read as the rebuild reads it: from the formula, not from the number kept in the
+/// node, which stays what was typed last.
+#[test]
+fn the_size_of_a_feature_is_read_from_its_formula() {
+    let mut p = Project::default();
+    p.new_document();
+    let (_c, node) = part_with_extrude(&mut p, "Housing", 20.0);
+    p.parameters.push(Param { name: "h".into(), expr: "20".into(), value: 20.0 });
+    p.set_feat_dim(node, "height", "h".into());
+    p.parameters[0].expr = "40".into();
+    p.parameters[0].value = 40.0;
+    let stored = p.timeline.iter().find(|n| n.id == node).and_then(|n| n.kind.dim("height")).expect("the height of the extrusion");
+    assert_eq!(p.feat_dim_value(node, "height", stored, &p.param_map()), 40.0, "h was made 40 and the height reads {stored}");
+    assert_eq!(p.feat_dim_value(node, "down", 0.0, &p.param_map()), 0.0, "a size with no formula is the number kept in the node");
+}
+
 /// The breadcrumbs lead to the feature, giving `Part.Extrude`. Sketches use the same shape of path, and
 /// features have to match it, or a list entry says nothing about what it refers to.
 #[test]

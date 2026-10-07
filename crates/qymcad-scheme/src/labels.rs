@@ -32,7 +32,7 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
         ("body", vec!["body_face", "body_ghost", "body_clash", "edge_idle", "ghost_target"]),
         ("faces", vec!["add", "remove", "modify", "reference", "offset_in"]),
         ("planes", vec!["plane_face", "plane_fill", "plane_idle", "plane_normal", "datum_point", "datum_axis"]),
-        ("preview", vec!["preview", "preview_prim", "preview_array", "preview_axis", "preview_datum", "measure", "cut_line", "gizmo_label"]),
+        ("preview", vec!["preview", "preview_prim", "preview_array", "preview_axis", "preview_datum", "preview_corner_new", "preview_corner_fixed", "measure", "cut_line", "gizmo_label"]),
         ("constraints", vec!["constraint_ok", "constraint_selected", "constraint_hover"]),
         ("assembly", vec!["joint_idle", "joint_hover", "joint_pick_a", "joint_pick_b", "grounded"]),
         ("contours", vec!["contour_idle", "contour_hover", "contour_profile"]),

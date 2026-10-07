@@ -225,6 +225,6 @@ fn all_corners_of_a_rectangle_take_half_the_short_side() {
     p.add_sketch_node(sid, "Sketch");
     let si = p.sketch_index(sid).unwrap();
     p.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
-    let lim = p.all_corners_limit(si, None).expect("a rectangle has corners to round");
+    let lim = p.all_corners_limit(si, None, qymcad_core::model::CornerTool::Fillet).expect("a rectangle has corners to round");
     assert!((lim - 15.0).abs() < 1e-9, "the limit of all the corners is {lim}, not 15");
 }

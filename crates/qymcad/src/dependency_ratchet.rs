@@ -63,8 +63,16 @@ mod tests {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
-    /// The direct dependencies of every manifest: name -> the version we declare.
-    fn declared() -> Vec<(String, String)> {
+    /// One line of a `[dependencies]` table: which manifest declares which package at which version.
+    struct Declaration {
+        /// The directory of the manifest: `qymcad-part`, or the workspace root's own name.
+        krate: String,
+        name: String,
+        version: String,
+    }
+
+    /// Every direct dependency line of every manifest, in the order the manifests are read.
+    fn declarations() -> Vec<Declaration> {
         let mut out = Vec::new();
         let mut manifests = vec![root().join("Cargo.toml")];
         let mut crates: Vec<_> = std::fs::read_dir(root().join("crates")).expect("the crates directory reads").flatten().map(|e| e.path().join("Cargo.toml")).filter(|p| p.is_file()).collect();
@@ -73,6 +81,7 @@ mod tests {
 
         for path in manifests {
             let text = std::fs::read_to_string(&path).expect("a manifest reads");
+            let krate = path.canonicalize().ok().and_then(|p| p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
             let mut in_deps = false;
             for line in text.lines() {
                 let t = line.trim();
@@ -91,9 +100,7 @@ mod tests {
                 }
                 let version = rhs.split_once("version = \"").map(|(_, v)| v).or_else(|| rhs.trim().strip_prefix('"')).and_then(|v| v.split('"').next());
                 if let Some(v) = version {
-                    if !out.iter().any(|(n, _): &(String, String)| n == name) {
-                        out.push((name.to_string(), v.to_string()));
-                    }
+                    out.push(Declaration { krate: krate.clone(), name: name.to_string(), version: v.to_string() });
                 }
             }
         }
@@ -146,13 +153,15 @@ mod tests {
 
     fn collect() -> Vec<Dep> {
         let snap = snapshot();
-        declared()
-            .into_iter()
-            .map(|(name, declared)| {
-                let (latest, what) = snap.iter().find(|(n, _, _)| *n == name).map(|(_, l, w)| (l.clone(), w.clone())).unwrap_or_default();
-                Dep { name, declared, latest, what }
-            })
-            .collect()
+        let mut deps: Vec<Dep> = Vec::new();
+        for d in declarations() {
+            if deps.iter().any(|dep| dep.name == d.name) {
+                continue;
+            }
+            let (latest, what) = snap.iter().find(|(n, _, _)| *n == d.name).map(|(_, l, w)| (l.clone(), w.clone())).unwrap_or_default();
+            deps.push(Dep { name: d.name, declared: d.version, latest, what });
+        }
+        deps
     }
 
     /// EVERY DIRECT DEPENDENCY IS WATCHED, and every one says what it is for.
@@ -209,5 +218,33 @@ mod tests {
              Slack is as bad as growth - under a ceiling nobody lowers, a whole stack ages in silence,\n\
              which is exactly how the graphics reached seven releases without a word.\n{table}"
         );
+    }
+
+    /// ONE PACKAGE, ONE VERSION, across every manifest of the workspace.
+    ///
+    /// Two crates asking for different versions of one package compile both copies, and everything the
+    /// older one pulls in besides: `egui-phosphor` 0.11 in five crates next to 0.13 in `qymcad` built a
+    /// second egui 0.33 (`egui`, `epaint`, `emath`, `ecolor`) that nothing in the program used. The
+    /// distance above counts only the first version it reads for a name, so the older line stayed
+    /// invisible to it.
+    #[test]
+    fn one_package_is_declared_at_one_version() {
+        if !in_the_working_tree() {
+            return; // a published copy of the tree: nothing here to measure
+        }
+        let all = declarations();
+        let mut split: Vec<String> = Vec::new();
+        for d in &all {
+            if split.iter().any(|s| s.starts_with(&format!("{}:", d.name))) {
+                continue;
+            }
+            let same: Vec<&Declaration> = all.iter().filter(|o| o.name == d.name).collect();
+            if same.iter().all(|o| o.version == d.version) {
+                continue;
+            }
+            let places: Vec<String> = same.iter().map(|o| format!("{} in {}", o.version, o.krate)).collect();
+            split.push(format!("{}: {}", d.name, places.join(", ")));
+        }
+        assert!(split.is_empty(), "one package is declared at several versions, so several copies are compiled:\n  {}", split.join("\n  "));
     }
 }

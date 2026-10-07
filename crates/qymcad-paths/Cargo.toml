@@ -2,6 +2,7 @@
 name = "qymcad-paths"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 # WHERE THE PROGRAM KEEPS ITS OWN FILES. One module because there is one answer: the settings, the colour
 # schemes, the templates, the library of parts, the crash reports and the problem reports all live under one

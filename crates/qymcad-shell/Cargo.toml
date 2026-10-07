@@ -2,6 +2,7 @@
 name = "qymcad-shell"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 # THE INTERFACE SHELL, AND NOTHING ELSE. It draws containers and hands out the `Ui` inside them; it draws
 # nothing itself and knows no workbench. Hence the single dependency: a shell that reached for the document

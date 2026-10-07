@@ -291,6 +291,10 @@ pub enum CoreError {
     /// above it in the timeline, and that feature was edited. `asked` is how many were named, which is what
     /// tells a stale reference from a feature that never had one.
     EdgesNotFound { asked: usize },
+    /// The edges were described rather than listed ("every edge of this face", a tangent chain, a junction) and
+    /// the description finds nothing: what it is phrased through is gone. The numbers inside a description name
+    /// faces, not edges, so this is not counted as named edges lost.
+    DescribedEdgesNotFound,
     /// The mirror plane was deleted. Silently falling back to a world plane is not acceptable: a measurement
     /// showed the part moving as a result — x from 10 to 90 about a datum at x = 50 became −30 to 30 about the
     /// world YZ plane — and all of it without a single word.
@@ -451,6 +455,7 @@ impl CoreError {
             NeedsSolidNotSheet => "error-needs-solid-not-sheet".into(),
             DraftFailed { .. } => "error-draft-failed".into(),
             EdgesNotFound { .. } => "error-edges-not-found".into(),
+            DescribedEdgesNotFound => "error-described-edges-not-found".into(),
             CutPlaneDeleted => "error-cut-plane-deleted".into(),
             SketchFaceGone => "error-sketch-face-gone".into(),
             SketchPlaneGone => "error-sketch-plane-gone".into(),

@@ -90,6 +90,28 @@ pub fn live_picks(project: &qymcad_core::model::Project, body: Id, r: &qymcad_co
     picked.into_iter().filter(|d| live.contains(d)).collect()
 }
 
+/// THE EDGES OF A REOPENED FILLET, CHAMFER OR PATCH, picked again the way they were recorded.
+///
+/// A list is a list of edges and goes through [`live_picks`]. A description ("every edge of this face") holds the
+/// number of a FACE: taken as an edge it was dropped as unknown - the pick came out empty, which the kernel reads as
+/// every edge - or, with no edges known yet, handed on as an edge that does not exist. So the description goes back
+/// into the selection, and its edges, resolved on the live body, are what is highlighted. Reported behaviour: a
+/// fillet of the top face of a cylinder reopened with no edge highlighted and both rims in the preview.
+///
+/// The edges of a body just opened are taken from its live B-rep first, for either kind: the corners of a variable
+/// radius are named by them too, and without them a reopened fillet lost the field of its corner and Enter wrote an
+/// empty table back.
+fn restore_edge_picks(pc: &mut qymcad_ui_state::PartCtx, src: Id, r: &qymcad_core::refs::Ref) {
+    qymcad_ui_state::ensure_model_edges(&mut pc.rebuild(), src);
+    if r.query.is_pick_list() {
+        pc.gsel.described = None;
+        pc.gsel.edges = live_picks(&*pc.project, src, r, false);
+        return;
+    }
+    pc.gsel.edges = pc.project.resolve_edge_refs(src, r, "ref-what-fillet-edge").map(|v| v.into_iter().collect()).unwrap_or_default();
+    pc.gsel.described = Some(r.query.clone());
+}
+
 /// The raw text of a command field (an expression or a number), by key.
 pub fn cmd_txt(cmd: &qymcad_ui_state::FeatCommand, key: &str) -> String {
     cmd.params.iter().find(|p| p.key == key).map(|p| p.txt.clone()).unwrap_or_default()
@@ -908,14 +930,14 @@ pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id> 
     // IT IS RECORDED THE WAY IT WAS PICKED. If there is a description ("every edge of this face", "every
     // edge parallel to this one"), the description goes in: it survives an edit that adds elements.
     // Otherwise the list of picked ids goes in.
-    let described: Option<qymcad_core::refs::Ref> = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many);
+    let described = pc.gsel.described_ref();
     let last = if cmd == 4 {
         let r = qymcad_ui_state::cmd_val(pc.cmd, "radius");
         // THE "VERTEX -> RADIUS" TABLE. It works with a description and with a list alike: the radius is
         // set at a point rather than along an edge, so it needs no direction of an edge.
         let at = fillet_vertex_table(pc.cmd);
         if !at.is_empty() {
-            let q = described.clone().unwrap_or_else(|| qymcad_core::refs::Ref::picks(&edges));
+            let q = pc.gsel.recorded(&edges);
             pc.project.add_fillet_at_vertices(body, r, q, at)
         } else if let Some(q) = described {
             pc.project.add_fillet_ref(body, r, q)
@@ -1013,7 +1035,7 @@ pub fn apply_offset_surface_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id>
         return None;
     }
     let picks: Vec<u32> = pc.gsel.faces.iter().copied().collect();
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     let body = pc.project.add_offset_surface(src, q, qymcad_ui_state::cmd_val(pc.cmd, "dist"));
     store_cmd_exprs(pc.cmd, pc.project, body);
     Some(body)
@@ -1029,7 +1051,7 @@ pub fn apply_face_copy_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let picks: Vec<u32> = pc.gsel.faces.iter().copied().collect();
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     Some(pc.project.add_face_copy(src, q))
 }
 
@@ -1070,7 +1092,7 @@ pub fn apply_patch_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let picks: Vec<u32> = pc.gsel.edges.iter().copied().collect();
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     Some(pc.project.add_patch(src, q, pc.opts.patch_tangent))
 }
 
@@ -1633,7 +1655,7 @@ pub fn apply_surface_replace_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id
             return None;
         }
     }
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     Some(pc.project.add_surface_replace(src, q, surface))
 }
 
@@ -2601,6 +2623,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
         None => (Vec::new(), Vec::new()),
     };
     let edges: Vec<u32> = pc.gsel.edges.iter().copied().collect();
+    let picked_edges = pc.gsel.recorded(&edges);
     let faces_set: Vec<u32> = pc.gsel.faces.iter().copied().collect(); // the shell: a multiple selection by id
     let shell_side = pc.opts.shell_side; // the shell: which way the wall goes
     let draft_neutral = pc.draft.neutral; // the draft: the neutral face, 0 means unset
@@ -2767,12 +2790,12 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Fillet { radius, edges: e, at_vertices, .. } => {
                 *radius = r;
-                *e = qymcad_core::refs::Ref::picks(&edges); // a hand-picked set of edges is a query built from ids
+                *e = picked_edges.clone();
                 *at_vertices = vtable; // the "vertex -> radius" table
             }
             FeatureKind::Chamfer { dist: d, edges: e, mode, d2, flip, ref_face, .. } => {
                 *d = dist;
-                *e = qymcad_core::refs::Ref::picks(&edges); // a hand-picked set of edges is a query built from ids
+                *e = if ch_mode != qymcad_core::feature::ChamferMode::Symmetric && !edges.is_empty() { qymcad_core::refs::Ref::picks(&edges) } else { picked_edges.clone() };
                 *mode = ch_mode; // the mode: symmetric, two distances, or a leg plus an angle
                 *d2 = ch_d2;
                 *flip = ch_flip;
@@ -2823,7 +2846,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Patch { edges: e, tangent, .. } => {
                 if !edges.is_empty() {
-                    *e = qymcad_core::refs::Ref::picks(&edges); // a hand-picked boundary is a query built from ids
+                    *e = picked_edges.clone();
                 }
                 *tangent = patch_tangent;
             }
@@ -3391,7 +3414,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 4, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc); // pull up the edges of the body (this clears the selection), then restore it
-            pc.gsel.edges = live_picks(&*pc.project, src, edges, false);
+            restore_edge_picks(pc, src, edges);
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius", "radius", radius, 0.05, 1000.0)];
             // THE TABLE OF VERTICES - one field per vertex, each at its own place. The reference is
             // resolved against the live body: the name of a vertex is derived from its edges and survives
@@ -3410,7 +3433,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 5, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
-            pc.gsel.edges = live_picks(&*pc.project, src, edges, false);
+            restore_edge_picks(pc, src, edges);
             pc.chamfer.mode = mode; // restore the mode, the side and the second parameter
             pc.chamfer.flip = flip;
             pc.chamfer.ref_face = ref_face; // restore the hand-picked reference face
@@ -3483,7 +3506,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 32, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
-            pc.gsel.edges = live_picks(&*pc.project, src, edges, false);
+            restore_edge_picks(pc, src, edges);
             pc.opts.patch_tangent = tangent;
             pc.cmd.params = vec![];
         }
@@ -4155,10 +4178,10 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
     // EDITING a fillet or a chamfer: the edges always belong to the feature's SOURCE BODY (a selection fix
     // put `sel` back on the node being edited, and `qymcad_ui_state::selected_body` then returned the OUTPUT body, so the edge
     // selection was cleared and the highlight vanished). The source of the feature being edited is aimed at
-    // explicitly.
+    // explicitly. A patch the same: its output is a sheet of its own, and a reopened patch highlighted no edge.
     let edit_src = pc.cmd.edit.and_then(|fid| {
         pc.project.timeline.iter().find(|n| n.id == fid).and_then(|n| match n.kind {
-            qymcad_core::feature::FeatureKind::Fillet { src, .. } | qymcad_core::feature::FeatureKind::Chamfer { src, .. } => Some(src),
+            qymcad_core::feature::FeatureKind::Fillet { src, .. } | qymcad_core::feature::FeatureKind::Chamfer { src, .. } | qymcad_core::feature::FeatureKind::Patch { src, .. } => Some(src),
             _ => None,
         })
     });
@@ -5948,10 +5971,8 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     cat(ui, &qymcad_i18n::tr("tb-type"));
                     // WHAT IS SELECTED IS TURNED, as the construction toggle of the professional systems does; with nothing selected
                     // the button switches what is drawn next
-                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchConstruction, &qymcad_i18n::tr("tb-construction-hint"), bc.tool.construction)
-                        && !qymcad_ui_state::construction_selected(qymcad_ui_state::editing_in!(bc), &*bc.sel_sk, &*bc.sketch_ses)
-                    {
-                        bc.tool.construction = !bc.tool.construction;
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchConstruction, &qymcad_i18n::tr("tb-construction-hint"), bc.tool.construction) {
+                        qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_in!(bc), &*bc.sel_sk, &*bc.sketch_ses, &mut bc.tool.construction);
                     }
                     // --- Editing and replication (over the selected entities) ---
                     cat(ui, &qymcad_i18n::tr("tb-group-edit"));
@@ -5972,10 +5993,10 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                         *bc.status = qymcad_i18n::tr("tb-project-hint");
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchFillet, &qymcad_i18n::tr("tb-fillet-sketch-hint"), bc.armed.click_op() == 4) {
-                        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 4);
+                        qymcad_ui_state::start_corner_tool(bc, 4);
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchChamfer, &qymcad_i18n::tr("tb-chamfer-sketch-hint"), bc.armed.click_op() == 5) {
-                        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 5);
+                        qymcad_ui_state::start_corner_tool(bc, 5);
                     }
                     // "FILLET ALL" IS A TOOL IN HAND like its neighbours: pressed, it puts down what is held and takes what is
                     // selected or waits for a shape; pressed again, it is put down
@@ -5983,7 +6004,7 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchFilletAll, &qymcad_i18n::tr("tb-fillet-all-hint"), fillet_all_held) {
                         qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(bc));
                         if !fillet_all_held {
-                            qymcad_ui_state::fillet_all_corners(&mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status, &*bc.tool_prefs);
+                            qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status, &*bc.tool_prefs);
                         }
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchOffset, &qymcad_i18n::tr("tb-offset-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset)) {
@@ -6566,7 +6587,9 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 let corner_hi = bc
                     .corner
                     .at
-                    .and_then(|(si, pid, ch)| (pid != 0).then(|| qymcad_ui_state::corner_limit_in(&*bc.project, si, pid, ch, bc.tool_prefs.fillet_by)).flatten())
+                    .and_then(|(si, pid, ch)| {
+                        (pid != 0).then(|| qymcad_ui_state::corner_limit_in(&*bc.project, si, pid, qymcad_ui_state::corner_tool(ch, bc.tool_prefs), bc.tool_prefs.fillet_by)).flatten()
+                    })
                     .map_or(10000.0, |l| l * (1.0 - 1e-9));
                 bc.tool_prefs.fillet = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
@@ -6609,19 +6632,21 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
             ) as u32;
             if bc.armed.pat_op() == 1 {
+                ui.label(qymcad_i18n::tr("opt-step-x"));
                 bc.sk_pat.dx = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
                     "skpat_dx",
                     bc.sk_pat.dx,
-                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                 );
+                ui.label(qymcad_i18n::tr("opt-step-y"));
                 bc.sk_pat.dy = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
                     "skpat_dy",
                     bc.sk_pat.dy,
-                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                 );
                 ui.separator();
                 ui.label(qymcad_i18n::tr("opt-rows"));
@@ -6633,22 +6658,25 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     qymcad_ui_state::NumFormat { lo: 1.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
                 ) as u32;
                 if bc.sk_pat.count2 > 1 {
+                    ui.label(qymcad_i18n::tr("opt-row-step-x"));
                     bc.sk_pat.dx2 = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dx2",
                         bc.sk_pat.dx2,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
+                    ui.label(qymcad_i18n::tr("opt-row-step-y"));
                     bc.sk_pat.dy2 = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dy2",
                         bc.sk_pat.dy2,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
                 }
             } else {
+                ui.label(qymcad_i18n::tr("cmd-angle"));
                 bc.sk_pat.angle = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
@@ -6711,19 +6739,21 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                         bc.sk_pat.count as f64,
                         qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
                     ) as u32;
+                    ui.label(qymcad_i18n::tr("opt-step-x"));
                     bc.sk_pat.dx = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dx",
                         bc.sk_pat.dx,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
+                    ui.label(qymcad_i18n::tr("opt-step-y"));
                     bc.sk_pat.dy = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dy",
                         bc.sk_pat.dy,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
                 }
                 Some(qymcad_ui_state::EditTool::CircularPattern) => {
@@ -6735,6 +6765,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                         bc.sk_pat.count as f64,
                         qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
                     ) as u32;
+                    ui.label(qymcad_i18n::tr("cmd-angle"));
                     bc.sk_pat.angle = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,

@@ -79,21 +79,28 @@ fn an_offset_rectangle_follows_its_source() {
 }
 
 /// THE ROUNDED ONE: its arc's copy concentric and the radius apart by the offset, a sharp corner the offset rounds
-/// centred on that corner. The freedoms are counted against the two of where a dimensioned rectangle stands: read by
-/// rank, the source alone shows two more at its tangencies, a known false count the copy's constraints take up.
+/// centred on that corner.
+///
+/// The corner rounded here is the one NO dimension was measured to: the point of a corner goes with the corner, and a
+/// dimension measured to it cannot be stated without its subject, so it goes too. Rounding the top left corner of a
+/// dimensioned rectangle therefore leaves both of its edge dimensions standing, and the copy can be asked to follow
+/// the source afterwards — which is the whole point of this chain.
 #[test]
 fn an_offset_rounded_rectangle_follows_its_source() {
     for dist in [3.0, -3.0] {
         let mut p = Project::default();
         let (si, lines, width) = a_dimensioned_rectangle(&mut p);
-        assert!(p.fillet_lines(si, lines[0], lines[1], 4.0), "setup: a corner rounded");
+        assert!(p.fillet_lines(si, lines[2], lines[3], 4.0), "setup: the top left corner rounded");
         p.solve_sketch(si);
         let chain: Vec<u64> = p.sketches[si].entities.iter().filter(|e| !e.construction).map(|e| e.id).collect();
         assert_eq!(p.offset_entities(si, &chain, dist), 1, "one copy at {dist}");
         p.solve_sketch(si);
         let (after, redundant) = p.sketch_dof(si);
-        assert_eq!((after, redundant), (2, 0), "the copy at {dist} of the rounded rectangle: {after} freedoms, {redundant} redundant, not the two of where it stands");
+        assert_eq!((after, redundant), (2, 0), "the copy at {dist} of the rounded rectangle: {after} freedoms, {redundant} redundant, not the two of where the dimensioned rectangle stands");
+        let was = copy_width(&p, si, &chain);
         set_width(&mut p, si, width, 40.0);
+        let now = copy_width(&p, si, &chain);
+        assert!((now - was - 10.0).abs() < 1e-6, "the source made 10 wider, the copy at {dist} went from {was} to {now}");
         let s = &p.sketches[si];
         let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a point");
         let arcs: Vec<((f64, f64), f64)> = s

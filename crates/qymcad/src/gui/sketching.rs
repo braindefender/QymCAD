@@ -28,7 +28,7 @@ impl App {
             "sketch.corner-fillet" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 4),
             "sketch.trim" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 1),
             "sketch.mirror" => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(self), &mut qymcad_ui_state::tools_of!(self), self.sk_pat, &self.tool_prefs, EditTool::Mirror),
-            "sketch.construction" => self.tools.tool.construction = !self.tools.tool.construction,
+            "sketch.construction" => qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_of!(self), &self.tools.sel_sk, &self.sketch_ses, &mut self.tools.tool.construction),
             _ => {}
         }
     }
@@ -230,30 +230,9 @@ impl App {
         }
         // the cursor with snapping (it refreshes the snap hint for the marker)
         self.cursor = resp.hover_pos().map(|p| snap_world(&mut self.sketch_ctx(), rect, p));
-        // the pre-select highlight: what is under the cursor - only while the sketch is in selection mode
-        self.chosen.hover.sketch = None;
-        if let (Sel::Sketch(si), Some(hp)) = (self.chosen.sel, resp.hover_pos()) {
-            if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses) == Some(si)
-                && self.tools.armed.draw_kind() == 0
-                && self.tools.armed.dim_kind() == 0
-                && !resp.dragged()
-                && self.tools.drag.pt().is_none()
-                && self.tools.drag.mov().is_none()
-            {
-                self.chosen.hover.sketch = sketch_hit(&self.pick_ctx(), rect, hp, si);
-                // the constraint glyph under the cursor is highlighted, without wiping the hover coming
-                // from the list of constraints
-                if self.chosen.hover.sketch.is_none() {
-                    if let Some(gc) = constraint_glyph_at(&mut self.sketch_ctx(), rect, hp, si) {
-                        self.chosen.hover.constraint = Some(gc);
-                    }
-                }
-            }
-        }
-        update_placing_dim(&mut self.sketch_ctx(), rect); // the dimension follows the cursor until it is placed
-        if resp.hover_pos().is_none() {
-            self.snap_hint = None;
-        }
+        let lit = qymcad_sketch::pre_select(&mut self.sketch_ctx(), rect, resp.hover_pos(), resp.dragged());
+        (self.chosen.hover.sketch, self.chosen.hover.constraint) = (lit.sketch, lit.constraint.or(self.chosen.hover.constraint));
+        qymcad_sketch::follow_pointer(&mut self.sketch_ctx(), rect, resp.hover_pos());
         if self.sketch_ses.editing.is_some() {
             qymcad_render::draw_sketch_grid(&self.scheme, &self.set, self.viewing.view, painter, rect);
             // the grid and the axes while a sketch is being edited
@@ -472,7 +451,7 @@ impl App {
         qymcad_ui_state::note_editor(&mut self.tools.annot, &mut self.tools.inline, &mut self.project, self.chosen.sel, self.viewing.view, ctx, rect); // editing the text of a note
         let asks = qymcad_ui_state::text_popups(qymcad_ui_state::editing_of!(self), &mut self.font_cache, &mut qymcad_ui_state::text_ctx_of!(self), ctx, rect); // the label editor and the list of fonts
         self.do_bar_asks(asks, ctx);
-        place_input_popup(qymcad_ui_state::editing_of!(self), &mut self.tools.corner, &mut self.tools.place, &mut self.tools.sel_sk, &mut self.tool_prefs, ctx, rect); // typing the sizes right after a shape is built
+        place_input_popup(qymcad_ui_state::editing_of!(self), qymcad_ui_state::popup_tools!(self), qymcad_ui_state::popup_looks!(self), ctx, rect); // typing the sizes right after a shape is built
         sketch_rotate_popup(&mut self.sketch_ctx(), ctx, rect); // the rotation angle at the centre
     }
 }
