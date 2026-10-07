@@ -1645,25 +1645,21 @@ mod tests {
     }
 
     #[test]
-    fn test_bundled_freecad_classic_pack_discovered() {
+    fn test_bundled_shapr_alike_pack_discovered() {
         let bundled = bundled_themes_dir();
         let packs = qymcad_ui_state::icons::discover_packs_in(&bundled);
-        assert!(packs.iter().any(|p| p.manifest.id == "freecad-classic"), "bundled freecad-classic pack must be found");
-        let classic = packs.iter().find(|p| p.manifest.id == "freecad-classic").unwrap();
-        assert!(classic.coverage().0 >= 5);
-        assert_eq!(classic.format(), BundleFormat::Directory);
-        assert!(classic.is_directory());
-        let readme = classic.get_readme();
-        assert!(readme.contains("FreeCAD Classic Icon Theme"), "FreeCAD pack should have markdown description");
+        assert!(packs.iter().any(|p| p.manifest.id == "shapr-alike"), "bundled shapr-alike pack must be found");
+        let shapr = packs.iter().find(|p| p.manifest.id == "shapr-alike").unwrap();
+        assert!(shapr.coverage().0 >= 5);
+        assert_eq!(shapr.format(), BundleFormat::Directory);
+        assert!(shapr.is_directory());
+        let readme = shapr.get_readme();
+        assert!(readme.contains("Shapr-Alike"), "Shapr-Alike pack should have markdown description");
     }
 
     #[test]
     fn test_all_bundled_themes_are_embedded_in_manager() {
         let packs = discover_all_theme_packs(&all_theme_dirs()).packs;
-        let freecad = packs.iter().find(|p| p.manifest.id == "freecad-classic").expect("freecad-classic must be present");
-        assert_eq!(freecad.format(), BundleFormat::Embedded, "FreeCAD Classic must be marked Embedded in manager");
-        assert!(!freecad.is_directory(), "FreeCAD Classic must not be marked directory");
-
         let shapr = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike must be present");
         assert_eq!(shapr.format(), BundleFormat::Embedded, "Shapr-Alike must be marked Embedded in manager");
         assert!(!shapr.is_directory(), "Shapr-Alike must not be marked directory");
@@ -1674,7 +1670,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_bundled_freecad_redraw_stays_responsive() {
+    fn selected_bundled_shapr_alike_redraw_stays_responsive() {
         let _lock = lock_theme_test();
         use crate::gui::App;
         let mut app = App::default();
@@ -1703,21 +1699,21 @@ mod tests {
         let _ = draw(vec![egui::Event::PointerMoved(base)]);
         let _ = draw(vec![base_click(true)]);
         let output = draw(vec![base_click(false)]);
-        let freecad = IconPack::from_directory(bundled_themes_dir().join("freecad")).expect("bundled FreeCAD theme");
-        let name = freecad.manifest.name_for_locale(&crate::i18n::language());
-        let at = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, name)).expect("bundled FreeCAD card");
+        let shapr = IconPack::from_directory(bundled_themes_dir().join("shapr-alike")).expect("bundled Shapr-Alike theme");
+        let name = shapr.manifest.name_for_locale(&crate::i18n::language());
+        let at = output.shapes.iter().find_map(|shape| find_sidebar_label(&shape.shape, name)).expect("bundled Shapr-Alike card");
         let click = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let _ = draw(vec![egui::Event::PointerMoved(at)]);
         let _ = draw(vec![click(true)]);
         let _ = draw(vec![click(false)]);
         let selected = ctx.data(|data| data.get_temp::<IconManagerState>(egui::Id::new("icon_manager_window")).expect("manager state"));
-        assert_eq!(selected.selected_pack_id, "freecad-classic");
+        assert_eq!(selected.selected_pack_id, "shapr-alike");
         let start = std::time::Instant::now();
         for _ in 0..8 {
             let _ = draw(vec![]);
         }
         let elapsed = start.elapsed();
-        eprintln!("selected bundled FreeCAD: eight redraws took {elapsed:?}");
+        eprintln!("selected bundled Shapr-Alike: eight redraws took {elapsed:?}");
         assert!(elapsed < std::time::Duration::from_millis(180), "eight redraws of the selected bundled theme took {elapsed:?}");
         fn find_gallery_tab(shape: &egui::epaint::Shape, title: &str) -> Option<egui::Pos2> {
             match shape {
@@ -1738,7 +1734,7 @@ mod tests {
             let _ = draw(vec![]);
         }
         let gallery_elapsed = start.elapsed();
-        eprintln!("selected bundled FreeCAD gallery: eight redraws took {gallery_elapsed:?}");
+        eprintln!("selected bundled Shapr-Alike gallery: eight redraws took {gallery_elapsed:?}");
         assert!(gallery_elapsed < std::time::Duration::from_millis(180), "eight gallery redraws of the selected bundled theme took {gallery_elapsed:?}");
         assert!(app.set.active_icon_packs.is_empty(), "selection must not activate the theme");
     }
@@ -1792,9 +1788,9 @@ mod tests {
         let _lock = lock_theme_test();
         let bundled = bundled_themes_dir();
         let temp_root = std::env::temp_dir().join(format!("qymcad_duplicate_theme_{}", std::process::id()));
-        let custom_theme = temp_root.join("custom_freecad");
+        let custom_theme = temp_root.join("custom_shapr");
         std::fs::create_dir_all(&custom_theme).expect("create another theme directory");
-        std::fs::copy(bundled.join("freecad/manifest.ron"), custom_theme.join("manifest.ron")).expect("copy the duplicate manifest");
+        std::fs::copy(bundled.join("shapr-alike/manifest.ron"), custom_theme.join("manifest.ron")).expect("copy the duplicate manifest");
         let dirs = [temp_root.clone(), bundled];
         let packs = discover_theme_packs_in_dirs(&dirs).packs;
 
@@ -1814,9 +1810,9 @@ mod tests {
             }
         }
         assert!(painted.iter().all(|text| !text.contains("widget ID")), "egui paints duplicate-widget warnings: {painted:?}");
-        let freecad_copies = packs.iter().filter(|pack| pack.manifest.id == "freecad-classic").count();
-        assert_eq!(freecad_copies, 1, "two search paths show the same theme twice and reuse its widget ID");
-        let chosen = packs.iter().find(|pack| pack.manifest.id == "freecad-classic").expect("the theme is available");
+        let shapr_copies = packs.iter().filter(|pack| pack.manifest.id == "shapr-alike").count();
+        assert_eq!(shapr_copies, 1, "two search paths show the same theme twice and reuse its widget ID");
+        let chosen = packs.iter().find(|pack| pack.manifest.id == "shapr-alike").expect("the theme is available");
         assert!(matches!(&chosen.source, PackSource::Directory(path) if path == &custom_theme), "the first search directory must take precedence");
         let _ = std::fs::remove_dir_all(temp_root);
     }
@@ -1945,8 +1941,8 @@ mod tests {
         }
 
         let mut app = App::default();
-        app.set.active_icon_packs = vec!["freecad-classic".into()];
-        app.set.inactive_icon_packs.retain(|id| id != "freecad-classic");
+        app.set.active_icon_packs = vec!["shapr-alike".into()];
+        app.set.inactive_icon_packs.retain(|id| id != "shapr-alike");
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
         open_icon_manager(&ctx);
@@ -1971,8 +1967,8 @@ mod tests {
         for shape in &output.shapes {
             labels_in(&shape.shape, &mut labels);
         }
-        let freecad = IconPack::from_directory(bundled_themes_dir().join("freecad")).expect("bundled FreeCAD theme");
-        let name = freecad.manifest.name_for_locale(&crate::i18n::language());
+        let shapr = IconPack::from_directory(bundled_themes_dir().join("shapr-alike")).expect("bundled Shapr-Alike theme");
+        let name = shapr.manifest.name_for_locale(&crate::i18n::language());
         let available_copies = labels.iter().filter(|label| label.rect.left() < 300.0 && label.rect.top() > 300.0 && label.text == name).count();
         assert_eq!(available_copies, 0, "deactivation paints the new card before the next frame");
     }

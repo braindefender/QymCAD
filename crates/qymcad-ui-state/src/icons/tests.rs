@@ -528,19 +528,14 @@ fn default_embedded_pack_is_valid_and_complete() {
 #[test]
 fn all_embedded_packs_are_valid_and_complete() {
     let packs = load_builtin_packs();
-    assert!(packs.len() >= 3, "must load at least default, freecad-classic, and shapr-alike; got {}", packs.len());
+    assert!(packs.len() >= 2, "must load at least default and shapr-alike; got {}", packs.len());
 
     let default_pack = packs.iter().find(|p| p.manifest.id == "default").expect("default pack exists");
     assert_eq!(default_pack.format(), BundleFormat::Embedded);
     assert!(!default_pack.is_directory());
     assert!(default_pack.is_verified());
-
-    let freecad_pack = packs.iter().find(|p| p.manifest.id == "freecad-classic").expect("freecad-classic pack exists");
-    assert_eq!(freecad_pack.format(), BundleFormat::Embedded);
-    assert!(!freecad_pack.is_directory());
-    assert!(freecad_pack.is_verified());
-    let (freecad_cov, total) = freecad_pack.coverage();
-    assert_eq!(freecad_cov, total, "embedded FreeCAD pack must cover all icons");
+    let (def_cov, total) = default_pack.coverage();
+    assert_eq!(def_cov, total, "embedded default pack must cover all icons");
 
     let shapr_pack = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike pack exists");
     assert_eq!(shapr_pack.format(), BundleFormat::Embedded);
@@ -750,39 +745,6 @@ fn discover_packs_in_directory() {
     assert_eq!(resolved.pack_id, "theme-a");
 
     let _ = std::fs::remove_dir_all(&temp_dir);
-}
-
-#[test]
-fn freecad_theme_is_complete_and_valid() {
-    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let freecad_dir = manifest_dir.join("../../assets/icon-themes/freecad");
-    if !freecad_dir.is_dir() {
-        return;
-    }
-
-    let pack = IconPack::from_directory(&freecad_dir).expect("FreeCAD theme must load from directory");
-    assert_eq!(pack.manifest.id, "freecad-classic");
-    assert!(pack.manifest.translations.contains_key("ru"));
-    assert!(pack.manifest.translations.contains_key("uk"));
-    assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
-    assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
-    assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
-    assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
-    assert_eq!(pack.manifest.color_mode, ColorMode::Universal);
-    assert_eq!(pack.format(), BundleFormat::Directory);
-    assert!(pack.is_directory());
-    validate_svg(&pack.get_pack_icon_svg()).expect("FreeCAD pack icon is a valid SVG");
-    assert_ne!(pack.get_pack_icon_svg(), load_default_pack().expect("default loads").get_pack_icon_svg());
-
-    let (cov, total) = pack.coverage();
-    assert_eq!(cov, total, "FreeCAD theme must cover 100% of icons (got {}/{})", cov, total);
-
-    for id in ALL_ICONS {
-        let svg = pack.get_svg_for_id(*id).expect("FreeCAD theme must have SVG for icon");
-        validate_svg(&svg).expect("SVG must pass validation");
-    }
-
-    assert!(pack.get_readme().contains("FreeCAD Classic Icon Theme"), "FreeCAD README should be available");
 }
 
 #[test]
