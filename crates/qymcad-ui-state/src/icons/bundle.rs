@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
-use super::manifest::{ColorMode, IconManifest};
+use super::manifest::IconManifest;
 use super::pack::IconPack;
 
 fn localized_readme_tag(name: &str) -> Option<&str> {
@@ -320,7 +320,7 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_icon_svg(data: &[u8], _color_mode: ColorMode) -> Result<(), String> {
+pub fn validate_icon_svg(data: &[u8]) -> Result<(), String> {
     validate_svg(data)?;
     validate_icon_tokens(data)?;
     Ok(())
@@ -677,12 +677,6 @@ pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String>
 
 /// Inspect and validate an icon pack directory, returning a detailed `ValidationReport`.
 /// Checks all SVG viewports, identifies extraneous/unknown files, and lists included vs missing icons.
-pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<ValidationReport, String> {
-    let source_dir = source_dir.as_ref();
-    let color_mode = if source_dir.join("manifest.ron").exists() { IconPack::from_directory(source_dir)?.manifest.color_mode } else { ColorMode::Universal };
-    inspect_pack_directory_for_mode(source_dir, color_mode)
-}
-
 fn estimate_deflate_ratio(data: &[u8]) -> Option<u64> {
     if data.len() <= 64 * 1024 {
         return Some(1);
@@ -700,8 +694,9 @@ fn estimate_deflate_ratio(data: &[u8]) -> Option<u64> {
     (data.len() as u64).checked_div(compressed)
 }
 
-/// Inspect a folder using the color mode that will be written to its bundle manifest.
-pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode: ColorMode) -> Result<ValidationReport, String> {
+/// Inspect and validate an icon pack directory, returning a detailed `ValidationReport`.
+/// Checks all SVG viewports, identifies extraneous/unknown files, and lists included vs missing icons.
+pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<ValidationReport, String> {
     let source_dir = source_dir.as_ref();
     let icons_dir = source_dir.join("icons");
     if !icons_dir.is_dir() {
@@ -770,12 +765,12 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
     }
 
     // 2. Recursively walk icons/ directory
-    fn walk_icons(base: &Path, current: &Path, color_mode: ColorMode, included: &mut Vec<IconId>, rejected: &mut Vec<RejectedArchive>, extraneous: &mut Vec<String>) {
+    fn walk_icons(base: &Path, current: &Path, included: &mut Vec<IconId>, rejected: &mut Vec<RejectedArchive>, extraneous: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(current) else { return };
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                walk_icons(base, &p, color_mode, included, rejected, extraneous);
+                walk_icons(base, &p, included, rejected, extraneous);
             } else if p.is_file() {
                 let Ok(rel) = p.strip_prefix(base) else { continue };
                 let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -805,7 +800,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                                 continue;
                             }
                         }
-                        match validate_icon_svg(&data, color_mode) {
+                        match validate_icon_svg(&data) {
                             Ok(()) => {
                                 if !included.contains(&id) {
                                     included.push(id);
@@ -824,7 +819,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
         }
     }
 
-    walk_icons(&icons_dir, &icons_dir, color_mode, &mut included, &mut rejected, &mut extraneous);
+    walk_icons(&icons_dir, &icons_dir, &mut included, &mut rejected, &mut extraneous);
     included.sort_by_key(|id| id.relative_path());
 
     // 3. Compute missing icons from standard catalog
@@ -839,7 +834,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
 pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, mut writer: W) -> Result<ValidationReport, String> {
     manifest.validate()?;
     let source_dir = source_dir.as_ref();
-    let report = inspect_pack_directory_for_mode(source_dir, manifest.color_mode)?;
+    let report = inspect_pack_directory(source_dir)?;
 
     if report.included.is_empty() {
         return Err("cannot package bundle: 0 valid CAD icons found in icons/ directory".to_string());

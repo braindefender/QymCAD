@@ -55,7 +55,6 @@ probe! {
             version: "1.0.0",
             author: "Tester",
             license: "MIT",
-            color_mode: Universal,
             inherits: None,
         )"#;
         std::fs::write(pack_dir.join("manifest.ron"), manifest).expect("write manifest.ron");

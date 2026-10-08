@@ -5,9 +5,8 @@
 use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
-    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory_for_mode, load_builtin_packs,
-    load_default_pack, package_bundle, reload_active_icon_themes, BundleFormat, CleanIconResult, ColorMode, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport,
-    ALL_ICONS,
+    clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory, load_builtin_packs, load_default_pack,
+    package_bundle, reload_active_icon_themes, BundleFormat, CleanIconResult, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport, ALL_ICONS,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::{Path, PathBuf};
@@ -327,13 +326,8 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         if let Some(prev) = to_forget {
                             ui.ctx().forget_image(&prev);
                         }
-                        let is_mono = pack.manifest.color_mode == ColorMode::Monochrome;
-                        let prepared_bytes = if is_mono {
-                            let pal = if ui.visuals().dark_mode { qymcad_scheme::dark() } else { qymcad_scheme::light() };
-                            egui::load::Bytes::from(qymcad_ui_state::icons::resolve_icon_tokens(svg_data, &pal, true))
-                        } else {
-                            svg_data.clone()
-                        };
+                        let pal = if ui.visuals().dark_mode { qymcad_scheme::dark() } else { qymcad_scheme::light() };
+                        let prepared_bytes = egui::load::Bytes::from(qymcad_ui_state::icons::resolve_icon_tokens(svg_data, &pal));
                         let image = egui::Image::from_bytes(uri, prepared_bytes).fit_to_exact_size(egui::vec2(48.0, 48.0));
                         ui.put(preview.shrink(4.0), image);
                     }
@@ -383,7 +377,7 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                         Err(reason) => {
                             let error = format!("{}: {reason}", crate::i18n::tr("icontheme-mgr-gallery-invalid"));
                             ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
-                            if cleanable && !reason.starts_with("monochrome ") && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icontheme-mgr-clean-icon"))).clicked() {
+                            if cleanable && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icontheme-mgr-clean-icon"))).clicked() {
                                 clean_clicked = true;
                             }
                         }
@@ -406,7 +400,6 @@ pub(crate) struct PackagerDialogState {
     pub author: String,
     pub license: String,
     pub description: String,
-    pub is_monochrome: bool,
     pub source_dir: String,
     pub output_file: String,
     pub message: Option<String>,
@@ -424,7 +417,6 @@ impl Default for PackagerDialogState {
             author: "".into(),
             license: "LGPL-2.1-or-later".into(),
             description: "Custom CAD vector icons".into(),
-            is_monochrome: false,
             source_dir: "".into(),
             output_file: "".into(),
             message: None,
@@ -511,10 +503,6 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
             ui.text_edit_singleline(&mut state.description);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icontheme-packager-field-monochrome"));
-            ui.checkbox(&mut state.is_monochrome, crate::i18n::tr("icontheme-packager-monochrome-hint"));
-            ui.end_row();
-
             ui.label(crate::i18n::tr("icontheme-packager-field-source"));
             ui.text_edit_singleline(&mut state.source_dir);
             ui.end_row();
@@ -541,8 +529,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                     state.is_error = true;
                     state.report = None;
                 } else {
-                    let color_mode = if state.is_monochrome { ColorMode::Monochrome } else { ColorMode::Universal };
-                    match inspect_pack_directory_for_mode(&source_path, color_mode) {
+                    match inspect_pack_directory(&source_path) {
                         Ok(rep) => {
                             if rep.has_issues() {
                                 let total_str = (rep.rejected.len() + rep.extraneous.len()).to_string();
@@ -588,7 +575,6 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                             author: state.author.trim().to_string(),
                             license: state.license.trim().to_string(),
                             description: state.description.trim().to_string(),
-                            color_mode: if state.is_monochrome { ColorMode::Monochrome } else { ColorMode::Universal },
                             translations,
                             verified: true,
                         };
@@ -966,7 +952,6 @@ fn open_packager_for_directory(ctx: &egui::Context, pack: &IconPack, source: &st
         state.author = pack.manifest.author.clone();
         state.license = pack.manifest.license.clone();
         state.description = pack.manifest.description.clone();
-        state.is_monochrome = pack.manifest.color_mode == ColorMode::Monochrome;
         state.source_dir = source.display().to_string();
         state.output_file = source.with_extension("qicons").display().to_string();
         state.message = None;
@@ -1262,12 +1247,6 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             ui.separator();
                             ui.label(egui::RichText::new(crate::i18n::tr1("icontheme-mgr-meta-author", "value", &pack.manifest.author)).small().weak());
                         }
-                        ui.separator();
-                        let mode_key = match &pack.manifest.color_mode {
-                            ColorMode::Monochrome => "icontheme-mgr-color-monochrome",
-                            ColorMode::Universal => "icontheme-mgr-color-universal",
-                        };
-                        ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
                     });
 
                     let cov = pack_preview.as_ref().map_or_else(|| pack.coverage(), |preview| qymcad_ui_state::icons::CoverageCount { present: preview.coverage, total: ALL_ICONS.len() });
@@ -1571,7 +1550,6 @@ mod tests {
         // Fallback works even when active packs are missing: falls back to built-in default SVG pack
         let icon = qymcad_ui_state::icons::resolve_global_icon(qymcad_ui_state::icons::IconId::SketchLine);
         assert_eq!(icon.pack_id, "default");
-        assert_eq!(icon.color_mode, qymcad_ui_state::icons::ColorMode::Monochrome);
     }
 
     #[test]
@@ -1579,7 +1557,6 @@ mod tests {
         let state = PackagerDialogState::default();
         assert!(!state.is_open);
         assert_eq!(state.license, "LGPL-2.1-or-later");
-        assert!(!state.is_monochrome);
     }
 
     #[test]
@@ -1756,7 +1733,6 @@ mod tests {
                 author: String::new(),
                 license: "MIT".into(),
                 description: String::new(),
-                color_mode: ColorMode::Universal,
                 translations: Default::default(),
                 verified: false,
             },
@@ -2067,7 +2043,6 @@ mod tests {
             author: "Test".into(),
             license: "MIT".into(),
             description: String::new(),
-            color_mode: ColorMode::Universal,
             translations: Default::default(),
             verified: false,
         };
@@ -2176,7 +2151,6 @@ mod tests {
                 author: "Test".into(),
                 license: "MIT".into(),
                 description: String::new(),
-                color_mode: ColorMode::Universal,
                 translations: Default::default(),
                 verified: false,
             },
@@ -2372,7 +2346,7 @@ mod tests {
     }
 
     #[test]
-    fn monochrome_icon_with_current_color_is_prepared_with_theme_stroke_in_gallery() {
+    fn icon_with_current_color_is_prepared_with_theme_stroke_in_gallery() {
         let _lock = lock_theme_test();
         use egui::load::{ImagePoll, SizeHint};
 
@@ -2388,7 +2362,6 @@ mod tests {
             version: "1.0.0",
             author: "Tester",
             license: "MIT",
-            color_mode: Monochrome,
             inherits: None,
         )"#;
         std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
@@ -2424,7 +2397,7 @@ mod tests {
             assert!(center_pixel.a() > 0, "pixel must be non-transparent");
             let expected_ratio = qymcad_scheme::dark().icon_stroke[0] as f32 / 255.0;
             let actual_ratio = center_pixel.r() as f32 / center_pixel.a() as f32;
-            assert!((actual_ratio - expected_ratio).abs() < 0.05, "monochrome icon with currentColor must be prepared with active theme stroke color, got: {center_pixel:?}");
+            assert!((actual_ratio - expected_ratio).abs() < 0.05, "icon with currentColor must be prepared with active theme stroke color, got: {center_pixel:?}");
         } else {
             panic!("gallery image should be ready");
         }

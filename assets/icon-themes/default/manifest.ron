@@ -20,5 +20,4 @@
             description: "Вбудовані монохромні векторні іконки на основі Phosphor",
         ),
     },
-    color_mode: Monochrome,
 )

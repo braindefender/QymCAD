@@ -5,7 +5,7 @@ use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS};
-use super::manifest::{locale_fallbacks, ColorMode, IconManifest, PackageType};
+use super::manifest::{locale_fallbacks, IconManifest, PackageType};
 
 const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes/default/icon.svg"));
 
@@ -261,7 +261,6 @@ impl IconPack {
                 author: "Community".to_string(),
                 license: "Unknown".to_string(),
                 description: "Imported ZIP archive (unverified)".to_string(),
-                color_mode: ColorMode::Universal,
                 translations: Default::default(),
                 verified: false,
             }
@@ -363,7 +362,7 @@ impl IconPack {
         } else {
             // Unverified pack (folder, community zip, or raw memory): must pass SVG validation to prevent corrupting UI or blocking fallback
             sanitize_svg_for_safety(data.clone())?;
-            if super::bundle::validate_icon_svg(&data, self.manifest.color_mode).is_err() {
+            if super::bundle::validate_icon_svg(&data).is_err() {
                 return None;
             }
             Some(data)
@@ -426,7 +425,7 @@ impl IconPack {
         if data.is_empty() {
             return Err("SVG file is empty".to_string());
         }
-        super::bundle::validate_icon_svg(&data, self.manifest.color_mode)?;
+        super::bundle::validate_icon_svg(&data)?;
         if matches!(self.source, PackSource::Archive(_) | PackSource::Memory(_)) && self.format() != BundleFormat::VerifiedArchive && sanitize_svg_for_safety(data.clone()).is_none() {
             return Err("SVG failed archive safety checks (external reference or NUL byte)".to_string());
         }
@@ -528,10 +527,7 @@ impl IconPack {
             out.push_str(description);
             out.push_str("\n\n");
         }
-        out.push_str(&format!(
-            "- **ID**: `{}`\n- **Version**: `{}`\n- **Author**: {}\n- **License**: `{}`\n- **Color Mode**: `{:?}`\n",
-            self.manifest.id, self.manifest.version, self.manifest.author, self.manifest.license, self.manifest.color_mode
-        ));
+        out.push_str(&format!("- **ID**: `{}`\n- **Version**: `{}`\n- **Author**: {}\n- **License**: `{}`\n", self.manifest.id, self.manifest.version, self.manifest.author, self.manifest.license));
         out
     }
 

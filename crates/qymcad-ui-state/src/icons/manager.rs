@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use super::id::IconId;
-use super::manifest::ColorMode;
 use super::pack::IconPack;
 
 /// The result of resolving an icon through the priority stack.
@@ -12,8 +11,6 @@ use super::pack::IconPack;
 pub struct ResolvedIcon {
     /// SVG file bytes.
     pub data: Arc<[u8]>,
-    /// Color mode of the pack supplying the icon.
-    pub color_mode: ColorMode,
     /// Identifier of the pack supplying the icon.
     pub pack_id: String,
     /// Monotonically increasing revision counter (invalidates texture cache on edits).
@@ -233,9 +230,8 @@ impl IconManager {
 
         for pack in &self.active_stack {
             if let Some(data) = pack.get_svg_for_id(id) {
-                let is_mono = pack.manifest.color_mode == ColorMode::Monochrome;
-                let data = Arc::from(resolve_icon_tokens(&data, &self.palette, is_mono));
-                let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
+                let data = Arc::from(resolve_icon_tokens(&data, &self.palette));
+                let res = ResolvedIcon { data, pack_id: pack.manifest.id.clone(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
                 if !had_transient_read_failure {
                     self.cache.insert(id, res.clone());
                 }
@@ -250,8 +246,8 @@ impl IconManager {
         // The default pack embedded into the binary is always at the base of the active stack,
         // and contains all 106 icons. If somehow not found, provide a minimal fallback SVG.
         let fallback_raw = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>";
-        let data = Arc::from(resolve_icon_tokens(fallback_raw, &self.palette, true));
-        let fallback = ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "builtin-fallback".to_string(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
+        let data = Arc::from(resolve_icon_tokens(fallback_raw, &self.palette));
+        let fallback = ResolvedIcon { data, pack_id: "builtin-fallback".to_string(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
         // Avoid permanently poisoning cache if custom pack file on disk failed to read transiently
         if !had_transient_read_failure {
             self.cache.insert(id, fallback.clone());
@@ -308,15 +304,13 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
     if let Some(def) = load_default_pack() {
         if let Some(data) = def.get_svg_for_id(id) {
             let pal = qymcad_scheme::dark();
-            let is_mono = def.manifest.color_mode == ColorMode::Monochrome;
-            let data = Arc::from(resolve_icon_tokens(&data, &pal, is_mono));
-            return ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "default".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() };
+            let data = Arc::from(resolve_icon_tokens(&data, &pal));
+            return ResolvedIcon { data, pack_id: "default".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() };
         }
     }
     let pal = qymcad_scheme::dark();
-    let data =
-        Arc::from(resolve_icon_tokens(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>", &pal, true));
-    ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "builtin-fallback".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() }
+    let data = Arc::from(resolve_icon_tokens(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>", &pal));
+    ResolvedIcon { data, pack_id: "builtin-fallback".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() }
 }
 
 /// Invalidate all cached icon resolutions across active packs.
@@ -443,30 +437,13 @@ pub fn get_global_icon_revision() -> u64 {
     0
 }
 
-/// Prepares monochrome SVG bytes for tinting by replacing `currentColor` and black fills with white.
-pub fn prepare_monochrome_svg(data: &[u8]) -> Vec<u8> {
-    match std::str::from_utf8(data) {
-        Ok(text) => {
-            if text.contains("currentColor") || text.contains("fill=\"#000000\"") || text.contains("fill=\"black\"") {
-                let replaced = text.replace("currentColor", "white").replace("fill=\"#000000\"", "fill=\"white\"").replace("fill=\"black\"", "fill=\"white\"");
-                replaced.into_bytes()
-            } else {
-                data.to_vec()
-            }
-        }
-        Err(_) => data.to_vec(),
-    }
-}
-
 /// Preprocess SVG bytes by resolving CSS color variables (`var(--token, fallback)`)
 /// and `currentColor` using the active palette.
-pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette, is_monochrome: bool) -> Vec<u8> {
+pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette) -> Vec<u8> {
     let has_var = data.windows(4).any(|w| w == b"var(");
     let has_current_color = data.windows(12).any(|w| w == b"currentColor");
-    let needs_mono_tint =
-        is_monochrome && (data.windows(12).any(|w| w == b"fill=\"white\"") || data.windows(14).any(|w| w == b"fill=\"#ffffff\"") || data.windows(14).any(|w| w == b"fill=\"#FFFFFF\""));
 
-    if !has_var && !has_current_color && !needs_mono_tint {
+    if !has_var && !has_current_color {
         return data.to_vec();
     }
 
@@ -517,11 +494,6 @@ pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette, is_mon
 
     if result.contains("currentColor") {
         result = result.replace("currentColor", &stroke_hex);
-    }
-
-    if is_monochrome && !text.contains("var(") && (result.contains("fill=\"white\"") || result.contains("fill=\"#ffffff\"") || result.contains("fill=\"#FFFFFF\"")) {
-        let stroke_attr = format!("fill=\"{stroke_hex}\"");
-        result = result.replace("fill=\"white\"", &stroke_attr).replace("fill=\"#ffffff\"", &stroke_attr).replace("fill=\"#FFFFFF\"", &stroke_attr);
     }
 
     result.into_bytes()

@@ -41,7 +41,6 @@ fn gallery_inspection_distinguishes_missing_and_invalid_icons() {
             author: "Test".to_string(),
             license: "MIT".to_string(),
             description: String::new(),
-            color_mode: ColorMode::Universal,
             translations: Default::default(),
             verified: false,
         },
@@ -125,7 +124,6 @@ fn directory_cleaner_updates_single_and_all_repairable_icons() {
         author: "Test".into(),
         license: "MIT".into(),
         description: String::new(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -168,7 +166,6 @@ fn manifest_ron_roundtrip() {
         author: "FreeCAD Contributors".to_string(),
         license: "LGPL-2.1-or-later".to_string(),
         description: "Classic colored tool icons".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -178,12 +175,7 @@ fn manifest_ron_roundtrip() {
 
     assert_eq!(parsed.id, "freecad-classic");
     assert_eq!(parsed.name, "FreeCAD Classic");
-    assert_eq!(parsed.color_mode, ColorMode::Universal);
-
-    let mut monochrome = manifest;
-    monochrome.color_mode = ColorMode::Monochrome;
-    let parsed = IconManifest::parse_ron(&monochrome.to_ron().expect("monochrome manifest serializes")).expect("monochrome manifest parses");
-    assert_eq!(parsed.color_mode, ColorMode::Monochrome);
+    assert_eq!(parsed.description, "Classic colored tool icons");
 }
 
 #[test]
@@ -196,7 +188,6 @@ fn localized_bundle_text_survives_packaging() {
         id: "localized-test",
         name: "Color Icons",
         description: "Base description",
-        color_mode: Universal,
         translations: {
             "de": (name: "Farbsymbole", description: "Deutsche Beschreibung"),
         },
@@ -225,12 +216,6 @@ fn localized_bundle_text_survives_packaging() {
 }
 
 #[test]
-fn manifest_rejects_palette_specific_color_mode() {
-    let manifest = r#"(id: "old-mode", name: "Old Mode", color_mode: Specific(["dark"]))"#;
-    assert!(IconManifest::parse_ron(manifest).is_err(), "icon packs must use only monochrome or full-color rendering");
-}
-
-#[test]
 fn cascade_fallback_chain() {
     let sample_svg = br#"<svg viewBox="0 0 64 64"><line x1="0" y1="0" x2="64" y2="64"/></svg>"#;
 
@@ -246,7 +231,6 @@ fn cascade_fallback_chain() {
             author: "Test".to_string(),
             license: "MIT".to_string(),
             description: "".to_string(),
-            color_mode: ColorMode::Monochrome,
             translations: Default::default(),
             verified: false,
         },
@@ -266,7 +250,6 @@ fn cascade_fallback_chain() {
             author: "Test".to_string(),
             license: "MIT".to_string(),
             description: "".to_string(),
-            color_mode: ColorMode::Universal,
             translations: Default::default(),
             verified: false,
         },
@@ -281,17 +264,14 @@ fn cascade_fallback_chain() {
     // 1. Line is resolved from Pack A
     let res_line = mgr.resolve(IconId::SketchLine);
     assert_eq!(res_line.pack_id, "pack-a");
-    assert_eq!(res_line.color_mode, ColorMode::Monochrome);
 
     // 2. Rect is resolved from Pack B (falling through Pack A)
     let res_rect = mgr.resolve(IconId::SketchRect);
     assert_eq!(res_rect.pack_id, "pack-b");
-    assert_eq!(res_rect.color_mode, ColorMode::Universal);
 
     // 3. Extrude is in neither Pack A nor Pack B, falls back to the embedded default SVG pack
     let res_extrude = mgr.resolve(IconId::PartExtrude);
     assert_eq!(res_extrude.pack_id, "default");
-    assert_eq!(res_extrude.color_mode, ColorMode::Monochrome);
 }
 
 #[test]
@@ -345,7 +325,6 @@ fn package_bundle_and_load_from_archive() {
         author: "Tester".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -388,7 +367,6 @@ fn missing_or_invalid_pack_icon_uses_default() {
         author: String::new(),
         license: "MIT".into(),
         description: String::new(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -463,7 +441,6 @@ fn inspect_and_package_excludes_problematic_files() {
         author: "Tester".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -508,7 +485,6 @@ fn default_embedded_pack_is_valid_and_complete() {
     assert_ne!(pack.get_readme_for_locale("kk"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
-    assert_eq!(pack.manifest.color_mode, ColorMode::Monochrome);
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
     assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
     validate_svg(&pack.get_pack_icon_svg()).expect("default pack icon is a valid SVG");
@@ -520,7 +496,7 @@ fn default_embedded_pack_is_valid_and_complete() {
     // Verify SVG data is valid for every single icon
     for id in ALL_ICONS {
         let svg = pack.get_svg_for_id(*id).expect("must have SVG");
-        validate_icon_svg(&svg, ColorMode::Monochrome).expect("default SVG must pass monochrome validation");
+        validate_icon_svg(&svg).expect("default SVG must pass monochrome validation");
     }
 
     // Verify pack README is loaded
@@ -578,7 +554,6 @@ fn monochrome_inspection_and_packaging_share_color_validation() {
         author: "Test".into(),
         license: "MIT".into(),
         description: String::new(),
-        color_mode: ColorMode::Monochrome,
         translations: Default::default(),
         verified: false,
     };
@@ -612,8 +587,7 @@ fn token_svg_validates_css_variables_and_fallbacks() {
         r##"<svg viewBox="0 0 24 24"><rect fill="var(--icon-neutral, #CCCCCC)" stroke="currentColor"/></svg>"##,
         r##"<svg viewBox="0 0 24 24"><path fill="#f00" stroke="#00f"/></svg>"##,
     ] {
-        validate_icon_svg(valid.as_bytes(), ColorMode::Universal).unwrap();
-        validate_icon_svg(valid.as_bytes(), ColorMode::Monochrome).unwrap();
+        validate_icon_svg(valid.as_bytes()).unwrap();
     }
 
     // Invalid variables must be rejected
@@ -623,7 +597,7 @@ fn token_svg_validates_css_variables_and_fallbacks() {
         (r##"<svg viewBox="0 0 24 24"><path stroke="var(icon-stroke, #fff)"/></svg>"##, "must start with '--'"),
         (r##"<svg viewBox="0 0 24 24"><path stroke="var(--icon-stroke, )"/></svg>"##, "empty fallback color"),
     ] {
-        let err = validate_icon_svg(invalid.as_bytes(), ColorMode::Universal).unwrap_err();
+        let err = validate_icon_svg(invalid.as_bytes()).unwrap_err();
         assert!(err.contains(expected), "expected '{expected}' in '{err}'");
     }
 }
@@ -635,36 +609,36 @@ fn resolve_icon_tokens_substitutes_active_palette_and_preserves_static() {
 
     let svg_with_tokens = br##"<svg viewBox="0 0 24 24"><path stroke="var(--icon-stroke, #111)" fill="var(--icon-sketch-primary, #222)"/><rect fill="currentColor"/></svg>"##;
 
-    let dark_resolved = String::from_utf8(super::manager::resolve_icon_tokens(svg_with_tokens, &dark_pal, false)).unwrap();
+    let dark_resolved = String::from_utf8(super::manager::resolve_icon_tokens(svg_with_tokens, &dark_pal)).unwrap();
     assert!(dark_resolved.contains("stroke=\"#E0E0E0\""));
     assert!(dark_resolved.contains("fill=\"#29B6F6\""));
     assert!(dark_resolved.contains("fill=\"#E0E0E0\""));
 
-    let light_resolved = String::from_utf8(super::manager::resolve_icon_tokens(svg_with_tokens, &light_pal, false)).unwrap();
+    let light_resolved = String::from_utf8(super::manager::resolve_icon_tokens(svg_with_tokens, &light_pal)).unwrap();
     assert!(light_resolved.contains("stroke=\"#2A2A2A\""));
     assert!(light_resolved.contains("fill=\"#0288D1\""));
     assert!(light_resolved.contains("fill=\"#2A2A2A\""));
 
     // Dimmed underlay token
     let dimmed_svg = br##"<svg viewBox="0 0 24 24"><path fill="var(--icon-dimmed, #FFFFFF)"/></svg>"##;
-    let dark_dimmed = String::from_utf8(super::manager::resolve_icon_tokens(dimmed_svg, &dark_pal, false)).unwrap();
+    let dark_dimmed = String::from_utf8(super::manager::resolve_icon_tokens(dimmed_svg, &dark_pal)).unwrap();
     assert!(dark_dimmed.contains("fill=\"#FFFFFF\""));
-    let light_dimmed = String::from_utf8(super::manager::resolve_icon_tokens(dimmed_svg, &light_pal, false)).unwrap();
+    let light_dimmed = String::from_utf8(super::manager::resolve_icon_tokens(dimmed_svg, &light_pal)).unwrap();
     assert!(light_dimmed.contains("fill=\"#2A2A2A\""));
 
     // Unknown token uses fallback
     let unknown_token_svg = br##"<svg viewBox="0 0 24 24"><path stroke="var(--custom-fallback, #AABBCC)"/></svg>"##;
-    let fallback_resolved = String::from_utf8(super::manager::resolve_icon_tokens(unknown_token_svg, &dark_pal, false)).unwrap();
+    let fallback_resolved = String::from_utf8(super::manager::resolve_icon_tokens(unknown_token_svg, &dark_pal)).unwrap();
     assert!(fallback_resolved.contains("stroke=\"#AABBCC\""));
 
     // Nested paren in fallback
     let nested_fallback_svg = br##"<svg viewBox="0 0 24 24"><path stroke="var(--custom-rgb, rgba(10, 20, 30, 0.5))"/></svg>"##;
-    let nested_resolved = String::from_utf8(super::manager::resolve_icon_tokens(nested_fallback_svg, &dark_pal, false)).unwrap();
+    let nested_resolved = String::from_utf8(super::manager::resolve_icon_tokens(nested_fallback_svg, &dark_pal)).unwrap();
     assert!(nested_resolved.contains("stroke=\"rgba(10, 20, 30, 0.5)\""));
 
     // Static SVG without tokens is byte-for-byte identical
     let static_svg = br##"<svg viewBox="0 0 24 24"><path stroke="#FF0000" fill="#00FF00"/></svg>"##;
-    let static_resolved = super::manager::resolve_icon_tokens(static_svg, &dark_pal, false);
+    let static_resolved = super::manager::resolve_icon_tokens(static_svg, &dark_pal);
     assert_eq!(static_resolved, static_svg.to_vec());
 }
 
@@ -680,7 +654,6 @@ fn global_icon_manager_cascade() {
     // Initial resolution with default pack resolves to default embedded SVG
     let initial = resolve_global_icon(IconId::SketchLine);
     assert_eq!(initial.pack_id, "default");
-    assert_eq!(initial.color_mode, ColorMode::Monochrome);
 
     // Now push custom pack on top
     let mut map = HashMap::new();
@@ -695,7 +668,6 @@ fn global_icon_manager_cascade() {
             author: "Test".to_string(),
             license: "MIT".to_string(),
             description: "Test".to_string(),
-            color_mode: ColorMode::Universal,
             translations: Default::default(),
             verified: false,
         },
@@ -709,7 +681,6 @@ fn global_icon_manager_cascade() {
 
     let resolved = resolve_global_icon(IconId::SketchLine);
     assert_eq!(resolved.data.as_ref(), &custom_svg[..]);
-    assert_eq!(resolved.color_mode, ColorMode::Universal);
     assert_eq!(resolved.pack_id, "pack-custom");
 
     // Reset global icon manager state so it does not affect other tests
@@ -751,7 +722,6 @@ fn discover_packs_in_directory() {
         author: "Tester".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -802,7 +772,6 @@ fn bundle_format_and_provenance_detection() {
         author: "Dev".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -840,7 +809,6 @@ fn live_watch_folder_auto_reload_on_svg_change() {
         author: "Dev".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -912,7 +880,6 @@ fn missing_directory_icons_do_not_block_coverage() {
         author: "Test".to_string(),
         license: "MIT".to_string(),
         description: String::new(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -940,7 +907,6 @@ fn test_successive_folder_live_reloads_do_not_stop_after_3_times() {
         author: "Tester".to_string(),
         license: "MIT".to_string(),
         description: "Testing continuous updates".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1000,7 +966,6 @@ fn qicons_valid_trailer_and_tampered_downgrade() {
         author: "Dev".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1143,7 +1108,6 @@ fn manifest_validation_accepts_valid_manifest() {
         author: "Author Person".into(),
         license: "MIT".into(),
         description: "A valid short description of this theme.".into(),
-        color_mode: ColorMode::Universal,
         translations: [("de".into(), LocalizedThemeText { name: "Deutsches Thema".into(), description: "Kurze Beschreibung".into() })].into_iter().collect(),
         verified: false,
     };
@@ -1160,7 +1124,6 @@ fn manifest_validation_rejects_invalid_or_oversized_id() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Desc".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1200,7 +1163,6 @@ fn manifest_validation_rejects_invalid_or_oversized_name() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Desc".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1228,7 +1190,6 @@ fn manifest_validation_rejects_oversized_metadata_fields() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Desc".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1259,7 +1220,6 @@ fn manifest_validation_rejects_invalid_or_oversized_translations() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Desc".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1304,7 +1264,6 @@ fn package_bundle_rejects_oversized_manifest_before_writing() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Desc".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1333,7 +1292,6 @@ fn directory_pack_rejects_manifest_with_oversized_description() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "x".repeat(super::manifest::MAX_MANIFEST_DESCRIPTION_LEN + 10),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1345,7 +1303,7 @@ fn directory_pack_rejects_manifest_with_oversized_description() {
     assert!(load_res.unwrap_err().contains("description exceeds maximum length"));
 
     // 2. Inspecting folder should record the manifest error in rejected
-    let rep = inspect_pack_directory_for_mode(&pack_dir, ColorMode::Universal).unwrap();
+    let rep = inspect_pack_directory(&pack_dir).unwrap();
     assert!(rep.rejected.iter().any(|rej| rej.path == "manifest.ron" && rej.reason.contains("description exceeds maximum length")));
 
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1380,7 +1338,6 @@ fn manifest_validation_rejects_zalgo_in_all_fields() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Valid short description".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1447,7 +1404,6 @@ fn directory_icon_exceeding_max_svg_size_is_not_loaded() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Test".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1491,7 +1447,6 @@ fn invalid_icon_in_custom_pack_continues_fallback_to_default() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Test".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1529,7 +1484,6 @@ fn packager_rejects_icon_with_excessive_compression_ratio() {
         author: "Author".into(),
         license: "MIT".into(),
         description: "Test".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1569,7 +1523,6 @@ fn custom_folder_with_special_id_is_still_directory_format() {
         author: "Me".into(),
         license: "MIT".into(),
         description: "Test".into(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };
@@ -1597,21 +1550,20 @@ fn resolve_global_icon_lazily_initializes_manager() {
 }
 
 #[test]
-fn live_watch_reloads_manifest_color_mode() {
+fn live_watch_reloads_manifest_metadata() {
     let temp_root = std::env::temp_dir().join(format!("qymcad_manifest_reload_test_{}", std::process::id()));
     let icons_dir = temp_root.join("icons").join("sketch");
     std::fs::create_dir_all(&icons_dir).expect("create icons dir");
 
     let manifest_path = temp_root.join("manifest.ron");
-    let universal_manifest = r#"(
+    let initial_manifest = r#"(
         id: "live-manifest-pack",
         name: "Live Manifest Pack",
         version: "1.0.0",
         author: "Tester",
         license: "MIT",
-        color_mode: Universal,
     )"#;
-    std::fs::write(&manifest_path, universal_manifest).expect("write universal manifest");
+    std::fs::write(&manifest_path, initial_manifest).expect("write initial manifest");
 
     let svg_content = br##"<svg viewBox="0 0 24 24"><path d="M0 0h24v24z" fill="#ff0000"/></svg>"##;
     std::fs::write(icons_dir.join("line.svg"), svg_content).expect("write line.svg");
@@ -1622,25 +1574,24 @@ fn live_watch_reloads_manifest_color_mode() {
     manager.set_pack_watching("live-manifest-pack", true);
 
     let res1 = manager.resolve(IconId::SketchLine);
-    assert_eq!(res1.color_mode, ColorMode::Universal);
+    assert_eq!(res1.pack_id, "live-manifest-pack");
 
     std::thread::sleep(std::time::Duration::from_millis(300));
 
-    let mono_manifest = r#"(
+    let updated_manifest = r#"(
         id: "live-manifest-pack",
-        name: "Live Manifest Pack",
+        name: "Live Manifest Pack Updated",
         version: "1.0.0",
         author: "Tester",
         license: "MIT",
-        color_mode: Monochrome,
     )"#;
-    std::fs::write(&manifest_path, mono_manifest).expect("write monochrome manifest");
+    std::fs::write(&manifest_path, updated_manifest).expect("write updated manifest");
 
     let changed = manager.check_watched_directories();
     assert!(changed, "check_watched_directories should detect manifest change");
 
     let res2 = manager.resolve(IconId::SketchLine);
-    assert_eq!(res2.color_mode, ColorMode::Monochrome, "color mode must update to Monochrome after manifest reload");
+    assert_eq!(res2.pack_id, "live-manifest-pack");
 
     let _ = std::fs::remove_dir_all(&temp_root);
 }
@@ -1658,7 +1609,6 @@ fn transient_read_failure_in_higher_theme_does_not_poison_cache() {
         version: "1.0.0",
         author: "Tester",
         license: "MIT",
-        color_mode: Universal,
     )"#;
     std::fs::write(&manifest_path, manifest).expect("write manifest");
 
@@ -1698,7 +1648,6 @@ fn discover_packs_detailed_reports_errors_for_corrupt_or_invalid_archives() {
         author: "Tester".to_string(),
         license: "MIT".to_string(),
         description: "Test".to_string(),
-        color_mode: ColorMode::Universal,
         translations: Default::default(),
         verified: false,
     };

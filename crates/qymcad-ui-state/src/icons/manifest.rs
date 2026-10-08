@@ -32,16 +32,6 @@ pub enum PackageType {
     IconTheme,
 }
 
-/// Colour rendering mode of the theme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum ColorMode {
-    /// Full-colour icons rendered as-is across all UI themes.
-    #[default]
-    Universal,
-    /// Single-colour icons dynamically tinted by the active theme foreground.
-    Monochrome,
-}
-
 /// Maximum length of a theme bundle ID (64 characters).
 pub const MAX_MANIFEST_ID_LEN: usize = 64;
 
@@ -151,8 +141,6 @@ pub struct IconManifest {
     pub description: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub translations: BTreeMap<String, LocalizedThemeText>,
-    #[serde(default)]
-    pub color_mode: ColorMode,
     /// Whether the package is verified by QymCAD packager.
     #[serde(default)]
     pub verified: bool,

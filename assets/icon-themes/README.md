@@ -90,9 +90,6 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
             description: "Классические цветные иконки инструментов CAD",
         ),
     },
-
-    // Color rendering mode: Universal (full-color) | Monochrome
-    color_mode: Universal,
 )
 ```
 
@@ -101,14 +98,13 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
 | Field | Type | Required | Description |
 | :--- | :--- | :---: | :--- |
 | `package_type` | `PackageType` | No (default `IconTheme`) | Extension type identifier. Always `IconTheme`. |
-| `id` | `String` | **Yes** | Unique package ID (e.g., `default`, `freecad-classic`). |
+| `id` | `String` | **Yes** | Unique package ID (e.g., `default`, `shapr-alike`). |
 | `name` | `String` | **Yes** | Human-readable name displayed in Settings -> Icon Themes. |
 | `version` | `String` | No | Semantic version string (e.g., `"1.0.0"`). |
 | `author` | `String` | No | Author, maintainer, or contributing community. |
 | `license` | `String` | No | SPDX license identifier or license name. |
 | `description` | `String` | No | Concise description of the pack. |
 | `translations` | map of language tags to `(name, description)` | No | Translated display text. Either translated field may be omitted. |
-| `color_mode` | `ColorMode` | No (default `Universal`) | Color rendering behavior (see below). |
 
 ---
 
@@ -118,26 +114,16 @@ Keep `name` and `description` as the base text in `manifest.ron`. Add translatio
 
 Place a full description in `README.md` and optional translations beside it, named `README.<language-tag>.md`, for example `README.ru.md` or `README.pt-BR.md`. The same language fallback applies to README files. If no README is available, the manager builds a short description from the localized manifest text. Localized README files are included by the built-in packager.
 
-The package ID, author, license, version and color mode are shared across languages. Existing themes without translations continue to use their base text.
+The package ID, author, license, and version are shared across languages. Existing themes without translations continue to use their base text.
 
 ---
 
-## 4. Color Modes (`color_mode`)
+## 4. Theme Palette Colors & CSS Variables
 
-QymCAD supports two color rendering modes:
-
-### 4.1. `Universal` (Full-Color Icons)
-* **Purpose:** Multi-color icons (e.g. FreeCAD Classic, SolidWorks, Inventor styles).
-* **Behavior:** Rendered as-is. All embedded colors, fills, strokes, and gradients are preserved.
-* **Design Guidelines:** Ensure icons remain legible on both dark and light UI background palettes. For shapes with dark elements, add a subtle light outline (`stroke`) so they stand out clearly against dark backgrounds.
-
-### 4.2. `Monochrome` (Flat / Outlined Icons)
-* **Purpose:** Single-color minimalist or line-art icons (e.g. QymCAD Default Phosphor theme).
-* **Behavior:** Dynamically tinted using the active UI theme's foreground text / interactive accent color (`egui`). Hovered and active button states automatically modulate brightness and contrast.
-* **Design Guidelines:**
-  * Visible shapes must use white (`white`, `#fff`, `#ffffff`), `currentColor`, or `none` for fills and strokes. A white fill may be inherited from a parent `<g>` or `<svg>`.
-  * The validator rejects implicit black fills, other colors, CSS `<style>` elements, classes, paint servers, and unresolved paint references. Rejected icons are shown with a reason in the icon manager and omitted from packaged bundles.
-  * The bundle's `icon.svg` is a theme thumbnail and may use multiple colors.
+All icon themes dynamically resolve colors from the active UI color scheme using CSS variables:
+* **Syntax:** `var(--token-name, fallback_color)`
+* **Supported tokens:** `--icon-stroke`, `--icon-neutral`, `--icon-accent`, `--icon-dimmed`, `--icon-sketch-primary`, `--icon-sketch-secondary`, `--icon-constraint-primary`, `--icon-constraint-secondary`, `--icon-part-primary`, `--icon-part-secondary`, `--icon-assembly-primary`, `--icon-assembly-secondary`, `--icon-datum-primary`, `--icon-datum-secondary`.
+* **Current color:** `currentColor` is automatically substituted with the active theme's `--icon-stroke` color.
 
 ---
 
