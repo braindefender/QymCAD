@@ -1,7 +1,7 @@
 //! Icon manager, priority cascade resolution, and global state.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use super::id::IconId;
 use super::manifest::ColorMode;
@@ -11,7 +11,7 @@ use super::pack::IconPack;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedIcon {
     /// SVG file bytes.
-    pub data: Vec<u8>,
+    pub data: Arc<[u8]>,
     /// Color mode of the pack supplying the icon.
     pub color_mode: ColorMode,
     /// Identifier of the pack supplying the icon.
@@ -37,7 +37,7 @@ pub struct IconManager {
     /// Last seen snapshot of files for watched folder packs: pack_id -> (path -> (mtime, len)).
     last_seen_snapshots: HashMap<String, HashMap<std::path::PathBuf, (std::time::SystemTime, u64)>>,
     /// Last time the filesystem was polled.
-    last_poll_time: Option<std::time::Instant>,
+    pub(crate) last_poll_time: Option<std::time::Instant>,
     /// Monotonically increasing revision counter for cache busting.
     pub revision: u64,
 }
@@ -61,7 +61,7 @@ pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_QICONS};
 
 /// Load all built-in icon themes embedded into the binary.
 pub fn load_builtin_packs() -> Vec<IconPack> {
-    BUILTIN_ICON_THEMES.iter().filter_map(|(_id, bytes)| IconPack::from_embedded_zip_bytes(bytes).ok()).collect()
+    BUILTIN_ICON_THEMES.iter().filter_map(|theme| IconPack::from_embedded_zip_bytes(theme.archive).ok()).collect()
 }
 
 /// Load a specific built-in icon pack by its manifest ID.
@@ -234,7 +234,7 @@ impl IconManager {
         for pack in &self.active_stack {
             if let Some(data) = pack.get_svg_for_id(id) {
                 let is_mono = pack.manifest.color_mode == ColorMode::Monochrome;
-                let data = resolve_icon_tokens(&data, &self.palette, is_mono);
+                let data = Arc::from(resolve_icon_tokens(&data, &self.palette, is_mono));
                 let res = ResolvedIcon { data, color_mode: pack.manifest.color_mode, pack_id: pack.manifest.id.clone(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
                 if !had_transient_read_failure {
                     self.cache.insert(id, res.clone());
@@ -250,7 +250,7 @@ impl IconManager {
         // The default pack embedded into the binary is always at the base of the active stack,
         // and contains all 106 icons. If somehow not found, provide a minimal fallback SVG.
         let fallback_raw = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>";
-        let data = resolve_icon_tokens(fallback_raw, &self.palette, true);
+        let data = Arc::from(resolve_icon_tokens(fallback_raw, &self.palette, true));
         let fallback = ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "builtin-fallback".to_string(), revision: self.revision, palette_fingerprint: self.palette.fingerprint() };
         // Avoid permanently poisoning cache if custom pack file on disk failed to read transiently
         if !had_transient_read_failure {
@@ -294,6 +294,13 @@ pub fn with_global_icon_manager_mut<R>(f: impl FnOnce(&mut IconManager) -> R) ->
 
 /// Resolve an `IconId` using the global priority stack.
 pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
+    if let Ok(g) = GLOBAL_ICON_MANAGER.read() {
+        if let Some(mgr) = g.as_ref() {
+            if let Some(cached) = mgr.cache.get(&id) {
+                return cached.clone();
+            }
+        }
+    }
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
         let mgr = g.get_or_insert_with(IconManager::new);
         return mgr.resolve(id);
@@ -302,12 +309,13 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
         if let Some(data) = def.get_svg_for_id(id) {
             let pal = qymcad_scheme::dark();
             let is_mono = def.manifest.color_mode == ColorMode::Monochrome;
-            let data = resolve_icon_tokens(&data, &pal, is_mono);
+            let data = Arc::from(resolve_icon_tokens(&data, &pal, is_mono));
             return ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "default".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() };
         }
     }
     let pal = qymcad_scheme::dark();
-    let data = resolve_icon_tokens(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>", &pal, true);
+    let data =
+        Arc::from(resolve_icon_tokens(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" fill=\"none\" stroke=\"currentColor\"/></svg>", &pal, true));
     ResolvedIcon { data, color_mode: ColorMode::Monochrome, pack_id: "builtin-fallback".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() }
 }
 

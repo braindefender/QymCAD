@@ -13,6 +13,10 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
+#[path = "src/icons/sha256.rs"]
+mod sha256;
+
 fn variant_to_relative_path(var: &str) -> String {
     if var == "SketchPickPlane" {
         return "datum/sketch_pick_plane".to_string();
@@ -101,6 +105,11 @@ fn package_theme_archive(theme_dir: &Path, out_archive: &Path) {
     }
 
     zip.finish().expect("finishes zip archive");
+
+    // Append cryptographic verification trailer to ensure archive has valid provenance
+    let mut zip_bytes = fs::read(out_archive).expect("reads generated zip");
+    sha256::append_qicons_trailer(&mut zip_bytes);
+    fs::write(out_archive, zip_bytes).expect("writes trailer to archive");
 }
 
 fn walk_dir(base: &Path, current: &Path, zip: &mut zip::ZipWriter<fs::File>, options: zip::write::SimpleFileOptions) {
@@ -269,10 +278,9 @@ fn main() {
     gen.push_str("pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/default.qicons\"));\n\n");
 
     gen.push_str("/// All built-in icon themes embedded into the binary.\n");
-    gen.push_str("/// Array of (manifest_id, archive_bytes).\n");
-    gen.push_str("pub const BUILTIN_ICON_THEMES: &[(&str, &[u8])] = &[\n");
+    gen.push_str("pub const BUILTIN_ICON_THEMES: &[BuiltinTheme] = &[\n");
     for theme in &theme_entries {
-        gen.push_str(&format!("    (\"{}\", include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}.qicons\"))),\n", theme.manifest_id, theme.dir_name));
+        gen.push_str(&format!("    BuiltinTheme {{ id: \"{}\", archive: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}.qicons\")) }},\n", theme.manifest_id, theme.dir_name));
     }
     gen.push_str("];\n");
 

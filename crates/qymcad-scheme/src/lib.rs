@@ -51,6 +51,7 @@ pub const ICON_TOKENS: &[&str] = &[
     "icon-stroke",
     "icon-neutral",
     "icon-accent",
+    "icon-dimmed",
     "icon-sketch-primary",
     "icon-sketch-secondary",
     "icon-constraint-primary",
@@ -434,6 +435,8 @@ pub struct Palette {
     pub icon_neutral: [u8; 3],
     /// universal accent for icons
     pub icon_accent: [u8; 3],
+    /// translucent dimmed underlay for CAD icons
+    pub icon_dimmed: [u8; 3],
     /// sketch group primary accent
     pub icon_sketch_primary: [u8; 3],
     /// sketch group secondary accent
@@ -670,6 +673,7 @@ readers!(
     icon_stroke,
     icon_neutral,
     icon_accent,
+    icon_dimmed,
     icon_sketch_primary,
     icon_sketch_secondary,
     icon_constraint_primary,
@@ -712,6 +716,7 @@ impl Palette {
             "icon-stroke" => self.icon_stroke,
             "icon-neutral" => self.icon_neutral,
             "icon-accent" => self.icon_accent,
+            "icon-dimmed" => self.icon_dimmed,
             "icon-sketch-primary" => self.icon_sketch_primary,
             "icon-sketch-secondary" => self.icon_sketch_secondary,
             "icon-constraint-primary" => self.icon_constraint_primary,
@@ -920,6 +925,7 @@ pub fn dark() -> Palette {
         icon_stroke: [224, 224, 224],              // #E0E0E0
         icon_neutral: [204, 204, 204],             // #CCCCCC
         icon_accent: [255, 167, 38],               // #FFA726
+        icon_dimmed: [255, 255, 255],              // #FFFFFF
         icon_sketch_primary: [41, 182, 246],       // #29B6F6
         icon_sketch_secondary: [255, 112, 67],     // #FF7043
         icon_constraint_primary: [102, 187, 106],  // #66BB6A
@@ -1013,6 +1019,7 @@ pub fn light() -> Palette {
     p.icon_stroke = [42, 42, 42]; // #2A2A2A
     p.icon_neutral = [100, 100, 100]; // #646464
     p.icon_accent = [230, 81, 0]; // #E65100
+    p.icon_dimmed = [42, 42, 42]; // #2A2A2A
     p.icon_sketch_primary = [2, 136, 209]; // #0288D1
     p.icon_sketch_secondary = [230, 74, 25]; // #E64A19
     p.icon_constraint_primary = [46, 125, 50]; // #2E7D32

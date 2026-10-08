@@ -352,9 +352,9 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                     let path_label = if is_copied { path_text.color(ui.visuals().hyperlink_color) } else { path_text.weak() };
                     ui.horizontal_wrapped(|ui| {
                         let resp = ui.add(egui::Label::new(path_label).sense(egui::Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if is_copied {
-                            crate::i18n::tr("icon-mgr-path-copied")
+                            crate::i18n::tr("icontheme-mgr-path-copied")
                         } else {
-                            crate::i18n::tr("icon-mgr-copy-path")
+                            crate::i18n::tr("icontheme-mgr-copy-path")
                         });
 
                         if resp.clicked() {
@@ -369,21 +369,21 @@ fn draw_gallery_icon_row(ui: &mut egui::Ui, pack: &IconPack, id: IconId, icon: &
                                 .corner_radius(4.0)
                                 .inner_margin(egui::Margin::symmetric(6, 2))
                                 .show(ui, |ui| {
-                                    ui.label(egui::RichText::new(format!("{} {}", ph::CHECK, crate::i18n::tr("icon-mgr-path-copied"))).small().color(ui.visuals().hyperlink_color));
+                                    ui.label(egui::RichText::new(format!("{} {}", ph::CHECK, crate::i18n::tr("icontheme-mgr-path-copied"))).small().color(ui.visuals().hyperlink_color));
                                 });
                         }
                     });
                     match &icon {
                         Ok(Some(_)) => {
-                            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-gallery-present")).small().weak());
+                            ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-gallery-present")).small().weak());
                         }
                         Ok(None) => {
-                            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-gallery-missing")).small().weak());
+                            ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-gallery-missing")).small().weak());
                         }
                         Err(reason) => {
-                            let error = format!("{}: {reason}", crate::i18n::tr("icon-mgr-gallery-invalid"));
+                            let error = format!("{}: {reason}", crate::i18n::tr("icontheme-mgr-gallery-invalid"));
                             ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
-                            if cleanable && !reason.starts_with("monochrome ") && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-icon"))).clicked() {
+                            if cleanable && !reason.starts_with("monochrome ") && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icontheme-mgr-clean-icon"))).clicked() {
                                 clean_clicked = true;
                             }
                         }
@@ -482,44 +482,44 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
 /// In-app developer modal dialog for packaging an icon bundle into `.qicons`.
 fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
     let mut open = state.is_open;
-    egui::Window::new(crate::i18n::tr("icon-packager-title")).open(&mut open).collapsible(false).resizable(true).default_width(450.0).show(ctx, |ui| {
-        ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-desc")).small().weak());
+    egui::Window::new(crate::i18n::tr("icontheme-packager-title")).id(egui::Id::new("icon_packager_dialog")).open(&mut open).collapsible(false).resizable(true).default_width(450.0).show(ctx, |ui| {
+        ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-desc")).small().weak());
         ui.add_space(4.0);
 
         egui::Grid::new("packager_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            ui.label(crate::i18n::tr("icon-packager-field-id"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-id"));
             ui.text_edit_singleline(&mut state.id);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-name"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-name"));
             ui.text_edit_singleline(&mut state.name);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-version"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-version"));
             ui.text_edit_singleline(&mut state.version);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-author"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-author"));
             ui.text_edit_singleline(&mut state.author);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-license"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-license"));
             ui.text_edit_singleline(&mut state.license);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-desc"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-desc"));
             ui.text_edit_singleline(&mut state.description);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-monochrome"));
-            ui.checkbox(&mut state.is_monochrome, crate::i18n::tr("icon-packager-monochrome-hint"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-monochrome"));
+            ui.checkbox(&mut state.is_monochrome, crate::i18n::tr("icontheme-packager-monochrome-hint"));
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-source"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-source"));
             ui.text_edit_singleline(&mut state.source_dir);
             ui.end_row();
 
-            ui.label(crate::i18n::tr("icon-packager-field-output"));
+            ui.label(crate::i18n::tr("icontheme-packager-field-output"));
             ui.text_edit_singleline(&mut state.output_file);
             ui.end_row();
         });
@@ -533,11 +533,11 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
         }
 
         ui.horizontal(|ui| {
-            if ui.button(crate::i18n::tr("icon-packager-inspect-btn")).clicked() {
+            if ui.button(crate::i18n::tr("icontheme-packager-inspect-btn")).clicked() {
                 let source_path = PathBuf::from(state.source_dir.trim());
                 if !source_path.exists() {
                     let path_str = source_path.display().to_string();
-                    state.message = Some(crate::i18n::tr1("icon-packager-source-not-found", "path", &path_str));
+                    state.message = Some(crate::i18n::tr1("icontheme-packager-source-not-found", "path", &path_str));
                     state.is_error = true;
                     state.report = None;
                 } else {
@@ -548,17 +548,17 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                                 let total_str = (rep.rejected.len() + rep.extraneous.len()).to_string();
                                 let rej_str = rep.rejected.len().to_string();
                                 let ext_str = rep.extraneous.len().to_string();
-                                state.message = Some(crate::i18n::trn("icon-packager-validation-issues", &[("total", &total_str), ("rejected", &rej_str), ("extraneous", &ext_str)]));
+                                state.message = Some(crate::i18n::trn("icontheme-packager-validation-issues", &[("total", &total_str), ("rejected", &rej_str), ("extraneous", &ext_str)]));
                                 state.is_error = !rep.rejected.is_empty();
                             } else {
-                                state.message = Some(crate::i18n::tr("icon-packager-all-valid"));
+                                state.message = Some(crate::i18n::tr("icontheme-packager-all-valid"));
                                 state.is_error = false;
                             }
                             state.report = Some(rep);
                         }
                         Err(e) => {
                             let err_str = e.to_string();
-                            state.message = Some(crate::i18n::tr1("icon-packager-inspection-failed", "error", &err_str));
+                            state.message = Some(crate::i18n::tr1("icontheme-packager-inspection-failed", "error", &err_str));
                             state.is_error = true;
                             state.report = None;
                         }
@@ -566,16 +566,16 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 }
             }
 
-            if ui.button(crate::i18n::tr("icon-packager-build-btn")).clicked() {
+            if ui.button(crate::i18n::tr("icontheme-packager-build-btn")).clicked() {
                 let source_path = PathBuf::from(state.source_dir.trim());
                 let output_path = PathBuf::from(state.output_file.trim());
 
                 if !source_path.exists() {
                     let path_str = source_path.display().to_string();
-                    state.message = Some(crate::i18n::tr1("icon-packager-source-not-found", "path", &path_str));
+                    state.message = Some(crate::i18n::tr1("icontheme-packager-source-not-found", "path", &path_str));
                     state.is_error = true;
                 } else if state.output_file.trim().is_empty() {
-                    state.message = Some(crate::i18n::tr("icon-packager-output-empty"));
+                    state.message = Some(crate::i18n::tr("icontheme-packager-output-empty"));
                     state.is_error = true;
                 } else {
                     let result = (|| {
@@ -599,20 +599,20 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                     match result {
                         Ok(rep) => {
                             if rep.included.is_empty() {
-                                state.message = Some(crate::i18n::tr("icon-packager-no-icons"));
+                                state.message = Some(crate::i18n::tr("icontheme-packager-no-icons"));
                                 state.is_error = true;
                             } else {
                                 invalidate_theme_discovery_cache();
                                 let cov_str = rep.included.len().to_string();
                                 let path_str = output_path.display().to_string();
-                                state.message = Some(crate::i18n::trn("icon-packager-success", &[("count", &cov_str), ("path", &path_str)]));
+                                state.message = Some(crate::i18n::trn("icontheme-packager-success", &[("count", &cov_str), ("path", &path_str)]));
                                 state.is_error = false;
                             }
                             state.report = Some(rep);
                         }
                         Err(e) => {
                             let err_str = e.to_string();
-                            state.message = Some(crate::i18n::tr1("icon-packager-packaging-failed", "error", &err_str));
+                            state.message = Some(crate::i18n::tr1("icontheme-packager-packaging-failed", "error", &err_str));
                             state.is_error = true;
                         }
                     }
@@ -627,20 +627,20 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
         // Diagnostic validation report section
         if let Some(rep) = &state.report {
             ui.separator();
-            let (cov, total) = rep.coverage();
+            let cov = rep.coverage();
             let pct = rep.coverage_percent();
-            let cov_str = cov.to_string();
-            let total_str = total.to_string();
+            let cov_str = cov.present.to_string();
+            let total_str = cov.total.to_string();
             let pct_str = pct.to_string();
 
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::i18n::trn("icon-packager-coverage", &[("included", &cov_str), ("total", &total_str), ("percent", &pct_str)])).strong());
+                ui.label(egui::RichText::new(crate::i18n::trn("icontheme-packager-coverage", &[("included", &cov_str), ("total", &total_str), ("percent", &pct_str)])).strong());
             });
 
             // Category badges
             ui.horizontal_wrapped(|ui| {
-                for (cat, inc, cat_total) in rep.category_breakdown() {
-                    let text = format!("{cat}: {inc}/{cat_total}");
+                for cat in rep.category_breakdown() {
+                    let text = format!("{}: {}/{}", cat.category, cat.present, cat.total);
                     ui.label(egui::RichText::new(text).small().weak());
                 }
             });
@@ -649,20 +649,20 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 // Rejected files (critical errors)
                 if !rep.rejected.is_empty() {
                     ui.add_space(4.0);
-                    let title = crate::i18n::tr1("icon-packager-rejected-title", "count", &rep.rejected.len().to_string());
+                    let title = crate::i18n::tr1("icontheme-packager-rejected-title", "count", &rep.rejected.len().to_string());
                     ui.label(egui::RichText::new(title).strong().color(Color32::RED));
-                    ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-rejected-desc")).small().weak());
-                    for (path, reason) in &rep.rejected {
-                        ui.label(egui::RichText::new(format!("  - {path}: {reason}")).color(ui.visuals().error_fg_color).small());
+                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-rejected-desc")).small().weak());
+                    for rej in &rep.rejected {
+                        ui.label(egui::RichText::new(format!("  - {}: {}", rej.path, rej.reason)).color(ui.visuals().error_fg_color).small());
                     }
                 }
 
                 // Extraneous files (warnings)
                 if !rep.extraneous.is_empty() {
                     ui.add_space(4.0);
-                    let title = crate::i18n::tr1("icon-packager-extraneous-title", "count", &rep.extraneous.len().to_string());
+                    let title = crate::i18n::tr1("icontheme-packager-extraneous-title", "count", &rep.extraneous.len().to_string());
                     ui.label(egui::RichText::new(title).strong().color(ui.visuals().warn_fg_color));
-                    ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-extraneous-desc")).small().weak());
+                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-extraneous-desc")).small().weak());
                     for file in &rep.extraneous {
                         ui.label(egui::RichText::new(format!("  - {file}")).color(ui.visuals().warn_fg_color).small());
                     }
@@ -671,7 +671,7 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 // Included icons list (collapsible)
                 if !rep.included.is_empty() {
                     ui.add_space(4.0);
-                    let inc_title = crate::i18n::tr1("icon-packager-included-title", "count", &cov_str);
+                    let inc_title = crate::i18n::tr1("icontheme-packager-included-title", "count", &cov_str);
                     egui::CollapsingHeader::new(egui::RichText::new(inc_title).color(Color32::GREEN)).default_open(rep.rejected.is_empty() && rep.extraneous.is_empty()).show(ui, |ui| {
                         for id in &rep.included {
                             ui.label(egui::RichText::new(format!("  {} {}", ph::CHECK, id.relative_path())).small());
@@ -682,9 +682,9 @@ fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
                 // Missing icons list (collapsible)
                 if !rep.missing.is_empty() {
                     ui.add_space(4.0);
-                    let miss_title = crate::i18n::tr1("icon-packager-missing-title", "count", &rep.missing.len().to_string());
+                    let miss_title = crate::i18n::tr1("icontheme-packager-missing-title", "count", &rep.missing.len().to_string());
                     egui::CollapsingHeader::new(egui::RichText::new(miss_title).weak()).default_open(false).show(ui, |ui| {
-                        ui.label(egui::RichText::new(crate::i18n::tr("icon-packager-missing-desc")).small().weak());
+                        ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-missing-desc")).small().weak());
                         for id in &rep.missing {
                             ui.label(egui::RichText::new(format!("  - {}", id.relative_path())).weak().small());
                         }
@@ -1032,13 +1032,14 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
         }
     }
 
-    egui::Window::new(format!("{} {}", ph::PALETTE, crate::i18n::tr("icon-mgr-title")))
+    egui::Window::new(format!("{} {}", ph::PALETTE, crate::i18n::tr("icontheme-mgr-title")))
+        .id(egui::Id::new("icon_manager_window"))
         .open(&mut open)
         .default_size(egui::vec2(1020.0, 700.0))
         .min_size(egui::vec2(760.0, 500.0))
         .resizable(true)
         .show(ctx, |ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-desc")).weak());
+            ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-desc")).weak());
             ui.add_space(8.0);
             ui.separator();
 
@@ -1047,7 +1048,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     draw_icon_manager_actions(ui);
                 })
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-active-cascade")).strong());
+                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-active-cascade")).strong());
                     ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-priority-hint")).small().weak());
                     ui.add_space(6.0);
 
@@ -1074,23 +1075,23 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                         ui.horizontal(|ui| {
                                             draw_bundle_format_badge(ui, p.format(), p.is_tampered);
                                             if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
-                                                ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                                                ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
                                             }
                                         });
                                     }
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.add(egui::Button::new(ph::MINUS).small()).on_hover_text(crate::i18n::tr("icon-mgr-deactivate-btn")).clicked() {
+                                    if ui.add(egui::Button::new(ph::MINUS).small()).on_hover_text(crate::i18n::tr("icontheme-mgr-deactivate-btn")).clicked() {
                                         to_remove = Some(idx);
                                     }
                                     if ui
                                         .add_enabled(idx + 1 < wc.set.active_icon_packs.len(), egui::Button::new(ph::ARROW_DOWN).small())
-                                        .on_hover_text(crate::i18n::tr("icon-mgr-move-down"))
+                                        .on_hover_text(crate::i18n::tr("icontheme-mgr-move-down"))
                                         .clicked()
                                     {
                                         to_swap = Some((idx, idx + 1));
                                     }
-                                    let leftmost_action = ui.add_enabled(idx > 0, egui::Button::new(ph::ARROW_UP).small()).on_hover_text(crate::i18n::tr("icon-mgr-move-up"));
+                                    let leftmost_action = ui.add_enabled(idx > 0, egui::Button::new(ph::ARROW_UP).small()).on_hover_text(crate::i18n::tr("icontheme-mgr-move-up"));
                                     if leftmost_action.clicked() {
                                         to_swap = Some((idx, idx - 1));
                                     }
@@ -1134,7 +1135,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
 
                     ui.add_space(10.0);
                     ui.separator();
-                    ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-available-themes")).strong());
+                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-available-themes")).strong());
                     ui.add_space(6.0);
 
                     // Available (inactive) themes
@@ -1154,18 +1155,18 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                     ui.horizontal(|ui| {
                                         draw_bundle_format_badge(ui, p.format(), p.is_tampered);
                                         if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
-                                            ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icon-mgr-watch-this-pack"));
+                                            ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
                                         }
                                     });
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let label = format!("{} {}", ph::PLUS, crate::i18n::tr("icon-mgr-activate-btn"));
+                                    let label = format!("{} {}", ph::PLUS, crate::i18n::tr("icontheme-mgr-activate-btn"));
                                     let action = ui
                                         .add_sized(
                                             [112.0, 36.0],
                                             egui::Button::new(egui::RichText::new(label).strong().color(ui.visuals().selection.stroke.color)).fill(ui.visuals().selection.bg_fill).truncate(),
                                         )
-                                        .on_hover_text(crate::i18n::tr("icon-mgr-activate-btn"));
+                                        .on_hover_text(crate::i18n::tr("icontheme-mgr-activate-btn"));
                                     if action.clicked() {
                                         to_activate = Some(p.manifest.id.clone());
                                     }
@@ -1187,7 +1188,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     if !discovered.errors.is_empty() {
                         ui.add_space(10.0);
                         ui.separator();
-                        ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-rejected-title"))).strong().color(ui.visuals().error_fg_color));
+                        ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-rejected-title"))).strong().color(ui.visuals().error_fg_color));
                         ui.add_space(4.0);
                         for err in &discovered.errors {
                             let file_name = err.path.file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
@@ -1221,7 +1222,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
             egui::CentralPanel::default().show(ui, |ui| {
                 let pack_opt = all_packs.iter().find(|p| p.manifest.id == state.selected_pack_id);
                 let Some(pack) = pack_opt else {
-                    ui.label(crate::i18n::tr("icon-mgr-no-pack-selected"));
+                    ui.label(crate::i18n::tr("icontheme-mgr-no-pack-selected"));
                     return;
                 };
                 let pack_preview = manager_embedded_preview(ctx, pack).or_else(|| manager_archive_preview(ctx, pack)).or_else(|| manager_directory_preview(ctx, pack));
@@ -1254,24 +1255,24 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     });
 
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-id", "value", &pack.manifest.id)).small().monospace().weak());
+                        ui.label(egui::RichText::new(crate::i18n::tr1("icontheme-mgr-meta-id", "value", &pack.manifest.id)).small().monospace().weak());
                         ui.separator();
-                        ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-license", "value", &pack.manifest.license)).small().weak());
+                        ui.label(egui::RichText::new(crate::i18n::tr1("icontheme-mgr-meta-license", "value", &pack.manifest.license)).small().weak());
                         if !pack.manifest.author.is_empty() {
                             ui.separator();
-                            ui.label(egui::RichText::new(crate::i18n::tr1("icon-mgr-meta-author", "value", &pack.manifest.author)).small().weak());
+                            ui.label(egui::RichText::new(crate::i18n::tr1("icontheme-mgr-meta-author", "value", &pack.manifest.author)).small().weak());
                         }
                         ui.separator();
                         let mode_key = match &pack.manifest.color_mode {
-                            ColorMode::Monochrome => "icon-mgr-color-monochrome",
-                            ColorMode::Universal => "icon-mgr-color-universal",
+                            ColorMode::Monochrome => "icontheme-mgr-color-monochrome",
+                            ColorMode::Universal => "icontheme-mgr-color-universal",
                         };
                         ui.label(egui::RichText::new(crate::i18n::tr(mode_key)).small().weak());
                     });
 
-                    let (cov, total) = pack_preview.as_ref().map_or_else(|| pack.coverage(), |preview| (preview.coverage, ALL_ICONS.len()));
-                    let pct = (cov * 100).checked_div(total).unwrap_or(0);
-                    let cov_msg = crate::i18n::trn("icon-mgr-total-icons", &[("count", &cov.to_string()), ("total", &total.to_string()), ("percent", &pct.to_string())]);
+                    let cov = pack_preview.as_ref().map_or_else(|| pack.coverage(), |preview| qymcad_ui_state::icons::CoverageCount { present: preview.coverage, total: ALL_ICONS.len() });
+                    let pct = (cov.present * 100).checked_div(cov.total).unwrap_or(0);
+                    let cov_msg = crate::i18n::trn("icontheme-mgr-total-icons", &[("count", &cov.present.to_string()), ("total", &cov.total.to_string()), ("percent", &pct.to_string())]);
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(cov_msg).small().strong());
@@ -1282,17 +1283,19 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     if pack.format() == BundleFormat::VerifiedArchive {
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("{} {}", ph::SHIELD_CHECK, crate::i18n::tr("icon-mgr-verified-bundle-desc"))).color(ui.visuals().selection.bg_fill).small().strong());
+                            ui.label(
+                                egui::RichText::new(format!("{} {}", ph::SHIELD_CHECK, crate::i18n::tr("icontheme-mgr-verified-bundle-desc"))).color(ui.visuals().selection.bg_fill).small().strong(),
+                            );
                         });
                     } else if pack.is_tampered {
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icon-mgr-tampered-desc"))).color(ui.visuals().error_fg_color).small().strong());
+                            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-tampered-desc"))).color(ui.visuals().error_fg_color).small().strong());
                         });
                     } else if pack.format() == BundleFormat::Archive {
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icon-mgr-archive-desc"))).color(ui.visuals().hyperlink_color).small());
+                            ui.label(egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icontheme-mgr-archive-desc"))).color(ui.visuals().hyperlink_color).small());
                         });
                     }
 
@@ -1305,7 +1308,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         if invalid_count > 0 {
                             ui.horizontal(|ui| {
                                 ui.label(
-                                    egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::trn("icon-mgr-hygiene-warning", &[("count", &invalid_count.to_string())])))
+                                    egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::trn("icontheme-mgr-hygiene-warning", &[("count", &invalid_count.to_string())])))
                                         .color(ui.visuals().warn_fg_color)
                                         .small()
                                         .strong(),
@@ -1313,21 +1316,21 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                             });
                         } else {
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icon-mgr-hygiene-clean"))).color(ui.visuals().selection.bg_fill).small());
+                                ui.label(egui::RichText::new(format!("{} {}", ph::CHECK_CIRCLE, crate::i18n::tr("icontheme-mgr-hygiene-clean"))).color(ui.visuals().selection.bg_fill).small());
                             });
                         }
                         if folder_source
                             && pack_preview.as_ref().is_some_and(|preview| preview.has_cleanable_icons)
-                            && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-all"))).clicked()
+                            && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icontheme-mgr-clean-all"))).clicked()
                         {
                             match clean_directory_icons(pack) {
                                 Ok(report) => {
                                     let fixed = report.cleaned.len();
                                     let failed = report.failed.len();
                                     let text = if fixed == 0 && failed == 0 {
-                                        crate::i18n::tr("icon-mgr-clean-none")
+                                        crate::i18n::tr("icontheme-mgr-clean-none")
                                     } else {
-                                        crate::i18n::trn("icon-mgr-clean-summary", &[("count", &fixed.to_string()), ("failed", &failed.to_string())])
+                                        crate::i18n::trn("icontheme-mgr-clean-summary", &[("count", &fixed.to_string()), ("failed", &failed.to_string())])
                                     };
                                     let details = report.failed.iter().map(|failure| format!("{}: {}", failure.path.display(), failure.reason)).collect();
                                     state.clean_notice = Some(CleanNotice { pack_id: pack.manifest.id.clone(), text, is_error: failed > 0, details });
@@ -1339,7 +1342,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 Err(reason) => {
                                     state.clean_notice = Some(CleanNotice {
                                         pack_id: pack.manifest.id.clone(),
-                                        text: crate::i18n::tr1("icon-mgr-clean-failed", "reason", &reason),
+                                        text: crate::i18n::tr1("icontheme-mgr-clean-failed", "reason", &reason),
                                         is_error: true,
                                         details: Vec::new(),
                                     });
@@ -1353,7 +1356,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     if pack.is_directory() {
                         ui.horizontal(|ui| {
                             let mut is_watched = wc.set.watched_icon_packs.contains(&pack.manifest.id);
-                            if ui.checkbox(&mut is_watched, crate::i18n::tr("icon-mgr-watch-this-pack")).changed() {
+                            if ui.checkbox(&mut is_watched, crate::i18n::tr("icontheme-mgr-watch-this-pack")).changed() {
                                 if is_watched {
                                     if !wc.set.watched_icon_packs.contains(&pack.manifest.id) {
                                         wc.set.watched_icon_packs.push(pack.manifest.id.clone());
@@ -1369,7 +1372,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 clear_global_icon_cache();
                                 apply_icon_themes(wc.set);
                                 ctx.request_repaint();
-                                *wc.status = crate::i18n::tr("icon-mgr-reloaded");
+                                *wc.status = crate::i18n::tr("icontheme-mgr-reloaded");
                             }
                         });
                     } else if pack.format() != BundleFormat::Embedded {
@@ -1380,15 +1383,15 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                 ui.add_space(10.0);
 
                 ui.horizontal_wrapped(|ui| {
-                    ui.selectable_value(&mut state.active_tab, IconManagerTab::Readme, crate::i18n::tr("icon-mgr-tab-readme"));
-                    ui.selectable_value(&mut state.active_tab, IconManagerTab::Gallery, crate::i18n::tr("icon-mgr-tab-gallery"));
+                    ui.selectable_value(&mut state.active_tab, IconManagerTab::Readme, crate::i18n::tr("icontheme-mgr-tab-readme"));
+                    ui.selectable_value(&mut state.active_tab, IconManagerTab::Gallery, crate::i18n::tr("icontheme-mgr-tab-gallery"));
                 });
                 ui.separator();
                 if let Some(notice) = state.clean_notice.as_ref().filter(|notice| notice.pack_id == pack.manifest.id) {
                     let color = if notice.is_error { ui.visuals().warn_fg_color } else { ui.visuals().text_color() };
                     ui.label(egui::RichText::new(&notice.text).small().color(color));
                     if !notice.details.is_empty() {
-                        egui::CollapsingHeader::new(crate::i18n::tr("icon-mgr-clean-details")).show(ui, |ui| {
+                        egui::CollapsingHeader::new(crate::i18n::tr("icontheme-mgr-clean-details")).show(ui, |ui| {
                             egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
                                 for detail in &notice.details {
                                     ui.add(egui::Label::new(egui::RichText::new(detail).small().monospace()).wrap());
@@ -1440,17 +1443,17 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         // Filter & Search bar
                         ui.horizontal(|ui| {
                             ui.label(ph::MAGNIFYING_GLASS);
-                            ui.add(egui::TextEdit::singleline(&mut state.search_query).hint_text(crate::i18n::tr("icon-mgr-search-icons")).desired_width((ui.available_width() - 8.0).max(120.0)));
+                            ui.add(egui::TextEdit::singleline(&mut state.search_query).hint_text(crate::i18n::tr("icontheme-mgr-search-icons")).desired_width((ui.available_width() - 8.0).max(120.0)));
                         });
 
                         ui.horizontal_wrapped(|ui| {
                             let cats = [
-                                ("all", "icon-mgr-filter-all"),
-                                ("sketch", "icon-mgr-filter-sketch"),
-                                ("constraint", "icon-mgr-filter-constraint"),
-                                ("part", "icon-mgr-filter-part"),
-                                ("assembly", "icon-mgr-filter-assembly"),
-                                ("datum", "icon-mgr-filter-datum"),
+                                ("all", "icontheme-mgr-filter-all"),
+                                ("sketch", "icontheme-mgr-filter-sketch"),
+                                ("constraint", "icontheme-mgr-filter-constraint"),
+                                ("part", "icontheme-mgr-filter-part"),
+                                ("assembly", "icontheme-mgr-filter-assembly"),
+                                ("datum", "icontheme-mgr-filter-datum"),
                             ];
                             for (val, key) in cats {
                                 ui.selectable_value(&mut state.category_filter, val.to_string(), crate::i18n::tr(key));
@@ -1494,18 +1497,18 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                     match clean_directory_icon(pack, id) {
                                         Ok(CleanIconResult::Cleaned) => {
                                             state.clean_notice =
-                                                Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icon-mgr-cleaned-one"), is_error: false, details: Vec::new() });
+                                                Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icontheme-mgr-cleaned-one"), is_error: false, details: Vec::new() });
                                             changed = true;
                                             ctx.request_repaint();
                                         }
                                         Ok(CleanIconResult::Unchanged | CleanIconResult::Missing) => {
                                             state.clean_notice =
-                                                Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icon-mgr-clean-none"), is_error: false, details: Vec::new() });
+                                                Some(CleanNotice { pack_id: pack.manifest.id.clone(), text: crate::i18n::tr("icontheme-mgr-clean-none"), is_error: false, details: Vec::new() });
                                         }
                                         Err(reason) => {
                                             state.clean_notice = Some(CleanNotice {
                                                 pack_id: pack.manifest.id.clone(),
-                                                text: crate::i18n::tr1("icon-mgr-clean-failed", "reason", &reason),
+                                                text: crate::i18n::tr1("icontheme-mgr-clean-failed", "reason", &reason),
                                                 is_error: true,
                                                 details: Vec::new(),
                                             });
@@ -1519,7 +1522,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                                 ui.add_space(4.0);
                             }
                             if shown == 0 {
-                                ui.label(egui::RichText::new(crate::i18n::tr("icon-mgr-no-icons-found")).weak());
+                                ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-no-icons-found")).weak());
                             }
                         });
                     }
@@ -1650,7 +1653,7 @@ mod tests {
         let packs = qymcad_ui_state::icons::discover_packs_in(&bundled);
         assert!(packs.iter().any(|p| p.manifest.id == "shapr-alike"), "bundled shapr-alike pack must be found");
         let shapr = packs.iter().find(|p| p.manifest.id == "shapr-alike").unwrap();
-        assert!(shapr.coverage().0 >= 5);
+        assert!(shapr.coverage().present >= 5);
         assert_eq!(shapr.format(), BundleFormat::Directory);
         assert!(shapr.is_directory());
         let readme = shapr.get_readme();
@@ -1723,7 +1726,7 @@ mod tests {
             }
         }
         let output = draw(vec![]);
-        let gallery_title = crate::i18n::tr("icon-mgr-tab-gallery");
+        let gallery_title = crate::i18n::tr("icontheme-mgr-tab-gallery");
         let gallery = output.shapes.iter().find_map(|shape| find_gallery_tab(&shape.shape, &gallery_title)).expect("gallery tab");
         let gallery_click = |pressed| egui::Event::PointerButton { pos: gallery, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let _ = draw(vec![egui::Event::PointerMoved(gallery)]);
@@ -2017,7 +2020,7 @@ mod tests {
         assert_eq!(selected.selected_pack_id, sample_pack.manifest.id, "the bundle was not selected");
         let output = draw(vec![]);
         let package_label = format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"));
-        let clean_label = format!("{} {}", ph::BROOM, crate::i18n::tr("icon-mgr-clean-all"));
+        let clean_label = format!("{} {}", ph::BROOM, crate::i18n::tr("icontheme-mgr-clean-all"));
         assert!(output.shapes.iter().all(|shape| find_label(&shape.shape, &package_label).is_none()), "archive must not offer packaging");
         assert!(output.shapes.iter().all(|shape| find_label(&shape.shape, &clean_label).is_none()), "archive must not offer SVG cleaning");
 
@@ -2030,7 +2033,7 @@ mod tests {
         assert!(elapsed < std::time::Duration::from_millis(450), "three redraws after selecting the bundle took {elapsed:?}");
 
         let output = draw(vec![]);
-        let gallery_label = crate::i18n::tr("icon-mgr-tab-gallery");
+        let gallery_label = crate::i18n::tr("icontheme-mgr-tab-gallery");
         let gallery_tab = output.shapes.iter().find_map(|shape| find_label(&shape.shape, &gallery_label)).expect("the gallery tab is visible").center();
         let tab_click = |pressed| egui::Event::PointerButton { pos: gallery_tab, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let _ = draw(vec![egui::Event::PointerMoved(gallery_tab)]);
@@ -2099,7 +2102,7 @@ mod tests {
         let click = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let _ = draw(vec![]);
         let output = draw(vec![]);
-        let tab = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-tab-gallery")).expect("gallery tab").center();
+        let tab = find_text(&output.shapes, &crate::i18n::tr("icontheme-mgr-tab-gallery")).expect("gallery tab").center();
         let _ = draw(vec![egui::Event::PointerMoved(tab)]);
         let _ = draw(vec![click(tab, true)]);
         let output = draw(vec![click(tab, false)]);
@@ -2112,8 +2115,8 @@ mod tests {
         let copy_output = draw(vec![click(path_at, false)]);
         assert!(copy_output.platform_output.commands.iter().any(|command| matches!(command, egui::OutputCommand::CopyText(text) if text == archive_path)), "clicking the icon path must copy it");
         let output = draw(vec![]);
-        assert!(find_text(&output.shapes, &crate::i18n::tr("icon-mgr-path-copied")).is_some(), "copying a path needs visible confirmation");
-        let button = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-clean-icon")).expect("clean button beside invalid SVG").center();
+        assert!(find_text(&output.shapes, &crate::i18n::tr("icontheme-mgr-path-copied")).is_some(), "copying a path needs visible confirmation");
+        let button = find_text(&output.shapes, &crate::i18n::tr("icontheme-mgr-clean-icon")).expect("clean button beside invalid SVG").center();
         let before = qymcad_ui_state::icons::get_global_icon_revision();
         let _ = draw(vec![egui::Event::PointerMoved(button)]);
         let _ = draw(vec![click(button, true)]);
@@ -2121,9 +2124,9 @@ mod tests {
         qymcad_ui_state::icons::validate_svg(&std::fs::read(&path).unwrap()).expect("button cleaned the SVG on disk");
         assert!(qymcad_ui_state::icons::get_global_icon_revision() > before, "cleaning did not invalidate rendered icon textures");
         let output = draw(vec![]);
-        assert!(find_text(&output.shapes, &crate::i18n::tr("icon-mgr-gallery-present")).is_some(), "the refreshed gallery does not show the cleaned icon");
+        assert!(find_text(&output.shapes, &crate::i18n::tr("icontheme-mgr-gallery-present")).is_some(), "the refreshed gallery does not show the cleaned icon");
 
-        let clean_all = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-clean-all")).expect("bulk clean button").center();
+        let clean_all = find_text(&output.shapes, &crate::i18n::tr("icontheme-mgr-clean-all")).expect("bulk clean button").center();
         let before_bulk = qymcad_ui_state::icons::get_global_icon_revision();
         let _ = draw(vec![egui::Event::PointerMoved(clean_all)]);
         let _ = draw(vec![click(clean_all, true)]);
@@ -2132,7 +2135,7 @@ mod tests {
         assert_eq!(std::fs::read(&unrepairable).unwrap(), bad_viewbox, "bulk clean must leave geometry needing manual repair alone");
         assert!(qymcad_ui_state::icons::get_global_icon_revision() > before_bulk, "bulk cleaning did not refresh icon textures");
         let output = draw(vec![]);
-        let activate = find_text(&output.shapes, &crate::i18n::tr("icon-mgr-activate-btn")).expect("folder activation button").center();
+        let activate = find_text(&output.shapes, &crate::i18n::tr("icontheme-mgr-activate-btn")).expect("folder activation button").center();
         let _ = draw(vec![egui::Event::PointerMoved(activate)]);
         let _ = draw(vec![click(activate, true)]);
         let _ = draw(vec![click(activate, false)]);
@@ -2140,7 +2143,7 @@ mod tests {
         let package_rect = find_text(&output.shapes, &crate::i18n::tr("settings-icon-package-btn")).expect("active folder packaging button");
         let version_rect = find_text(&output.shapes, "v1.0").expect("selected folder version");
         assert!((package_rect.center().y - version_rect.center().y).abs() < 16.0, "packaging button must share the folder badge row");
-        let meta_label = crate::i18n::tr1("icon-mgr-meta-id", "value", &manifest.id);
+        let meta_label = crate::i18n::tr1("icontheme-mgr-meta-id", "value", &manifest.id);
         let metadata_rect = find_text(&output.shapes, &meta_label).expect("folder metadata must be visible below the header");
         assert!(metadata_rect.top() - package_rect.bottom() < 100.0, "packaging button must not stretch the folder header");
         assert!(find_text(&output.shapes, archive_path).is_some(), "folder gallery must remain visible after activation");
@@ -2215,8 +2218,8 @@ mod tests {
         assert!(labels.iter().any(|text| text.contains("icons/sketch/line.svg")), "the archive path is not visible");
         assert!(labels.iter().any(|text| text.contains(&format!("icons/{longest_path}.svg"))), "a missing icon needs its expected archive path");
         assert!(labels.iter().any(|text| text.contains("non-square viewBox")), "the specific SVG error is not visible");
-        assert!(!labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-clean-icon"))), "archive icons must not show cleaning controls");
-        assert!(labels.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-gallery-missing"))), "missing icons need a neutral status");
+        assert!(!labels.iter().any(|text| text.contains(&crate::i18n::tr("icontheme-mgr-clean-icon"))), "archive icons must not show cleaning controls");
+        assert!(labels.iter().any(|text| text.contains(&crate::i18n::tr("icontheme-mgr-gallery-missing"))), "missing icons need a neutral status");
         assert_eq!(preview_frames, 2, "every icon needs a visible 56 px preview frame");
     }
 
@@ -2281,7 +2284,7 @@ mod tests {
         }
 
         assert!(painted.iter().any(|text| text.contains("broken_pack.qicons")), "icon manager window must display rejected archive filename: {painted:?}");
-        assert!(painted.iter().any(|text| text.contains(&crate::i18n::tr("icon-mgr-rejected-title"))), "icon manager window must display rejected section title: {painted:?}");
+        assert!(painted.iter().any(|text| text.contains(&crate::i18n::tr("icontheme-mgr-rejected-title"))), "icon manager window must display rejected section title: {painted:?}");
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -2512,8 +2515,8 @@ mod tests {
         let mut texts = Vec::new();
         collect_shapes_text(&output.shapes, &mut texts);
 
-        let expected_id = crate::i18n::tr("icon-packager-field-id");
-        let expected_source = crate::i18n::tr("icon-packager-field-source");
+        let expected_id = crate::i18n::tr("icontheme-packager-field-id");
+        let expected_source = crate::i18n::tr("icontheme-packager-field-source");
         crate::i18n::set_language(&prev);
 
         let joined = texts.join(" ");

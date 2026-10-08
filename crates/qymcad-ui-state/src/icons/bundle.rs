@@ -12,6 +12,28 @@ fn localized_readme_tag(name: &str) -> Option<&str> {
     Some(tag)
 }
 
+/// A rejected icon file or manifest within an icon pack.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RejectedArchive {
+    pub path: String,
+    pub reason: String,
+}
+
+/// The number of icons present in a pack relative to the total set of icons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CoverageCount {
+    pub present: usize,
+    pub total: usize,
+}
+
+/// Category coverage breakdown for an icon pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CategoryCoverage {
+    pub category: &'static str,
+    pub present: usize,
+    pub total: usize,
+}
+
 /// Detailed diagnostic report of an icon theme directory or archive.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ValidationReport {
@@ -20,21 +42,21 @@ pub struct ValidationReport {
     /// Known CAD icons from `ALL_ICONS` that are not provided by this pack (will fall back to default theme).
     pub missing: Vec<IconId>,
     /// Files that failed SVG validation, with relative path and error description.
-    pub rejected: Vec<(String, String)>,
+    pub rejected: Vec<RejectedArchive>,
     /// Extraneous files found (non-SVG files or unrecognized icon names).
     pub extraneous: Vec<String>,
 }
 
 impl ValidationReport {
-    /// Total included icons and total known CAD icons (e.g. (45, 107)).
-    pub fn coverage(&self) -> (usize, usize) {
-        (self.included.len(), ALL_ICONS.len())
+    /// Total included icons and total known CAD icons (e.g. 45 of 107).
+    pub fn coverage(&self) -> CoverageCount {
+        CoverageCount { present: self.included.len(), total: ALL_ICONS.len() }
     }
 
     /// Total percentage coverage (0 to 100).
     pub fn coverage_percent(&self) -> usize {
-        let (cov, total) = self.coverage();
-        (cov * 100).checked_div(total).unwrap_or(0)
+        let cov = self.coverage();
+        (cov.present * 100).checked_div(cov.total).unwrap_or(0)
     }
 
     /// Whether there are any issues (rejected or extraneous files).
@@ -42,14 +64,14 @@ impl ValidationReport {
         !self.rejected.is_empty() || !self.extraneous.is_empty()
     }
 
-    /// Counts of included icons per category: [("sketch", 20, 32), ("constraint", 12, 12), ...]
-    pub fn category_breakdown(&self) -> Vec<(&'static str, usize, usize)> {
+    /// Counts of included icons per category.
+    pub fn category_breakdown(&self) -> Vec<CategoryCoverage> {
         const CATEGORIES: &[&str] = &["sketch", "constraint", "part", "assembly", "datum"];
         let mut breakdown = Vec::new();
         for &cat in CATEGORIES {
             let total = ALL_ICONS.iter().filter(|id| id.relative_path().starts_with(cat)).count();
             let inc = self.included.iter().filter(|id| id.relative_path().starts_with(cat)).count();
-            breakdown.push((cat, inc, total));
+            breakdown.push(CategoryCoverage { category: cat, present: inc, total });
         }
         breakdown
     }
@@ -709,37 +731,37 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                     extraneous.push(format!("extra root file: {fname}"));
                 } else if localized_readme_tag(fname).is_some() {
                     if std::fs::metadata(&p).ok().is_some_and(|metadata| metadata.len() > super::pack::MAX_TEXT_FILE_SIZE) {
-                        rejected.push((fname.to_string(), "localized README exceeds maximum text size".to_string()));
+                        rejected.push(RejectedArchive { path: fname.to_string(), reason: "localized README exceeds maximum text size".to_string() });
                     } else if let Err(err) = std::fs::read_to_string(&p) {
-                        rejected.push((fname.to_string(), format!("localized README is not readable UTF-8: {err}")));
+                        rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("localized README is not readable UTF-8: {err}") });
                     }
                 } else if fname == "manifest.ron" {
                     if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_MANIFEST_SIZE) {
-                        rejected.push((fname.to_string(), "manifest.ron exceeds maximum manifest size".to_string()));
+                        rejected.push(RejectedArchive { path: fname.to_string(), reason: "manifest.ron exceeds maximum manifest size".to_string() });
                     } else {
                         match std::fs::read_to_string(&p) {
                             Ok(content) => match IconManifest::parse_ron(&content) {
                                 Ok(parsed) => {
                                     if let Err(err) = parsed.validate() {
-                                        rejected.push((fname.to_string(), err));
+                                        rejected.push(RejectedArchive { path: fname.to_string(), reason: err });
                                     }
                                 }
-                                Err(err) => rejected.push((fname.to_string(), format!("manifest parse error: {err}"))),
+                                Err(err) => rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("manifest parse error: {err}") }),
                             },
-                            Err(err) => rejected.push((fname.to_string(), format!("read error: {err}"))),
+                            Err(err) => rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("read error: {err}") }),
                         }
                     }
                 } else if fname == "icon.svg" {
                     if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_ICON_SVG_SIZE) {
-                        rejected.push((fname.to_string(), "pack icon exceeds maximum SVG size".to_string()));
+                        rejected.push(RejectedArchive { path: fname.to_string(), reason: "pack icon exceeds maximum SVG size".to_string() });
                     } else {
                         match std::fs::read(&p) {
                             Ok(data) => {
                                 if let Err(err) = validate_svg(&data) {
-                                    rejected.push((fname.to_string(), err));
+                                    rejected.push(RejectedArchive { path: fname.to_string(), reason: err });
                                 }
                             }
-                            Err(err) => rejected.push((fname.to_string(), format!("read error: {err}"))),
+                            Err(err) => rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("read error: {err}") }),
                         }
                     }
                 }
@@ -748,7 +770,7 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
     }
 
     // 2. Recursively walk icons/ directory
-    fn walk_icons(base: &Path, current: &Path, color_mode: ColorMode, included: &mut Vec<IconId>, rejected: &mut Vec<(String, String)>, extraneous: &mut Vec<String>) {
+    fn walk_icons(base: &Path, current: &Path, color_mode: ColorMode, included: &mut Vec<IconId>, rejected: &mut Vec<RejectedArchive>, extraneous: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(current) else { return };
         for entry in entries.flatten() {
             let p = entry.path();
@@ -774,12 +796,12 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                 match std::fs::read(&p) {
                     Ok(data) => {
                         if data.len() as u64 > super::pack::MAX_ICON_SVG_SIZE {
-                            rejected.push((rel_str, format!("SVG exceeds {} byte limit", super::pack::MAX_ICON_SVG_SIZE)));
+                            rejected.push(RejectedArchive { path: rel_str, reason: format!("SVG exceeds {} byte limit", super::pack::MAX_ICON_SVG_SIZE) });
                             continue;
                         }
                         if let Some(ratio) = estimate_deflate_ratio(&data) {
                             if ratio > super::pack::MAX_COMPRESSION_RATIO {
-                                rejected.push((rel_str, format!("suspicious compression ratio ({ratio}:1, exceeds limit {})", super::pack::MAX_COMPRESSION_RATIO)));
+                                rejected.push(RejectedArchive { path: rel_str, reason: format!("suspicious compression ratio ({ratio}:1, exceeds limit {})", super::pack::MAX_COMPRESSION_RATIO) });
                                 continue;
                             }
                         }
@@ -790,12 +812,12 @@ pub fn inspect_pack_directory_for_mode(source_dir: impl AsRef<Path>, color_mode:
                                 }
                             }
                             Err(err) => {
-                                rejected.push((rel_str, err));
+                                rejected.push(RejectedArchive { path: rel_str, reason: err });
                             }
                         }
                     }
                     Err(e) => {
-                        rejected.push((rel_str, format!("read error: {e}")));
+                        rejected.push(RejectedArchive { path: rel_str, reason: format!("read error: {e}") });
                     }
                 }
             }

@@ -22,7 +22,7 @@ fn close_the_settings(s: &mut Session) {
 
 /// Close the icon theme manager window.
 fn close_the_manager(s: &mut Session) {
-    let title = s.word("icon-mgr-title");
+    let title = s.word("icontheme-mgr-title");
     s.close_window(&title);
 }
 
@@ -69,12 +69,12 @@ probe! {
 
         let open_btn = s.word("settings-open-icon-manager");
         s.press_word(&open_btn);
-        let mgr_title = s.word("icon-mgr-title");
+        let mgr_title = s.word("icontheme-mgr-title");
         assert!(s.shows(&mgr_title), "icon theme manager window must open; on screen: {:?}", s.words());
 
         assert!(s.shows("Acceptance Dev Theme"), "manager must list Acceptance Dev Theme in available themes; on screen: {:?}", s.words());
 
-        let act_btn = s.word("icon-mgr-activate-btn");
+        let act_btn = s.word("icontheme-mgr-activate-btn");
         let card_loc = s.find("Acceptance Dev Theme", qymcad::pos2(200.0, 400.0)).expect("find Acceptance Dev Theme card");
         s.press_word_near(&act_btn, card_loc.center());
 

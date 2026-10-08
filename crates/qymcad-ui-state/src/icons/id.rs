@@ -119,7 +119,11 @@ pub enum IconId {
     AssemblySection,
 }
 
-include!(concat!(env!("OUT_DIR"), "/icon_generated.rs"));
+/// A built-in icon theme bundled into the application executable.
+#[derive(Debug, Clone, Copy)]
+pub struct BuiltinTheme {
+    pub id: &'static str,
+    pub archive: &'static [u8],
+}
 
-/// Compatibility alias: CAD tools take strongly-typed `IconId`.
-pub type IconSource = IconId;
+include!(concat!(env!("OUT_DIR"), "/icon_generated.rs"));

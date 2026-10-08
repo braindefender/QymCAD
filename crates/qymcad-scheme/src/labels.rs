@@ -56,6 +56,7 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
                 "icon_stroke",
                 "icon_neutral",
                 "icon_accent",
+                "icon_dimmed",
                 "icon_sketch_primary",
                 "icon_sketch_secondary",
                 "icon_constraint_primary",

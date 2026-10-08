@@ -361,7 +361,7 @@ fn package_bundle_and_load_from_archive() {
 
     let pack = IconPack::from_archive(&archive_path).expect("loading archive succeeds");
     assert_eq!(pack.manifest.id, "test-pack");
-    assert_eq!(pack.coverage().0, 1);
+    assert_eq!(pack.coverage().present, 1);
     assert_eq!(pack.get_pack_icon_svg(), pack_icon, "packaging must retain the icon beside manifest.ron");
 
     let embedded = IconPack::from_zip_bytes(&std::fs::read(&archive_path).expect("archive reads")).expect("embedded archive loads");
@@ -474,8 +474,8 @@ fn inspect_and_package_excludes_problematic_files() {
     assert_eq!(report.included[0], IconId::SketchLine);
 
     assert_eq!(report.rejected.len(), 1, "1 icon should be rejected");
-    assert_eq!(report.rejected[0].0, "sketch/circle.svg");
-    assert!(report.rejected[0].1.contains("aspect ratio must be 1:1"));
+    assert_eq!(report.rejected[0].path, "sketch/circle.svg");
+    assert!(report.rejected[0].reason.contains("aspect ratio must be 1:1"));
 
     assert_eq!(report.extraneous.len(), 3, "3 extraneous files should be flagged");
 
@@ -488,7 +488,7 @@ fn inspect_and_package_excludes_problematic_files() {
 
     // Verify loaded pack from archive
     let pack = IconPack::from_archive(&archive_path).expect("loads archive");
-    assert_eq!(pack.coverage().0, 1);
+    assert_eq!(pack.coverage().present, 1);
     assert!(pack.get_svg_for_id(IconId::SketchLine).is_some());
     assert!(pack.get_svg_for_id(IconId::SketchCircle).is_none(), "Rejected icon must NOT be in archive");
 
@@ -514,8 +514,8 @@ fn default_embedded_pack_is_valid_and_complete() {
     validate_svg(&pack.get_pack_icon_svg()).expect("default pack icon is a valid SVG");
 
     // Check coverage of all known IconIds
-    let (cov, total) = pack.coverage();
-    assert_eq!(cov, total, "embedded default.qicons must cover 100% of icons (got {}/{})", cov, total);
+    let cov = pack.coverage();
+    assert_eq!(cov.present, cov.total, "embedded default.qicons must cover 100% of icons (got {}/{})", cov.present, cov.total);
 
     // Verify SVG data is valid for every single icon
     for id in ALL_ICONS {
@@ -537,8 +537,8 @@ fn all_embedded_packs_are_valid_and_complete() {
     assert_eq!(default_pack.format(), BundleFormat::Embedded);
     assert!(!default_pack.is_directory());
     assert!(default_pack.is_verified());
-    let (def_cov, total) = default_pack.coverage();
-    assert_eq!(def_cov, total, "embedded default pack must cover all icons");
+    let def_cov = default_pack.coverage();
+    assert_eq!(def_cov.present, def_cov.total, "embedded default pack must cover all icons");
 
     let shapr_pack = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike pack exists");
     assert_eq!(shapr_pack.format(), BundleFormat::Embedded);
@@ -553,7 +553,7 @@ fn all_embedded_packs_are_valid_and_complete() {
     assert_ne!(shapr_pack.get_readme_for_locale("kk"), shapr_pack.get_readme());
     assert_ne!(shapr_pack.get_readme_for_locale("ru"), shapr_pack.get_readme());
     assert_ne!(shapr_pack.get_readme_for_locale("uk"), shapr_pack.get_readme());
-    let (shapr_cov, total) = shapr_pack.coverage();
+    let (shapr_cov, total) = (shapr_pack.coverage().present, shapr_pack.coverage().total);
     assert_eq!(shapr_cov, total, "embedded Shapr-Alike pack must cover all icons");
 
     for pack in &packs {
@@ -587,7 +587,7 @@ fn monochrome_inspection_and_packaging_share_color_validation() {
     std::fs::write(icons.join("circle.svg"), br#"<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--invalid-token, #f00)"/></svg>"#).unwrap();
     let report = inspect_pack_directory(&root).unwrap();
     assert_eq!(report.included, vec![IconId::SketchLine]);
-    assert!(report.rejected.iter().any(|(path, reason)| path == "sketch/circle.svg" && reason.contains("unknown icon token")));
+    assert!(report.rejected.iter().any(|rej| rej.path == "sketch/circle.svg" && rej.reason.contains("unknown icon token")));
     let pack = IconPack::from_directory(&root).unwrap();
     assert!(pack.inspect_svg_for_id(IconId::SketchCircle).unwrap_err().contains("unknown icon token"));
     let archive = root.join("output.qicons");
@@ -645,6 +645,13 @@ fn resolve_icon_tokens_substitutes_active_palette_and_preserves_static() {
     assert!(light_resolved.contains("fill=\"#0288D1\""));
     assert!(light_resolved.contains("fill=\"#2A2A2A\""));
 
+    // Dimmed underlay token
+    let dimmed_svg = br##"<svg viewBox="0 0 24 24"><path fill="var(--icon-dimmed, #FFFFFF)"/></svg>"##;
+    let dark_dimmed = String::from_utf8(super::manager::resolve_icon_tokens(dimmed_svg, &dark_pal, false)).unwrap();
+    assert!(dark_dimmed.contains("fill=\"#FFFFFF\""));
+    let light_dimmed = String::from_utf8(super::manager::resolve_icon_tokens(dimmed_svg, &light_pal, false)).unwrap();
+    assert!(light_dimmed.contains("fill=\"#2A2A2A\""));
+
     // Unknown token uses fallback
     let unknown_token_svg = br##"<svg viewBox="0 0 24 24"><path stroke="var(--custom-fallback, #AABBCC)"/></svg>"##;
     let fallback_resolved = String::from_utf8(super::manager::resolve_icon_tokens(unknown_token_svg, &dark_pal, false)).unwrap();
@@ -661,8 +668,11 @@ fn resolve_icon_tokens_substitutes_active_palette_and_preserves_static() {
     assert_eq!(static_resolved, static_svg.to_vec());
 }
 
+static GLOBAL_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn global_icon_manager_cascade() {
+    let _lock = GLOBAL_TEST_MUTEX.lock().unwrap();
     clear_global_icon_cache();
     let mgr = IconManager::new();
     set_global_icon_manager(mgr);
@@ -698,7 +708,7 @@ fn global_icon_manager_cascade() {
     });
 
     let resolved = resolve_global_icon(IconId::SketchLine);
-    assert_eq!(resolved.data, custom_svg);
+    assert_eq!(resolved.data.as_ref(), &custom_svg[..]);
     assert_eq!(resolved.color_mode, ColorMode::Universal);
     assert_eq!(resolved.pack_id, "pack-custom");
 
@@ -709,6 +719,7 @@ fn global_icon_manager_cascade() {
 
 #[test]
 fn icon_tool_renders_with_icon_id() {
+    let _lock = GLOBAL_TEST_MUTEX.lock().unwrap();
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
     let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -767,8 +778,8 @@ fn user_shapr_alike_pack_if_present_loads_and_has_icons() {
             let pack = IconPack::from_archive(&user_path).expect("shapr-alike.qicons must load cleanly");
             assert_eq!(pack.manifest.id, "shapr-alike");
             assert_eq!(pack.manifest.name, "Shapr-Alike");
-            let (cov, _total) = pack.coverage();
-            assert!(cov >= 90, "shapr-alike should cover almost all icons, got {cov}");
+            let cov = pack.coverage();
+            assert!(cov.present >= 90, "shapr-alike should cover almost all icons, got {}", cov.present);
         }
     }
 }
@@ -846,7 +857,7 @@ fn live_watch_folder_auto_reload_on_svg_change() {
 
     // First resolve: gets initial SVG
     let res1 = mgr.resolve(IconId::SketchLine);
-    assert_eq!(res1.data, initial_svg);
+    assert_eq!(res1.data.as_ref(), initial_svg);
     let rev1 = res1.revision;
 
     // Polling without changes returns false
@@ -868,7 +879,7 @@ fn live_watch_folder_auto_reload_on_svg_change() {
 
     // Second resolve: gets updated SVG and updated revision
     let res2 = mgr.resolve(IconId::SketchLine);
-    assert_eq!(res2.data, updated_svg, "resolved icon should have the updated SVG content");
+    assert_eq!(res2.data.as_ref(), updated_svg, "resolved icon should have the updated SVG content");
     assert!(res2.revision > rev1, "revision counter should have incremented");
 
     std::fs::remove_file(&svg_path).expect("remove watched icon");
@@ -883,7 +894,7 @@ fn live_watch_folder_auto_reload_on_svg_change() {
     assert!(mgr.check_watched_directories(), "adding an icon must invalidate the cascade");
     let restored = mgr.resolve(IconId::SketchLine);
     assert_eq!(restored.pack_id, "watch-theme");
-    assert_eq!(restored.data, initial_svg);
+    assert_eq!(restored.data.as_ref(), initial_svg);
     assert!(restored.revision > missing.revision);
 
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -910,7 +921,7 @@ fn missing_directory_icons_do_not_block_coverage() {
     let start = std::time::Instant::now();
     let coverage = pack.coverage();
     let elapsed = start.elapsed();
-    assert_eq!(coverage, (0, ALL_ICONS.len()));
+    assert_eq!(coverage, CoverageCount { present: 0, total: ALL_ICONS.len() });
     assert!(elapsed < std::time::Duration::from_millis(300), "checking 106 absent SVG files blocked the frame for {elapsed:?}");
     let _ = std::fs::remove_dir_all(temp_dir);
 }
@@ -965,10 +976,10 @@ fn test_successive_folder_live_reloads_do_not_stop_after_3_times() {
 
         if edit_num % 2 == 1 {
             let res = mgr.resolve(IconId::SketchLine);
-            assert_eq!(res.data, new_content.as_bytes(), "Edit {} data mismatch", edit_num);
+            assert_eq!(res.data.as_ref(), new_content.as_bytes(), "Edit {} data mismatch", edit_num);
         } else {
             let res = mgr.resolve(IconId::SketchCircle);
-            assert_eq!(res.data, new_content.as_bytes(), "Edit {} data mismatch", edit_num);
+            assert_eq!(res.data.as_ref(), new_content.as_bytes(), "Edit {} data mismatch", edit_num);
         }
     }
 
@@ -1335,7 +1346,7 @@ fn directory_pack_rejects_manifest_with_oversized_description() {
 
     // 2. Inspecting folder should record the manifest error in rejected
     let rep = inspect_pack_directory_for_mode(&pack_dir, ColorMode::Universal).unwrap();
-    assert!(rep.rejected.iter().any(|(f, e)| f == "manifest.ron" && e.contains("description exceeds maximum length")));
+    assert!(rep.rejected.iter().any(|rej| rej.path == "manifest.ron" && rej.reason.contains("description exceeds maximum length")));
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
@@ -1574,6 +1585,7 @@ fn custom_folder_with_special_id_is_still_directory_format() {
 
 #[test]
 fn resolve_global_icon_lazily_initializes_manager() {
+    let _lock = GLOBAL_TEST_MUTEX.lock().unwrap();
     if let Ok(mut g) = GLOBAL_ICON_MANAGER.write() {
         *g = None;
     }
@@ -1707,6 +1719,7 @@ fn discover_packs_detailed_reports_errors_for_corrupt_or_invalid_archives() {
 
 #[test]
 fn icon_image_forgets_previous_revision_uri() {
+    let _lock = GLOBAL_TEST_MUTEX.lock().unwrap();
     let ctx = egui::Context::default();
     let id_key = egui::Id::new("icon_image_prev_uri").with(IconId::SketchLine);
 

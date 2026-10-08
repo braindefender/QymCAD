@@ -466,10 +466,10 @@ impl IconPack {
         ALL_ICONS.iter().copied().filter(|id| self.get_svg_for_id(*id).is_some()).collect()
     }
 
-    /// Calculate coverage as (present_count, total_count).
-    pub fn coverage(&self) -> (usize, usize) {
+    /// Calculate coverage as CoverageCount { present, total }.
+    pub fn coverage(&self) -> super::bundle::CoverageCount {
         let count = self.available_icons().len();
-        (count, ALL_ICONS.len())
+        super::bundle::CoverageCount { present: count, total: ALL_ICONS.len() }
     }
 
     /// Retrieve README markdown text for this icon pack, or fallback to a formatted manifest description.
@@ -620,6 +620,7 @@ fn read_svg_with_retry(path: &Path) -> Option<Vec<u8>> {
                     }
                 }
             }
+            Ok(m) if m.len() == 0 && attempt >= 2 => return None,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound || (attempt >= 2 && !path.exists()) => {
                 return None;
             }
