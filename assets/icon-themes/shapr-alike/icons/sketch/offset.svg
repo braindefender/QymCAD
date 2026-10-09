@@ -1,4 +1,13 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M22 10V16C22 19.3137 19.3137 22 16 22H10V10H22Z" stroke="white" stroke-opacity="0.66" stroke-width="2"/>
-<path d="M27 5V16C27 22.0751 22.0751 27 16 27H5V5H27Z" stroke="#18F2F2" stroke-width="2"/>
+<g id="offset">
+<path id="Union" d="M28 16C28 22.6274 22.6274 28 16 28H4V4H28V16ZM6 26H16C21.5228 26 26 21.5228 26 16V6H6V26ZM23 16C23 19.866 19.866 23 16 23H9V9H23V16ZM11 21H16C18.7614 21 21 18.7614 21 16V11H11V21Z" fill="var(--icon-accent, #18F2F2FF)" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<mask id="stroke0_1_656" fill="#FFFFFF">
+<path d="M9 9H23V16C23 19.866 19.866 23 16 23H9V9Z"/>
+</mask>
+<path id="Rectangle 13" d="M9 9H23V16C23 19.866 19.866 23 16 23H9V9Z" stroke-width="4" stroke="var(--icon-neutral, #BCBCBCFF)" mask="url(#stroke0_1_656)"/>
+<mask id="stroke1_1_656" fill="#FFFFFF">
+<path d="M4 4H28V16C28 22.6274 22.6274 28 16 28H4V4Z"/>
+</mask>
+<path id="Rectangle 14" d="M4 4H28V16C28 22.6274 22.6274 28 16 28H4V4Z" stroke-width="4" stroke="var(--icon-accent, #18F2F2FF)" mask="url(#stroke1_1_656)"/>
+</g>
 </svg>
