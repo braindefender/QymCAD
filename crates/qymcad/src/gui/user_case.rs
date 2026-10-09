@@ -1346,6 +1346,66 @@ mod tests {
                 check_all(&mut app, &format!("sketch: {name}"), &mut problems);
             }
 
+            // A SIZE ONLY WHEN TYPED: the circles and the arc above were drawn without a value typed and carry no size of
+            // their own; a circle drawn with 12 typed carries one diameter of 12.
+            {
+                // the sizes on the rims of the circles and arcs drawn as shapes; the construction circle of the polygon keeps
+                // the radius that holds the polygon
+                let sizes = |a: &App| {
+                    let sk = &a.project.sketches[si];
+                    let shapes: Vec<u64> = sk
+                        .entities
+                        .iter()
+                        .filter(|e| !e.construction)
+                        .filter_map(|e| match e.kind {
+                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some(center),
+                            _ => None,
+                        })
+                        .collect();
+                    sk.constraints
+                        .iter()
+                        .filter_map(|c| match c {
+                            qymcad_core::model::Constraint::Diameter { c, d, diam, .. } if shapes.contains(c) => Some((*diam, *d)),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                };
+                if !sizes(&app).is_empty() {
+                    problems.push(format!("sketch: circles and an arc drawn without a value typed carry sizes {:?}", sizes(&app)));
+                }
+                let mut hand = Hand::new(&mut app);
+                hand.sk_tool(3).click2d(100.0, 10.0).click2d(106.0, 10.0).type_text("12").key(egui::Key::Enter);
+                hand.key(egui::Key::Escape).key(egui::Key::Escape);
+                if sizes(&app) != vec![(true, 12.0)] {
+                    problems.push(format!("sketch: a circle drawn with 12 typed carries sizes {:?}", sizes(&app)));
+                }
+                check_all(&mut app, "sketch: a circle sized by a value typed", &mut problems);
+            }
+
+            // A RECTANGLE WITH ITS CENTRE FIXED: drawn from a corner, the centre picked and fixed, a corner dragged by the
+            // mouse - it resizes about the centre, which stays
+            {
+                let mut hand = Hand::new(&mut app);
+                hand.sk_tool(2).click2d(110.0, 30.0).click2d(130.0, 50.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                hand.sk_tool(0);
+                let centre = hand.app.project.sketches[si].rects.last().map(|r| r.centre);
+                match centre {
+                    Some(c) if hand.select2d(&[(0, c)]) => {
+                        hand.constraint(6);
+                        hand.key(egui::Key::Escape);
+                        hand.drag2d((130.0, 50.0), (134.0, 53.0));
+                        let sk = &hand.app.project.sketches[si];
+                        let stays = sk.points.iter().find(|q| q.id == c).is_some_and(|q| (q.x - 120.0).abs() < 0.6 && (q.y - 40.0).abs() < 0.6);
+                        let moved = sk.points.iter().any(|q| (q.x - 134.0).abs() < 0.6 && (q.y - 53.0).abs() < 0.6);
+                        if !stays || !moved {
+                            problems.push(format!("sketch: a corner of a rectangle with its centre fixed dragged to (134, 53): the centre stays {stays}, the corner went there {moved}"));
+                        }
+                    }
+                    _ => problems.push("sketch: the centre of a rectangle drawn from a corner could not be picked".into()),
+                }
+                check_all(&mut app, "sketch: a rectangle with its centre fixed resized by a corner", &mut problems);
+            }
+
             // CONSTRAINTS: each is placed on a suitable selection. One that did not take must say so through
             // the status line rather than silently doing nothing.
             let codes: [(u8, &str); 9] =
@@ -1371,6 +1431,24 @@ mod tests {
                     problems.push(format!("sketch: the \"{name}\" constraint did not take and SAID NOTHING about why"));
                 }
                 check_all(&mut app, &format!("sketch: the {name} constraint"), &mut problems);
+            }
+
+            // A DRAWING TOOL TAKEN OVER A SELECTION drops it: two lines selected, the circle taken and drawn beside
+            // them, and nothing stays selected - neither the lines nor the circle.
+            {
+                let mut hand = Hand::new(&mut app);
+                hand.sk_select();
+                let lines: Vec<(u8, u64)> = hand.app.project.sketches[si].entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).map(|e| (1u8, e.id)).collect();
+                if lines.windows(2).any(|w| hand.select2d(w)) {
+                    hand.sk_tool(3).click2d(150.0, 150.0).click2d(160.0, 150.0).key(egui::Key::Escape);
+                    if !hand.app.tools.sel_sk.items.is_empty() {
+                        problems.push(format!("sketch: a circle drawn over two selected lines left {:?} selected", hand.app.tools.sel_sk.items));
+                    }
+                    hand.sk_tool(0);
+                } else {
+                    problems.push("sketch: no pair of lines could be clicked before a drawing tool was taken".into());
+                }
+                check_all(&mut app, "sketch: a drawing tool taken over a selection", &mut problems);
             }
 
             // EDITING WHAT WAS DRAWN: corner fillets, chamfers, trimming, extending, breaking, offsetting,
@@ -1631,6 +1709,38 @@ mod tests {
                 }
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
                 check_all(&mut app, "sketch: a rectangle turned as one shape", &mut problems);
+                // THE MIDDLE OF A LINE IS PICKED AS A POINT: a line and a circle on a place of their own, the middle of the
+                // line clicked where its triangle shows, the centre of the circle added with Shift, Vertical pressed - the
+                // centre stands straight above the middle.
+                {
+                    Hand::new(&mut app).sk_tool(1).look2d((290.0, -20.0)).click2d(270.0, -40.0).click2d(310.0, -40.0).key(egui::Key::Escape);
+                    Hand::new(&mut app).sk_tool(3).look2d((290.0, -20.0)).click2d(296.0, -10.0).click2d(300.0, -10.0).key(egui::Key::Escape);
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(0).look2d((290.0, -20.0)).hover2d(290.0, -40.0).click2d(290.0, -40.0);
+                    let picked = hand.app.tools.sel_sk.items.clone();
+                    let centre = hand.app.project.sketches[si].points.iter().find(|q| (q.x - 296.0).hypot(q.y + 10.0) < 1e-6).map(|q| q.id);
+                    hand.shift_click2d(296.0, -10.0);
+                    Hand::new(&mut app).constraint(2);
+                    let sk = &app.project.sketches[si];
+                    let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| q.x);
+                    // the middle is laid by Vertical, held to the line clicked
+                    let line = match picked.as_slice() {
+                        [(1, eid)] => sk.entities.iter().find(|e| e.id == *eid).and_then(|e| if let qymcad_core::model::EntityKind::Line { a, b } = e.kind { Some((a, b)) } else { None }),
+                        _ => None,
+                    };
+                    let mid = line.and_then(|(a, b)| {
+                        sk.constraints.iter().find_map(|k| match *k {
+                            qymcad_core::model::Constraint::Midpoint { p, a: x, b: y } if (x, y) == (a, b) => Some(p),
+                            _ => None,
+                        })
+                    });
+                    let stands = mid.zip(centre).and_then(|(m, c)| Some((at(m)? - at(c)?).abs() < 1e-6));
+                    if stands != Some(true) {
+                        problems
+                            .push(format!("sketch: the middle of a line picked and held Vertical with a centre: picked {picked:?}, centre {centre:?}, standing {stands:?}; status: {}", app.status));
+                    }
+                }
+                check_all(&mut app, "sketch: the middle of a line takes a constraint", &mut problems);
             }
 
             // DIMENSIONS: linear, angular, radial. A dimension is not a caption but A CONSTRAINT: it must take
@@ -1780,6 +1890,32 @@ mod tests {
 
             app.finish_sketch_edit();
             app.exit_context();
+        }
+
+        // A BIG DRAWING IN THE MIDDLE OF THE WORK: 300 rectangles of four segments - the size of sketch that hung the
+        // program (#95) - come in through Import, are laid on a plane, and a corner is dragged by hand; the document
+        // holds after each.
+        {
+            let path = crate::gui::a_big_drawing_stays_live::tests::rectangles_dxf(300);
+            let ctx = egui::Context::default();
+            crate::gui::install_fonts(&ctx);
+            crate::gui::import_door::tests::answer(&mut app, &ctx, qymcad_ui_state::Want::Anything, &path.to_string_lossy());
+            Hand::new(&mut app).click([5.0, 5.0, 0.0]);
+            match app.project.sketches.iter().position(|s| s.entities.len() >= 1_200) {
+                None => problems.push(format!("a big drawing: 1 200 segments did not come in as a sketch; the status says {:?}", app.status)),
+                Some(si) => {
+                    check_all(&mut app, "a big drawing came in", &mut problems);
+                    // the corner (10, 6) of the first rectangle, led 2 mm on along both axes
+                    Hand::new(&mut app).sk_tool(0).drag2d((10.0, 6.0), (12.0, 8.0));
+                    let moved = app.project.sketches[si].points.iter().any(|p| (p.x - 12.0).hypot(p.y - 8.0) < 0.5);
+                    if !moved {
+                        problems.push("a big drawing: the corner (10, 6) dragged to (12, 8) did not go".into());
+                    }
+                    check_all(&mut app, "a big drawing: a corner dragged", &mut problems);
+                    app.finish_sketch_edit();
+                    app.exit_context();
+                }
+            }
         }
 
         // --- THE MONKEY: RANDOM ACTIONS ON A FINISHED DOCUMENT ---

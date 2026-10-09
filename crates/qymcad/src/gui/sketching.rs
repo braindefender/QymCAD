@@ -263,44 +263,7 @@ impl App {
                 // profile, like a drawing.
                 let profile_pick = self.tools.armed.commanding() && self.sketch_ses.editing.is_none();
                 if !profile_pick {
-                    // the colour of the points follows how defined they are, as in any CAD: green means
-                    // defined, YELLOW still free (showing what is under-defined), red means trouble.
-                    // Points go RED only on a CONFLICT of dimensions (inconsistent values, a real error).
-                    // Harmless redundancy (consistent reference dimensions) does NOT redden them - that
-                    // would be a false alarm of "a heap of errors" on a perfectly good sketch.
-                    let has_conflict = !sketch_diag(&self.cache, &self.project, si).conflicts.is_empty();
-                    let (_, free) = sketch_status(&mut self.sketch_ctx(), si); // cached: the Jacobian is not computed every frame
-                                                                               // the reference points and the virtual sharps of rectangles are not drawn
-                                                                               // as numbered geometry (see `unseen_points`)
-                    let refset = self.project.sketches[si].unseen_points();
-                    for (pi, p) in self.project.sketches[si].points.iter().enumerate() {
-                        if refset.contains(&p.id) {
-                            continue;
-                        }
-                        let movable = free.get(pi).copied().unwrap_or(true);
-                        let base_col = if has_conflict {
-                            self.scheme.pal.error_mild() // a conflict of dimensions - the points do not satisfy the constraints
-                        } else if movable {
-                            self.scheme.pal.underdefined() // still free
-                        } else {
-                            self.scheme.pal.ok() // defined
-                        };
-                        let sp = sh.at(qymcad_core::geom::Point2::new(p.x, p.y));
-                        let picked = self.tools.dim.pick.contains(&p.id);
-                        let selected = self.tools.sel_sk.items.contains(&(0, p.id));
-                        let hovered = self.chosen.hover.sketch == Some((0, p.id));
-                        let (col, r) = if selected {
-                            (self.scheme.pal.emphasis(), 5.0)
-                        } else if hovered {
-                            (self.scheme.pal.preview(), 5.0) // the pre-select highlight
-                        } else if picked {
-                            (self.scheme.pal.sketch_point(), 4.5)
-                        } else {
-                            (base_col, 3.5)
-                        };
-                        painter.circle_filled(sp, r, col);
-                        painter.text(sp + egui::vec2(5.0, -5.0), egui::Align2::LEFT_BOTTOM, format!("{}", pi + 1), egui::FontId::monospace(10.0), self.scheme.pal.text_faint());
-                    }
+                    qymcad_render::draw_sketch_points(&self.painting(), painter, rect, si, &self.tools.dim.pick);
                     self.draw_sketch_dims(painter, rect, si);
                     self.draw_sketch_constraints(painter, rect, si);
                 }

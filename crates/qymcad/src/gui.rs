@@ -1387,8 +1387,7 @@ impl App {
         if edit_si(&self.project, &self.sketch_ses).is_none() {
             self.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         }
-        exit_draw_tools(&mut qymcad_ui_state::tools_of!(self)); // entering a tool means leaving all the others, in one move
-        self.tools.tool.select(&mut self.tools.armed, t); // changing the tool clears whatever the previous one had collected
+        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), t);
         self.viewing.mode_3d = false;
         self.status = match self.tools.armed.draw_kind() {
             1 => crate::i18n::tr("g-line-hint"),
@@ -3931,6 +3930,17 @@ mod the_box_of_fillet_all_stands_at_the_clicked_side;
 mod every_field_of_a_pattern_bar_has_a_caption;
 mod the_x_key_turns_the_selection;
 mod a_shape_goes_with_its_centre;
+mod diagnostics_wait_for_the_release;
+mod the_sketch_says_what_it_did_not_solve_in_time;
+mod a_big_drawing_stays_live;
+mod a_pattern_across_a_pattern_is_laid_by_hand;
+mod the_sketch_of_the_report_takes_a_line;
+mod a_big_sketch_selected_keeps_the_3d_frame;
+mod a_dimension_past_its_field_is_left_as_it_stands;
+mod the_point_numbers_wait_for_their_setting;
+mod a_drawing_tool_drops_the_selection;
+mod a_circle_and_an_arc_take_a_size_only_when_typed;
+mod a_rectangle_with_its_centre_fixed_is_worked_by_hand;
 mod an_arc_by_its_centre_ends_on_itself;
 mod a_shift_box_leaves_the_sheet_still;
 mod a_dimension_being_placed_follows_the_pointer;
@@ -3938,6 +3948,8 @@ mod the_dimensions_turn_with_their_rectangle;
 mod an_automatic_parallel_stays_in_its_shape;
 mod the_chain_being_drawn_marks_its_own_corners;
 mod a_side_deleted_leaves_the_rectangle_lines_held;
+mod the_middle_of_a_line_is_picked;
+mod a_line_made_level_turns_about_its_middle;
 mod a_drag_takes_what_was_pressed;
 mod text_font;
 mod font_row_look;

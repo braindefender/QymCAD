@@ -228,33 +228,31 @@ mod tests {
         );
     }
 
-    /// A CIRCLE DRAWN BY HAND IS DEFINED BY WHAT IS SHOWN ON IT.
+    /// A CIRCLE DRAWN BY HAND IS DEFINED BY WHAT IS SHOWN ON IT: the number at a circle just drawn is the field of its
+    /// diameter, and a value typed there and closed with Enter is a real, driving diameter.
     ///
     /// Reported behaviour: "the sketch is not defined although the point is locked and a dimension is
     /// shown on the screen - it was placed automatically while drawing. I edit that dimension on purpose,
     /// and only then does it become a diameter, appear in the panel, and the sketch becomes defined."
     ///
-    /// What stood on the drawing was the FIELD waiting for a value, not a constraint. A number that looks
-    /// like a dimension and holds nothing is worse than no number: the reason the sketch stays short by
-    /// one is then invisible.
+    /// A number that looks like a dimension and holds nothing is worse than no number. Closed untouched, the field
+    /// leaves no number at all (`a_circle_and_an_arc_take_a_size_only_when_typed`).
     #[test]
     fn a_circle_drawn_by_hand_carries_a_real_diameter() {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        assert!(hand.app.tools.inline.circle().is_some(), "the circle drawn opened no field of its diameter");
+        hand.type_text("20").key(egui::Key::Enter);
 
         let s = &app.project.sketches[si];
         let diameters: Vec<&qymcad_core::model::Constraint> = s.constraints.iter().filter(|c| matches!(c, qymcad_core::model::Constraint::Diameter { .. })).collect();
-        assert_eq!(
-            diameters.len(),
-            1,
-            "the circle was drawn and no diameter dimension was made: the number on screen holds nothing and the sketch stays under-defined. Constraints: {:?}",
-            s.constraints
-        );
+        assert_eq!(diameters.len(), 1, "the circle was drawn with 20 typed and no diameter dimension was made. Constraints: {:?}", s.constraints);
         match diameters[0] {
             qymcad_core::model::Constraint::Diameter { d, driven, diam, .. } => {
-                assert!((*d - 20.0).abs() < 1e-6, "the diameter is {d}, and the circle was drawn with a radius of 10");
+                assert!((*d - 20.0).abs() < 1e-6, "the diameter is {d}, and 20 was typed");
                 assert!(*diam, "it was made as a radius; a circle is dimensioned by its diameter unless asked otherwise");
                 assert!(!*driven, "it was made a reference dimension, so it defines nothing");
             }

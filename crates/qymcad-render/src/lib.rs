@@ -1123,7 +1123,8 @@ pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, v
     if s.projections.is_empty() {
         return;
     }
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     for proj in &s.projections {
         let col = if proj.lost { scheme.pal.error() } else { scheme.pal.sketch_driven() };
         let stroke = Stroke::new(if proj.lost { 2.2 } else { 1.8 }, col);
@@ -1678,7 +1679,9 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     use qymcad_core::model::EntityKind;
     let Some(s) = pn.project.sketches.get(si) else { return };
-    let pt = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    // a table, built only when a point is looked for: with nothing hovered, selected or arguing, none is
+    let points_by_id: std::cell::OnceCell<std::collections::HashMap<Id, &qymcad_core::model::SketchPoint>> = std::cell::OnceCell::new();
+    let pt = |id: Id| points_by_id.get_or_init(|| s.points.iter().map(|p| (p.id, p)).collect()).get(&id).copied().map(|p| Point2::new(p.x, p.y));
     // hovering a constraint (its glyph or its row in the list) lights the points and edges it holds
     if let Some(ci) = pn.hover.constraint {
         let pts = pn.project.sketch_constraint_points(si, ci);
@@ -1711,6 +1714,13 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
             EntityKind::Line { a, b } => {
                 if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
                     painter.line_segment([sh.at(pa), sh.at(pb)], hl);
+                    // A LINE PICKED AT ITS MIDDLE SHOWS IT: a ring of the snap's colour round a dot of the selection's, at
+                    // the middle - lit as any picked line, the middle taken was not seen
+                    if sel && pn.sel_sk.at_middle.contains(&e.id) {
+                        let mid = sh.at(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0));
+                        painter.circle_stroke(mid, MIDDLE_RING, Stroke::new(1.6, pn.scheme.pal.snap_marker()));
+                        painter.circle_filled(mid, 2.5, pn.scheme.pal.emphasis());
+                    }
                 }
             }
             EntityKind::Circle { center, r } => {
@@ -1802,6 +1812,9 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
         paint_gly(painter, at, 4.5, g, pn.scheme.pal.glyph_text());
     }
 }
+
+/// The radius of the ring that marks a line picked at its middle, px.
+pub const MIDDLE_RING: f32 = 6.0;
 
 pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
@@ -2052,7 +2065,8 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     };
     let Some(s) = pn.project.sketches.get(si) else { return };
     let Some(kind) = s.entities.iter().find(|e| e.id == eid).map(|e| e.kind) else { return };
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     let red = pn.scheme.pal.error();
     let green = pn.scheme.pal.add();
     let inter = pn.project.entity_intersections(si, eid);
@@ -2377,6 +2391,138 @@ pub fn draw_move_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     painter.line_segment([sh.at(base), sh.at(cur)], Stroke::new(0.8, col));
 }
 
+/// Two plain points nearer on the screen than this, px - the width of a plain point - are one blot: the later one is
+/// left out. Counted by points in sight instead (5 000), a grid of 200 lines across 200 others, 800 ends 5 px apart at
+/// a whole view, drew its ends as solid bars.
+pub const POINT_ROOM: f32 = 7.0;
+
+/// The room a number of a point takes on the screen, px, as written in the monospace face of 10 px.
+fn number_room(n: usize) -> egui::Vec2 {
+    egui::vec2(6.2 * n.to_string().len() as f32 + 2.0, 11.0)
+}
+
+/// THE PLACES TAKEN ON THE SCREEN, on a grid of square cells: whether a place is free of what was put before it.
+struct Taken {
+    cell: f32,
+    cells: std::collections::HashMap<(i32, i32), Vec<Rect>>,
+}
+
+impl Taken {
+    fn new(cell: f32) -> Self {
+        Taken { cell, cells: std::collections::HashMap::new() }
+    }
+
+    fn at(&self, p: Pos2) -> (i32, i32) {
+        ((p.x / self.cell).floor() as i32, (p.y / self.cell).floor() as i32)
+    }
+
+    /// Whether `r` meets nothing put before, the cells it spans and those round them looked at.
+    fn free(&self, r: Rect) -> bool {
+        let ((x0, y0), (x1, y1)) = (self.at(r.min), self.at(r.max));
+        (x0 - 1..=x1 + 1).all(|x| (y0 - 1..=y1 + 1).all(|y| self.cells.get(&(x, y)).is_none_or(|put| put.iter().all(|q| !q.intersects(r)))))
+    }
+
+    fn put(&mut self, r: Rect) {
+        let ((x0, y0), (x1, y1)) = (self.at(r.min), self.at(r.max));
+        for x in x0..=x1 {
+            for y in y0..=y1 {
+                self.cells.entry((x, y)).or_default().push(r);
+            }
+        }
+    }
+}
+
+/// THE POINTS DRAWN ON THE SCREEN, on a dense grid of cells as wide as a point: whether a point stands nearer than
+/// `POINT_ROOM` on both axes to one drawn before - the cells round its own looked at. A map of cells to the boxes put in
+/// them, made for 70 000 points in sight, was most of 60 ms of a frame.
+struct Dots {
+    origin: Pos2,
+    cols: usize,
+    rows: usize,
+    cells: Vec<Vec<Pos2>>,
+}
+
+impl Dots {
+    fn new(area: Rect) -> Self {
+        let (cols, rows) = (((area.width() / POINT_ROOM).ceil() as usize).max(1), ((area.height() / POINT_ROOM).ceil() as usize).max(1));
+        Dots { origin: area.min, cols, rows, cells: vec![Vec::new(); cols * rows] }
+    }
+
+    fn at(&self, p: Pos2) -> (i64, i64) {
+        (((p.x - self.origin.x) / POINT_ROOM).floor() as i64, ((p.y - self.origin.y) / POINT_ROOM).floor() as i64)
+    }
+
+    fn cell(&self, x: i64, y: i64) -> Option<usize> {
+        (x >= 0 && y >= 0 && (x as usize) < self.cols && (y as usize) < self.rows).then(|| y as usize * self.cols + x as usize)
+    }
+
+    /// Whether no point drawn stands nearer than `POINT_ROOM` to `p` on both axes.
+    fn free(&self, p: Pos2) -> bool {
+        let (cx, cy) = self.at(p);
+        let room = POINT_ROOM - 0.02;
+        (cx - 1..=cx + 1).all(|x| (cy - 1..=cy + 1).all(|y| self.cell(x, y).is_none_or(|k| self.cells[k].iter().all(|q| (q.x - p.x).abs() >= room || (q.y - p.y).abs() >= room))))
+    }
+
+    fn put(&mut self, p: Pos2) {
+        let (x, y) = self.at(p);
+        if let Some(k) = self.cell(x, y) {
+            self.cells[k].push(p);
+        }
+    }
+}
+
+/// THE POINTS OF A SKETCH, each in the colour of how defined it is: green defined, yellow still free, red while the
+/// sketch holds a conflict of dimensions (harmless redundancy reddens nothing). The selected, the lit and the picked
+/// ones larger, and always drawn. Only the points in sight are drawn; a plain point only where no point drawn before
+/// it stands nearer than `POINT_ROOM`, and a number only where no number written before it stands - brought nearer,
+/// the points part and are all drawn again. `picked` - the points the dimension tool holds.
+pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si: usize, picked: &[Id]) {
+    let Some(s) = pn.project.sketches.get(si) else { return };
+    let sh = Sheet { view: pn.view, rect };
+    let diag = sketch_diag(pn.cache, pn.project, si);
+    let has_conflict = !diag.conflicts.is_empty();
+    // the reference points and the virtual sharps of rectangles are not drawn as numbered geometry
+    let unseen = s.unseen_points();
+    let selected: std::collections::HashSet<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 0).map(|(_, id)| *id).collect();
+    let sight = rect.expand(8.0);
+    let in_sight: Vec<(usize, Pos2)> =
+        s.points.iter().enumerate().filter(|(_, p)| !unseen.contains(&p.id)).map(|(pi, p)| (pi, sh.at(Point2::new(p.x, p.y)))).filter(|(_, sp)| sight.contains(*sp)).collect();
+    // the points marked go first, so a plain point gives way to them and not they to it
+    let marked = |id: Id| selected.contains(&id) || pn.hover.sketch == Some((0, id)) || picked.contains(&id);
+    // stable, in two passes rather than a sort: 70 000 points in sight sorted every frame were part of 60 ms
+    let in_sight = in_sight.iter().filter(|&&(pi, _)| marked(s.points[pi].id)).chain(in_sight.iter().filter(|&&(pi, _)| !marked(s.points[pi].id))).copied();
+    let (mut dots, mut numbers) = (Dots::new(rect.expand(8.0)), Taken::new(24.0));
+    for (pi, sp) in in_sight {
+        let id = s.points[pi].id;
+        let base_col = if has_conflict {
+            pn.scheme.pal.error_mild() // a conflict of dimensions - the points do not satisfy the constraints
+        } else if diag.free.get(pi).copied().unwrap_or(true) {
+            pn.scheme.pal.underdefined() // still free
+        } else {
+            pn.scheme.pal.ok() // defined
+        };
+        let (col, r) = if selected.contains(&id) {
+            (pn.scheme.pal.emphasis(), 5.0)
+        } else if pn.hover.sketch == Some((0, id)) {
+            (pn.scheme.pal.preview(), 5.0) // the pre-select highlight
+        } else if picked.contains(&id) {
+            (pn.scheme.pal.sketch_point(), 4.5)
+        } else {
+            (base_col, 3.5)
+        };
+        if !marked(id) && !dots.free(sp) {
+            continue;
+        }
+        dots.put(sp);
+        painter.circle_filled(sp, r, col);
+        let label = Rect::from_min_size(sp + egui::vec2(5.0, -5.0 - 11.0), number_room(pi + 1));
+        if pn.set.show_point_numbers && numbers.free(label) {
+            numbers.put(label);
+            painter.text(sp + egui::vec2(5.0, -5.0), egui::Align2::LEFT_BOTTOM, format!("{}", pi + 1), egui::FontId::monospace(10.0), pn.scheme.pal.text_faint());
+        }
+    }
+}
+
 /// Draw the associative dimensions and constraints of the selected sketch in the viewport.
 pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: usize) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
@@ -2384,9 +2530,8 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
     let Some(s) = pn.project.sketches.get(si) else { return };
     let dim_col = pn.scheme.pal.dimension();
     let font = egui::FontId::proportional(pn.set.dim_font);
-    // what a label says, as the settings ask, and the room it takes - the same the mouse takes it by
+    // what a label says, as the settings ask
     let caption = |c: &Constraint| qymcad_ui_state::dim_caption(pn.project, si, c, pn.set).unwrap_or_default();
-    let room = |t: &str| qymcad_ui_state::dim_text_size(t, pn.set.dim_font);
     // the text of a linear dimension beside its line, or on a shelf past the arrow when it does not fit between them
     // the text of a linear dimension where it was led along its line, or beside the line's middle, or on a shelf past
     // the arrow when it does not fit between them - the place the mouse takes it by
@@ -2420,7 +2565,8 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
             painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.0, aux_col), 6.0, 4.0));
         }
     }
-    let pt_of = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt_of = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
     for e in &s.entities {
         if !e.construction {
             continue;
@@ -2620,62 +2766,10 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
             _ => {}
         }
     }
-    // the radii and diameters of circle entities and of arcs and fillets:
-    // the selected entity (in sk_sel) or the one being edited is highlighted
-    for e in &s.entities {
-        let dim_col = if pn.sel_sk.items.contains(&(1, e.id)) || pn.inline.circle() == Some(e.id) { pn.scheme.pal.selected() } else { dim_col };
-        match e.kind {
-            EntityKind::Circle { center, r } => {
-                // if the circle already carries a diameter or radius dimension (a Diameter constraint), that loop draws it
-                let has_dim = s.constraints.iter().any(|x| matches!(x, Constraint::Diameter { c, .. } if *c == center));
-                if !has_dim {
-                    if let Some(cp) = qymcad_ui_state::sketch_pt(pn.project, si, center) {
-                        // drawn in the same style as a Diameter constraint at off=0 (the radius to the right,
-                        // the label beyond the rim), so that grabbing the label (which materialises a
-                        // reference diameter) causes no jump.
-                        let sc = sh.at(cp);
-                        let r_px = (sh.at(Point2::new(cp.x + r, cp.y)) - sc).length();
-                        let dir = egui::vec2(1.0, 0.0);
-                        let edge = sc + dir * r_px;
-                        let knee = sc + dir * (r_px + 14.0);
-                        painter.line_segment([sc, edge], Stroke::new(1.0, dim_col));
-                        painter.line_segment([edge, knee], Stroke::new(0.7, dim_col));
-                        let txt = format!("Ø{:.1}", 2.0 * r);
-                        let (at, shelf) = qymcad_ui_state::radial_text_place(knee, dir, room(&txt));
-                        painter.line_segment(shelf, Stroke::new(0.7, dim_col));
-                        painter.text(at, egui::Align2::CENTER_CENTER, txt, font.clone(), dim_col);
-                    }
-                }
-            }
-            EntityKind::Arc { center, a, b, .. } => {
-                // if the arc already carries a size of its own - a radius, an arc length or a chord - that loop above draws it
-                let has_dim = s.rim_sized(center);
-                // a fillet radius: an R leader from the centre to the middle of the arc, the label beyond
-                // the rim (r+14) - the same style and position that passive_radius_label_at grabs, otherwise
-                // the two would not line up.
-                if !has_dim {
-                    if let (Some(cp), Some(pa), Some(pb)) =
-                        (qymcad_ui_state::sketch_pt(pn.project, si, center), qymcad_ui_state::sketch_pt(pn.project, si, a), qymcad_ui_state::sketch_pt(pn.project, si, b))
-                    {
-                        let r = ((pa.x - cp.x).powi(2) + (pa.y - cp.y).powi(2)).sqrt();
-                        let sc = sh.at(cp);
-                        let r_px = (sh.at(Point2::new(cp.x + r, cp.y)) - sc).length();
-                        let m = sh.at(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0)) - sc;
-                        let dir = if m.length() > 1e-3 { m.normalized() } else { egui::vec2(1.0, 0.0) };
-                        let edge = sc + dir * r_px;
-                        let knee = sc + dir * (r_px + 14.0);
-                        painter.line_segment([sc, edge], Stroke::new(1.0, dim_col));
-                        painter.line_segment([edge, knee], Stroke::new(0.7, dim_col));
-                        let txt = format!("R{r:.1}");
-                        let (at, shelf) = qymcad_ui_state::radial_text_place(knee, dir, room(&txt));
-                        painter.line_segment(shelf, Stroke::new(0.7, dim_col));
-                        painter.text(at, egui::Align2::CENTER_CENTER, txt, font.clone(), dim_col);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    // A CIRCLE OR AN ARC WITH NO SIZE OF ITS OWN SHOWS NO NUMBER. A label of its size in the style of a dimension cannot
+    // be told from one: a diameter deleted would look still laid. Reported behaviour: "on circles a radius is always put
+    // ... it is nailed down". A size is seen by laying a dimension; while the field of a new circle or arc is open, the
+    // field shows it.
 }
 
 pub fn draw_mesh(pn: &Painting, painter: &egui::Painter, rect: Rect) {

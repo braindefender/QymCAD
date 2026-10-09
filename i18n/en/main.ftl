@@ -471,6 +471,7 @@ plane-xz-front = XZ (front)
 plane-yz-side = YZ (side)
 tree-interference-hint = Highlight in red the bodies of different components that intersect each other (expensive — recomputed while idle)
 settings-auto-constrain = Auto constraints while drawing
+settings-point-numbers = Numbers of the points
 settings-dim-name = Show the name of a dimension
 settings-dim-formula = Show the formula of a dimension
 settings-dim-font = Size of dimension labels
@@ -549,6 +550,7 @@ about-site = Site:
 about-license = Licence:
 about-no-warranty = The program comes with no warranty of any kind, to the extent permitted by law.
 settings-auto-constrain-hint = Horizontal, vertical, perpendicular and point-on-edge are added on their own (only independent ones, never over-defining)
+settings-point-numbers-hint = The number of every point of a sketch beside it - for looking into a sketch; off, the sheet shows the shapes alone
 settings-dim-name-hint = A dimension named in the "driver:" field is labelled like this: w = 110
 settings-dim-formula-hint = A dimension set by a formula is labelled like this: 2*w+10 = 110
 props-title = Properties
@@ -1276,6 +1278,7 @@ sk-arc = Arc
 sk-length-hint = The length of the line. Click a second item to get a distance instead; or place the length with a click
 sk-gap-hint = The gap between circle edges, or from a point to an edge (the editor can use the far edge)
 sk-note-selected = The note is selected — Del removes it, double-click edits it
+sk-midpoint-picked = The line is picked at its middle: a constraint with a point - Coincident, Horizontal, Vertical - ties its midpoint
 sk-note-added = The note is added
 sk-fix = Fix
 sk-params-hint = Named values for dimensions: w=50, d=w/2. A dimension can be given as an expression in its own field.
@@ -1957,6 +1960,7 @@ sk-conflicts-n = (!) they conflict with each other: { $n } constraint(s)/dimensi
 sk-conflict-advice = remove any of the set, change its value, or make a dimension a reference ({ $icon } in the list) — the sketch will solve
 sk-redundant-n = (i) redundant dimensions: { $n } (the values agree — these are references, not an error)
 sk-dof-n = { $n } constraint(s)/dimension(s) short — the yellow points can still move
+sk-unsolved-left = { $n } group(s) of shapes were not solved in time — any edit continues the solve
 sk-stitched-n = Points stitched: { $n }
 sk-list-hint = hover to highlight it in the viewport · click to select · { $icon } / Del to remove
 sk-rotated-by = Rotated by { $a }°

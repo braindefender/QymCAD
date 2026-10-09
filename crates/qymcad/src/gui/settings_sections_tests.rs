@@ -94,6 +94,7 @@ mod tests {
             show_interference: true,
             snap: super::super::Snapping { on: false, grid: 7.5, rot_deg: 30.0 },
             auto_constrain: false,
+            show_point_numbers: true,
             dim_show_name: true,
             dim_show_formula: true,
             dim_font: 20.0,
@@ -155,6 +156,7 @@ mod tests {
         assert_eq!((v.viewcube_size, v.gpu_viewport, v.projection, v.shading), (d.viewcube_size, d.gpu_viewport, d.projection, d.shading));
         let sk = after(Sec::Sketch);
         assert_eq!((sk.snap.on, sk.snap.grid, sk.snap.rot_deg, sk.auto_constrain), (d.snap.on, d.snap.grid, d.snap.rot_deg, d.auto_constrain));
+        assert_eq!(sk.show_point_numbers, d.show_point_numbers, "the sketch section must reset the numbers of the points");
         assert_eq!(
             (sk.dim_show_name, sk.dim_show_formula, sk.dim_font, sk.dim_text),
             (d.dim_show_name, d.dim_show_formula, d.dim_font, d.dim_text),

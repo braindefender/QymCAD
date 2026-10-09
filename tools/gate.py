@@ -56,6 +56,13 @@ ACCEPTANCE = ["cargo", "test", "-p", "qymcad-acceptance", "--test", "acceptance"
 # which CI uses with QYMCAD_TIME_SCALE=2 - on a runner of four cores, among five other probes, a sample project of 3 MB rebuilt in
 # 39.4 s against a budget of 30.
 TIME = "size_and_time"
+# THE PROBES OF TIME OF THE SKETCH, in the core: they pass over at every level but this one, and run one at a time. Beside
+# the checks of every crate a budget of 150 ms read 165 ms on a runner of the CI.
+SKETCH_TIME = (
+    "the probes of time of the sketch, one at a time",
+    ["cargo", "test", "-p", "qymcad-core", "--test", "the_sketch_keeps_its_time", "--", "--test-threads=1"],
+    {"QYMCAD_TIER": "time"},
+)
 
 RELEASE_MARK = os.path.join(ROOT, "target", "gate-release.json")
 
@@ -63,6 +70,7 @@ LEVELS = {
     "release": [
         BUILDS,
         ("every crate's own checks", ["cargo", "test", "--workspace", "--exclude", "qymcad-acceptance", "--no-fail-fast"], {}),
+        SKETCH_TIME,
         # EVERY LANGUAGE WHOLE: a string missing in a language falls back to English, so the checks of every change pass
         # with English alone and a contributor is asked for no language they do not know; before a release each
         # language must hold every key of the reference
@@ -84,6 +92,7 @@ LEVELS = {
     ],
     "time": [
         ("the probes of time, one at a time", ACCEPTANCE[:-1] + ["--test-threads=1", TIME], {"QYMCAD_TIER": "fast"}),
+        SKETCH_TIME,
     ],
     "fast": [
         # THE LAYOUT IS RUSTFMT'S: the tree was formatted once, and a hand layout coming back would be the next

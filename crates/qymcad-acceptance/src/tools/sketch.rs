@@ -988,9 +988,9 @@ pub static BREAK: Tool = Tool {
         splines: 0,
         texts: 0,
         notes: 0,
-        // the diameter of the circle and a horizontal for each half
-        constraints: Some(3),
-        dof: Some(6),
+        // a horizontal for each half; the circle, drawn with no size typed, carries none and its radius is free
+        constraints: Some(2),
+        dof: Some(7),
         box_of: Some(([-20.0, -10.0], [20.0, 10.0])),
         size_of: None,
         under: &[(17.0, 0.0, Under::Line), (-17.0, 0.0, Under::Line)],
@@ -1066,7 +1066,8 @@ fn offset_ring(d: f64) -> Outcome {
         texts: 0,
         notes: 0,
         constraints: None,
-        dof: Some(2),
+        // the centre, and the radius of the circle drawn with no size typed: the copy keeps its distance from it
+        dof: Some(3),
         box_of: None,
         size_of: Some([across, across]),
         under: &[],
@@ -1110,7 +1111,8 @@ pub static OFFSET: Tool = Tool {
         texts: 0,
         notes: 0,
         constraints: None,
-        dof: Some(2),
+        // the centre, and the radius of the circle drawn with no size typed: the copy keeps its distance from it
+        dof: Some(3),
         box_of: None,
         size_of: Some([26.0, 26.0]),
         under: &[],
@@ -1805,7 +1807,8 @@ pub static CON_CONCENTRIC: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 2, lines: 0, arcs: 0, circles: 2, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(2), box_of: None, size_of: None, under: &[] },
+    // the concentric alone: the circles drawn with no size typed carry none, and the centre and both radii are free
+    result: Outcome::Sketch { points: 2, lines: 0, arcs: 0, circles: 2, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(1), dof: Some(4), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1835,7 +1838,8 @@ pub static CON_TANGENT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 1, arcs: 0, circles: 1, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(4), box_of: None, size_of: None, under: &[] },
+    // the horizontal of the line and the tangent; the circle drawn with no size typed carries none
+    result: Outcome::Sketch { points: 3, lines: 1, arcs: 0, circles: 1, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(2), dof: Some(5), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -2281,7 +2285,9 @@ pub static EDIT_COPY: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, 0.0), (20.0, -30.0)], Finish::LastClick),
     title: "tool-copy",
     entries: &[Entry::Menu(&["menu-edit", "menu-copy"])],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
+    // to copy
+    other: (Entry::Button("tb-trim-hint"), "tool-trim"),
     fixture: Fixture::RectangleSidePicked,
     picks: &[],
     pick_trial: &[],
@@ -2310,7 +2316,9 @@ pub static EDIT_CUT: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "menu-cut",
     entries: &[Entry::Menu(&["menu-edit", "menu-cut"])],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
+    // to copy
+    other: (Entry::Button("tb-trim-hint"), "tool-trim"),
     fixture: Fixture::RectangleSidePicked,
     picks: &[],
     pick_trial: &[],

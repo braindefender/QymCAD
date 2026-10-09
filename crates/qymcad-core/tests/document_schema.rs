@@ -54,6 +54,7 @@ fn every_document_field_is_either_in_the_file_or_named_here() {
         ("solver_note", "derived: a message from the solver"),
         ("snap_rebinds", "derived: a counter of geometric fallback hits, living in memory"),
         ("drag_pull", "the pull of a drag: it lives only while a part is being dragged and has no business in a file"),
+        ("held_rebuilds", "the rebuilds a batch of changes holds back until its end: it lives only inside one operation"),
     ];
 
     let mut lost: Vec<String> = Vec::new();

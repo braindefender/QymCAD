@@ -38,10 +38,10 @@ mod tests {
     #[test]
     fn copying_drops_an_active_tool() {
         let (mut app, si) = sketch_with_a_rectangle();
-        select_all(&mut app, si);
-
-        // A tool in hand and one vertex already put down: the line is half-built.
+        // A tool in hand and one vertex already put down: the line is half-built. Then everything selected with
+        // Ctrl+A - after the tool, since taking a drawing tool drops the selection made before it.
         Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
+        select_all(&mut app, si);
         assert_ne!(app.tools.armed.draw_kind(), 0, "setup: the tool is not in hand — there is nothing to check");
         assert!(!app.tools.tool.pts.is_empty(), "setup: the tool holds nothing half-built — the check would prove nothing");
 
@@ -55,8 +55,8 @@ mod tests {
     #[test]
     fn the_copy_still_waits_for_its_base_point() {
         let (mut app, si) = sketch_with_a_rectangle();
-        select_all(&mut app, si);
         Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
+        select_all(&mut app, si); // after the tool: taking a drawing tool drops the selection made before it
 
         Hand::canvas(&mut app).copy(); // Ctrl+C
         assert!(app.side.clip.geom_pending.is_some(), "the copy was lost together with the tool");

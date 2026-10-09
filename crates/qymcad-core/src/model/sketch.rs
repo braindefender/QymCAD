@@ -160,19 +160,31 @@ fn same_rect_constraint(own: &Constraint, c: &Constraint) -> bool {
     }
 }
 
+/// WHETHER THE CENTRE OF A RECTANGLE IS HELD by the sketch - fixed, or set by dimensions - so that no motion the
+/// constraints allow moves it (`solver::free_points`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Centre {
+    Held,
+    Free,
+}
+
 /// WHAT A SOLVE HOLDS OF RECTANGLE `r` so that its size changes from where it should, `dragged` being the point under
 /// the hand. A dragged corner stretches the rectangle from the corner across from it - a corner shares a side with each
 /// neighbour, so with a neighbour held it could only slide along that side, one size at a time. A rectangle drawn from
-/// its centre holds the centre under a dragged corner. Not dragged, its anchor is held: the centre, or the corner it was
+/// its centre holds the centre under a dragged corner, and so does one drawn from a corner whose centre is held: the
+/// corner across is the reflection of the dragged one through the held centre, and held it leaves the dragged one
+/// nowhere to go. Reported behaviour: "a rectangle drawn from a corner, its centre fixed - a corner cannot be dragged;
+/// with the centre let go it drags as it should". Not dragged, its anchor is held: the centre, or the corner it was
 /// drawn from, so that a width or a height typed grows it from there. Nothing when the centre is dragged: the rectangle
 /// goes with it.
-fn held_for_size(r: &crate::model::SketchRect, dragged: Option<Id>) -> Option<Id> {
+pub(super) fn held_for_size(r: &crate::model::SketchRect, dragged: Option<Id>, centre: Centre) -> Option<Id> {
     if dragged == Some(r.centre) {
         return None;
     }
     let corner_dragged = dragged.and_then(|d| r.corners.iter().position(|k| *k == d));
     match (r.anchor, corner_dragged) {
         (crate::model::RectAnchor::Centre, _) => Some(r.centre),
+        (crate::model::RectAnchor::Corner(_), Some(_)) if centre == Centre::Held => Some(r.centre),
         (crate::model::RectAnchor::Corner(_), Some(k)) => Some(r.corners[(k + 2) % 4]),
         (crate::model::RectAnchor::Corner(c), None) => Some(c),
     }
@@ -258,6 +270,12 @@ impl Project {
             axis_pts: [0, 0],
             frame: 0,
             origin_uv: None,
+            left_unsolved: 0,
+            drag_session: None,
+            laid: None,
+            checked: Default::default(),
+            point_at: Default::default(),
+            entity_at: Default::default(),
         });
         self.sketches.len() - 1
     }
@@ -442,6 +460,12 @@ impl Project {
             axis_pts: [0, 0],
             frame: 0,
             origin_uv: None,
+            left_unsolved: 0,
+            drag_session: None,
+            laid: None,
+            checked: Default::default(),
+            point_at: Default::default(),
+            entity_at: Default::default(),
         });
         self.regen_sketch(si);
         sid
@@ -469,6 +493,12 @@ impl Project {
             axis_pts: [0, 0],
             frame: 0,
             origin_uv: None,
+            left_unsolved: 0,
+            drag_session: None,
+            laid: None,
+            checked: Default::default(),
+            point_at: Default::default(),
+            entity_at: Default::default(),
         });
         self.sketches.len() - 1
     }
@@ -530,12 +560,10 @@ impl Project {
         let intr = self.entity_intrinsics(si);
         let mut without: Vec<Constraint> = s.constraints.iter().enumerate().filter(|(i, c)| *i != ci && !c.is_driven()).map(|(_, c)| c.clone()).collect();
         without.extend(intr.iter().cloned());
-        let radii = self.entity_radii(si);
-        let (dof_without, _) = crate::solver::dof(&s.points, &radii, &without);
         let mut with = without;
         with.push(s.constraints[ci].clone());
-        let (dof_with, _) = crate::solver::dof(&s.points, &radii, &with);
-        dof_with == dof_without // The rank did not grow, so the dimension constrains nothing.
+        // The rank did not grow, so the dimension constrains nothing.
+        crate::solver::freedom_taken(&s.points, &self.entity_radii(si), &with, with.len() - 1) == 0
     }
     /// Redundant constraints: non-reference constraints whose removal frees no degree of freedom (the rank of
     /// the Jacobian does not drop), so they can be removed without losing determinacy.
@@ -544,30 +572,12 @@ impl Project {
     /// an excess to explain.
     pub fn sketch_redundant_constraints(&self, si: usize) -> Vec<usize> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
-        let (_, redun) = self.sketch_dof(si);
-        if redun <= 0 {
-            return Vec::new();
-        }
-        let radii = self.entity_radii(si);
-        let intr = self.entity_intrinsics(si);
-        let active_all: Vec<Constraint> = s.constraints.iter().filter(|c| !c.is_driven()).cloned().collect();
-        let mut base = active_all.clone();
-        base.extend(intr.iter().cloned());
-        let (dof_all, _) = crate::solver::dof(&s.points, &radii, &base);
-        let mut out = Vec::new();
-        for (ci, c) in s.constraints.iter().enumerate() {
-            if c.is_driven() {
-                continue;
-            }
-            let mut without: Vec<Constraint> = s.constraints.iter().enumerate().filter(|(i, cc)| *i != ci && !cc.is_driven()).map(|(_, cc)| cc.clone()).collect();
-            without.extend(intr.iter().cloned());
-            let (dof_without, _) = crate::solver::dof(&s.points, &radii, &without);
-            if dof_without == dof_all {
-                out.push(ci); // Removing it did not raise the degrees of freedom, so the constraint is
-                              // redundant (one of an interdependent set).
-            }
-        }
-        out
+        // the sketch's own constraints that constrain (not the reference ones), by their place in the sketch, then the
+        // entities' own
+        let at: Vec<usize> = (0..s.constraints.len()).filter(|&ci| !s.constraints[ci].is_driven()).collect();
+        let mut active: Vec<Constraint> = at.iter().map(|&ci| s.constraints[ci].clone()).collect();
+        active.extend(self.entity_intrinsics(si));
+        crate::solver::redundant(&s.points, &self.entity_radii(si), &active, at.len()).into_iter().map(|k| at[k]).collect()
     }
     /// Add a constraint only when it is independent, that is, when it reduces the degrees of freedom by raising
     /// the rank of the Jacobian. Redundant automatic constraints (inferred while drawing) are dropped, so the
@@ -578,17 +588,13 @@ impl Project {
         let radii = self.entity_radii(si);
         let mut active: Vec<Constraint> = s.constraints.iter().filter(|x| !x.is_driven()).cloned().collect();
         active.extend(intr.iter().cloned());
-        let mut with = active.clone();
+        let mut with = active;
         with.push(c.clone());
         // JUDGED WHERE THE CONSTRAINTS HOLD, on a copy solved with the new one: at the geometry as clicked, nearly but not
         // quite satisfying what is laid, constraints that follow from each other read as independent. A U drawn with
         // Line, its corners squared, got a Parallel between its legs on top of the two Perpendiculars that imply it, and
-        // once solved all of them stood redundant.
-        let (mut points, mut held_radii) = (s.points.clone(), radii.clone());
-        crate::solver::solve_full(&mut points, &mut held_radii, &with, None);
-        let (dof_before, _) = crate::solver::dof(&points, &held_radii, &active);
-        let (dof_after, _) = crate::solver::dof(&points, &held_radii, &with);
-        if dof_after < dof_before {
+        // once solved all of them stood redundant. Only the part the new constraint lies in is solved and counted.
+        if crate::solver::freedom_taken_where_solved(&s.points, &radii, &with, with.len() - 1) > 0 {
             self.sketches[si].constraints.push(c);
             true
         } else {
@@ -604,7 +610,6 @@ impl Project {
         let radii = self.entity_radii(si);
         let mut active: Vec<Constraint> = s.constraints.iter().filter(|x| !x.is_driven()).cloned().collect();
         active.extend(self.entity_intrinsics(si));
-        let (mut dof_now, _) = crate::solver::dof(&s.points, &radii, &active);
         let mut kept = Vec::new();
         for c in new {
             if matches!(c, Constraint::EqualRadius { .. }) {
@@ -612,9 +617,7 @@ impl Project {
                 continue;
             }
             active.push(c.clone());
-            let (dof_with, _) = crate::solver::dof(&s.points, &radii, &active);
-            if dof_with < dof_now {
-                dof_now = dof_with;
+            if crate::solver::freedom_taken(&s.points, &radii, &active, active.len() - 1) > 0 {
                 kept.push(c);
             } else {
                 active.pop();
@@ -640,17 +643,15 @@ impl Project {
             )
         };
         let mut cs = s.constraints.clone();
-        let active = |cs: &[Constraint], skip: Option<usize>| -> Vec<Constraint> {
-            cs.iter().enumerate().filter(|(i, c)| Some(*i) != skip && !c.is_driven()).map(|(_, c)| c.clone()).chain(intr.iter().cloned()).collect()
-        };
+        let active = |cs: &[Constraint]| -> Vec<Constraint> { cs.iter().filter(|c| !c.is_driven()).cloned().chain(intr.iter().cloned()).collect() };
         let mut gone = 0;
         for ci in (0..had.min(cs.len())).rev() {
             if !relation(&cs[ci]) || !constraint_point_ids(&cs[ci]).iter().all(|p| among.contains(p)) {
                 continue;
             }
-            let (dof_all, _) = crate::solver::dof(&s.points, &radii, &active(&cs, None));
-            let (dof_without, _) = crate::solver::dof(&s.points, &radii, &active(&cs, Some(ci)));
-            if dof_without == dof_all {
+            // the place of the relation among the active constraints: the reference ones before it are not there
+            let at = cs[..ci].iter().filter(|c| !c.is_driven()).count();
+            if crate::solver::freedom_taken(&s.points, &radii, &active(&cs), at) == 0 {
                 cs.remove(ci);
                 gone += 1;
             }
@@ -695,6 +696,19 @@ impl Project {
         false
     }
     /// Mobility mask of the sketch points (`true` means the point can still move), one entry per point.
+    /// THE CHECKS OF A SKETCH COUNTED TOGETHER (`solver::checks`): its degrees of freedom, its free points and its
+    /// redundant constraints by their place, from one elimination a part - the answers of `sketch_dof`,
+    /// `sketch_free_points` and `sketch_redundant_constraints`.
+    pub fn sketch_checks(&self, si: usize) -> crate::solver::Checks {
+        let Some(s) = self.sketches.get(si) else { return crate::solver::Checks { dof: (0, 0), free: Vec::new(), redundant: Vec::new() } };
+        let at: Vec<usize> = (0..s.constraints.len()).filter(|&ci| !s.constraints[ci].is_driven()).collect();
+        let mut active: Vec<Constraint> = at.iter().map(|&ci| s.constraints[ci].clone()).collect();
+        active.extend(self.entity_intrinsics(si));
+        let radii = self.entity_radii(si);
+        let mut checks = s.checked.with(|memo| crate::solver::checks_remembered(&s.points, &radii, &active, at.len(), memo));
+        checks.redundant = checks.redundant.into_iter().map(|k| at[k]).collect();
+        checks
+    }
     pub fn sketch_free_points(&self, si: usize) -> Vec<bool> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| !c.is_driven()).cloned().collect();
@@ -1409,6 +1423,14 @@ impl Project {
     /// dimensions internal to the set are carried over (horizontals, verticals, edge dimensions and so on, but
     /// no `Fixed` and no references to the axes). Returns the new ids.
     pub(super) fn dup_entities<F: Fn(f64, f64) -> (f64, f64)>(&mut self, si: usize, eids: &[Id], f: F, with_constraints: bool) -> Vec<Id> {
+        let new_ids = self.dup_entities_unbuilt(si, eids, f, with_constraints);
+        self.regen_sketch(si);
+        new_ids
+    }
+    /// `dup_entities` without the loops made again after it: for a pattern, which lays every copy and makes the loops
+    /// once. Made again after each copy, a pattern of 200 lines across 200 others made a growing grid 199 times - 29 s,
+    /// the last grid of 40 000 cells.
+    pub(super) fn dup_entities_unbuilt<F: Fn(f64, f64) -> (f64, f64)>(&mut self, si: usize, eids: &[Id], f: F, with_constraints: bool) -> Vec<Id> {
         let pids = self.entity_point_ids(si, eids);
         let coords: Vec<(Id, f64, f64)> = {
             let Some(s) = self.sketches.get(si) else { return Vec::new() };
@@ -1445,7 +1467,6 @@ impl Project {
             let cons: Vec<Constraint> = self.internal_constraints(si, &inside).iter().map(|c| remap_constraint_via(c, &map)).collect();
             self.sketches[si].constraints.extend(cons);
         }
-        self.regen_sketch(si);
         new_ids
     }
     /// Capture the selected geometry of sketch `si` into the clipboard, for pasting into this sketch or
@@ -1877,7 +1898,7 @@ impl Project {
     }
     pub(super) fn line_ends(&self, si: usize, eid: Id) -> Option<(Id, Id)> {
         let s = self.sketches.get(si)?;
-        s.entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
+        s.entity(eid).and_then(|e| match e.kind {
             EntityKind::Line { a, b } => Some((a, b)),
             _ => None,
         })
@@ -2146,15 +2167,15 @@ impl Project {
     /// WHERE A POINT STANDS in the drawing, or `None` where the sketch has no such point.
     pub fn point_xy(&self, si: usize, id: Id) -> Option<(f64, f64)> {
         let s = self.sketches.get(si)?;
-        s.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y))
+        s.point(id).map(|p| (p.x, p.y))
     }
     /// Set the radius of an arc entity, moving its endpoints to radius `rr` while preserving their angles.
     /// PUT A RADIUS DIMENSION ON A PLAIN ARC: the radius set, then held by a driving dimension, as the radius of a
     /// circle is - one constraint more and one freedom less. Reported behaviour: the radius tool wrote 15 into the arc
     /// and left no dimension, the arc free to be dragged to any radius.
     pub fn put_arc_radius_dim(&mut self, si: usize, eid: Id, rr: f64) {
-        let Some(center) = self.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).and_then(|e| match e.kind {
-            EntityKind::Arc { center, .. } => Some(center),
+        let Some((center, a, b, ccw)) = self.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).and_then(|e| match e.kind {
+            EntityKind::Arc { center, a, b, ccw } => Some((center, a, b, ccw)),
             _ => None,
         }) else {
             return;
@@ -2163,7 +2184,8 @@ impl Project {
         self.set_arc_radius(si, eid, rr);
         if let Some(s) = self.sketches.get_mut(si) {
             if !s.constraints.iter().any(|c| matches!(c, Constraint::Diameter { c: cc, .. } if *cc == center)) {
-                s.constraints.push(Constraint::Diameter { c: center, d: rr, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+                let off = arc_label_angle(&s.points, ArcEnds { center, a, b, ccw });
+                s.constraints.push(Constraint::Diameter { c: center, d: rr, off, expr: String::new(), driven: false, diam: false, at: None });
             }
         }
         self.solve_sketch(si);
@@ -2421,8 +2443,17 @@ impl Project {
             }
             (x, y)
         };
+        // only a constraint naming the corner has a pair to carry: `pair` changes a pair one of whose points is `pc`. The
+        // whole match for every constraint of the sketch was 2.3 s of filleting every corner of 2 000 rectangles.
+        let names_corner = |c: &Constraint| match *c {
+            Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Orientation { a, b, .. } | Constraint::Tangent { a, b, .. } | Constraint::PointOnLine { a, b, .. } => {
+                a == pc || b == pc
+            }
+            Constraint::Equal { a, b, c, d } | Constraint::Parallel { a, b, c, d } | Constraint::Perpendicular { a, b, c, d } | Constraint::Collinear { a, b, c, d } => [a, b, c, d].contains(&pc),
+            _ => false,
+        };
         if let Some(s) = self.sketches.get_mut(si) {
-            for c in s.constraints.iter_mut() {
+            for c in s.constraints.iter_mut().filter(|c| names_corner(c)) {
                 match c {
                     // a tangency or a point held on a line names the line by two points too: rounding the next corner of
                     // a rectangle shortened a side whose tangency still ran to the old vertex, and that vertex was kept
@@ -2566,14 +2597,14 @@ impl Project {
         // valid and the contour stays whole.
         self.settle_the_corner_point(si, pc, o1, t1, o2, t2);
         // SOLVED, not only drawn: the legs and the angle are laid as dimensions above, and a chamfer of two legs or of a
-        // leg and an angle stands by them only once the sketch is solved
-        self.solve_sketch(si);
+        // leg and an angle stands by them only once the sketch is solved - at the end of a batch of corners, once
+        self.solve_sketch_held(si);
         true
     }
     /// Endpoints of an edge entity (a line or an arc), used to find the shared vertex when filleting.
     pub(super) fn edge_end_ids(&self, si: usize, eid: Id) -> Option<(Id, Id)> {
         let s = self.sketches.get(si)?;
-        s.entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
+        s.entity(eid).and_then(|e| match e.kind {
             EntityKind::Line { a, b } => Some((a, b)),
             EntityKind::Arc { a, b, .. } => Some((a, b)),
             _ => None,
@@ -3230,14 +3261,17 @@ impl Project {
             }
             count.into_iter().filter(|&(_, c)| c == 2).map(|(id, _)| id).collect()
         };
-        let mut done = 0;
-        for pid in corners {
-            // Is the vertex still intact, with two edges still meeting there?
-            if self.sketches.get(si).is_some_and(|s| s.points.iter().any(|q| q.id == pid)) && self.vertex_edges(si, pid).len() == 2 && self.fillet_at_vertex_by(si, pid, size) {
-                done += 1;
+        // every corner laid, the sketch rebuilt once (`batch`)
+        self.batch(|p| {
+            let mut done = 0;
+            for pid in corners {
+                // Is the vertex still intact, with two edges still meeting there?
+                if p.sketches.get(si).is_some_and(|s| s.points.iter().any(|q| q.id == pid)) && p.vertex_edges(si, pid).len() == 2 && p.fillet_at_vertex_by(si, pid, size) {
+                    done += 1;
+                }
             }
-        }
-        done
+            done
+        })
     }
     /// Offset the selected entities: their closed loops are moved by `dist`, inwards or outwards, and added as
     /// new entities.
@@ -3408,7 +3442,7 @@ impl Project {
         let nuser = s.constraints.len();
         let mut all: Vec<Constraint> = s.constraints.clone();
         all.extend(self.entity_intrinsics(si));
-        let mut out = crate::solver::conflicts(&s.points, &radii, &all);
+        let mut out = s.checked.with(|memo| crate::solver::conflicts_remembered(&s.points, &radii, &all, memo));
         out.retain(|&ci| ci < nuser);
         // Unevaluable constraints go red too. The solver rejects them (otherwise they silently hold nothing),
         // but a silent rejection is no better than a silent no-op: the point still looks constrained. A
@@ -3423,11 +3457,13 @@ impl Project {
         }
         out
     }
-    pub(super) fn solve_sketch_inner(&mut self, si: usize, drag: Option<(Id, f64, f64)>, max_iter: usize) -> f64 {
+    pub(super) fn solve_sketch_inner(&mut self, si: usize, drag: Option<(Id, f64, f64)>, budget: crate::solver::Budget, rebuild: Rebuild) -> f64 {
         // The radius variables and the implicit arc constraints are computed before the mutable borrow.
         let mut radii = self.entity_radii(si);
         let intrinsics = self.entity_intrinsics(si);
         let Some(s) = self.sketches.get_mut(si) else { return 0.0 };
+        // where the points stood before anything of this solve moved them, for what it rebuilds after it
+        let at_start: Vec<(f64, f64)> = s.points.iter().map(|p| (p.x, p.y)).collect();
         // THE CENTRE OF A RECTANGLE DRAWN BY ITS CORNERS FOLLOWS THE CORNERS: it is put on the middle of the diagonal
         // before the solve. Left where it stood, it held the corners back - a side moved from 20 to 30 came out at 28.9,
         // the solver sharing the move between the corners and the centre. A centre a rectangle was drawn from is its
@@ -3436,23 +3472,38 @@ impl Project {
             centre: Id,
             at: Point2,
         }
-        let mids: Vec<Mid> = s
-            .rects
-            .iter()
-            .filter(|r| matches!(r.anchor, crate::model::RectAnchor::Corner(_)))
+        // how many constraints name each centre, and where each point stands, counted once: asked of every constraint for
+        // every rectangle and looked along the points, 10 000 rectangles drawn were 6e8 steps a solve
+        let corner_drawn: Vec<&crate::model::SketchRect> = s.rects.iter().filter(|r| matches!(r.anchor, crate::model::RectAnchor::Corner(_))).collect();
+        let mut naming: std::collections::HashMap<Id, usize> = corner_drawn.iter().map(|r| (r.centre, 0)).collect();
+        if !naming.is_empty() {
+            for c in &s.constraints {
+                for p in c.points() {
+                    if let Some(n) = naming.get_mut(&p) {
+                        *n += 1;
+                    }
+                }
+            }
+        }
+        let standing: std::collections::HashMap<Id, Point2> = if corner_drawn.is_empty() { Default::default() } else { s.points.iter().map(|q| (q.id, Point2::new(q.x, q.y))).collect() };
+        let mids: Vec<Mid> = corner_drawn
+            .into_iter()
             // only a centre nothing else holds: one that carries a constraint of its own is solved with it, and put back on
             // the middle before every solve of a contradicting sketch it was a new compromise each time - a point drifted
             // by 1 mm from one solve to the next
-            .filter(|r| s.constraints.iter().filter(|c| c.points().contains(&r.centre)).count() == 1)
+            .filter(|r| naming.get(&r.centre) == Some(&1))
             .filter_map(|r| {
-                let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+                let at = |id: Id| standing.get(&id).copied();
                 let (a, c) = (at(r.corners[0])?, at(r.corners[2])?);
                 Some(Mid { centre: r.centre, at: Point2::new((a.x + c.x) / 2.0, (a.y + c.y) / 2.0) })
             })
             .collect();
-        for m in mids {
-            if let Some(q) = s.points.iter_mut().find(|q| q.id == m.centre) {
-                (q.x, q.y) = (m.at.x, m.at.y);
+        if !mids.is_empty() {
+            let place: std::collections::HashMap<Id, usize> = s.points.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
+            for m in mids {
+                if let Some(&i) = place.get(&m.centre) {
+                    (s.points[i].x, s.points[i].y) = (m.at.x, m.at.y);
+                }
             }
         }
         // A SHAPE DRAGGED BY ITS CENTRE GOES WITH IT AS A WHOLE, as a circle goes with its centre: what the centre
@@ -3483,14 +3534,24 @@ impl Project {
         // dragged corner or a width typed grew a rectangle about wherever the least travel lay. What is held for this
         // solve (`held_for_size`) is let go when the sketch does not solve with it - a dimension that moves the
         // rectangle as a whole.
+        // A CORNER DRAGGED OF A RECTANGLE DRAWN FROM A CORNER asks whether its centre is held - counted only then, as a
+        // drag frame of a sketch the drag session does not take is solved here
+        let dragged = drag.map(|(d, _, _)| d);
+        let corner_dragged = dragged.is_some_and(|d| s.rects.iter().any(|r| matches!(r.anchor, crate::model::RectAnchor::Corner(_)) && r.corners.contains(&d)));
+        let free: std::collections::HashMap<Id, bool> = if corner_dragged {
+            s.points.iter().map(|q| q.id).zip(crate::solver::free_points(&s.points, &radii, &active)).collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+        let centre_of = |r: &crate::model::SketchRect| if free.get(&r.centre) == Some(&false) { Centre::Held } else { Centre::Free };
         let anchors: Vec<Constraint> =
-            s.rects.iter().filter_map(|r| held_for_size(r, drag.map(|(d, _, _)| d))).filter(|p| s.points.iter().any(|q| q.id == *p)).map(|p| Constraint::Fixed { p }).collect();
-        let resid = if anchors.is_empty() {
-            crate::solver::solve_full_iter(&mut s.points, &mut radii, &active, drag, max_iter)
+            s.rects.iter().filter_map(|r| held_for_size(r, dragged, centre_of(r))).filter(|p| s.points.iter().any(|q| q.id == *p)).map(|p| Constraint::Fixed { p }).collect();
+        let outcome = if anchors.is_empty() {
+            crate::solver::solve_within(&mut s.points, &mut radii, &active, drag, budget)
         } else {
             let (mut held_points, mut held_radii) = (s.points.clone(), radii.clone());
             let held: Vec<Constraint> = active.iter().cloned().chain(anchors).collect();
-            crate::solver::solve_full_iter(&mut held_points, &mut held_radii, &held, drag, max_iter);
+            let with_hold = crate::solver::solve_within(&mut held_points, &mut held_radii, &held, drag, budget);
             // SOLVED IS TOLD BY THE SKETCH'S OWN CONSTRAINTS, not by the hold, a soft pull of which a little is always left
             // under a corner dragged away from it. Solved means to the precision the polish reaches (1e-12): a side held
             // 0.0009 short of a collinear line by its anchor left 1e-7 and passed at 1e-6. A DRAG FRAME KEEPS THE HOLD
@@ -3502,11 +3563,14 @@ impl Project {
             let solved = if drag.is_some() { f64::INFINITY } else { 1e-9 };
             if r <= solved {
                 (s.points, radii) = (held_points, held_radii);
-                r
+                crate::solver::Outcome { residual: r, left: with_hold.left }
             } else {
-                crate::solver::solve_full_iter(&mut s.points, &mut radii, &active, drag, max_iter)
+                crate::solver::solve_within(&mut s.points, &mut radii, &active, drag, budget)
             }
         };
+        // NOT SOLVED TO THE END: the parts the time ran out before, said beside the degrees of freedom of the sketch
+        s.left_unsolved = outcome.left;
+        let resid = outcome.residual;
         // A SOLVED SKETCH SOLVED AGAIN STAYS AS IT WAS: a move below rounding is not written. Each solve of a solved
         // polygon shifted its points by about 2e-18 mm, the document key read every frame as an edit, and a rebuild
         // in the background always came back stale and was started again - the program never came to rest.
@@ -3522,18 +3586,30 @@ impl Project {
             }
         }
         // The solved radii go back into the circles; an arc derives its radius from its points and stores
-        // none.
-        for rv in &radii {
-            for e in s.entities.iter_mut() {
-                if let EntityKind::Circle { center, r } = &mut e.kind {
-                    if *center == rv.center {
-                        *r = rv.value;
-                    }
+        // none. By the centre, from a table: every radius against every entity was 4.9e9 steps a solve on 70 000
+        // circles.
+        let solved: std::collections::HashMap<Id, f64> = radii.iter().map(|rv| (rv.center, rv.value)).collect();
+        for e in s.entities.iter_mut() {
+            if let EntityKind::Circle { center, r } = &mut e.kind {
+                if let Some(&v) = solved.get(center) {
+                    *r = v;
                 }
             }
         }
+        // what the solve moved: the points and the centres of the circles whose radius changed
+        let moved: std::collections::HashSet<Id> = s
+            .points
+            .iter()
+            .zip(&at_start)
+            .filter(|(p, &(x, y))| p.x.to_bits() != x.to_bits() || p.y.to_bits() != y.to_bits())
+            .map(|(p, _)| p.id)
+            .chain(radii.iter().zip(&radii_was).filter(|(r, &old)| r.value.to_bits() != old.to_bits()).map(|(r, _)| r.center))
+            .collect();
         self.update_driven_dims(si);
-        self.regen_sketch(si);
+        match rebuild {
+            Rebuild::Whole => self.regen_sketch(si),
+            Rebuild::Moved => self.regen_sketch_moved(si, &moved),
+        }
         resid
     }
     /// Radius variables of the solver: circles (which store `r`) and arcs (whose radius is the distance from
@@ -3644,52 +3720,7 @@ impl Project {
             })
             .collect();
         for c in &mut s.constraints {
-            match c {
-                Constraint::Distance { a, b, d, driven: true, axis, .. } => {
-                    if let (Some(&(ax, ay)), Some(&(bx, by))) = (pos.get(a), pos.get(b)) {
-                        *d = match axis {
-                            1 => (ax - bx).abs(),
-                            2 => (ay - by).abs(),
-                            _ => ((ax - bx).powi(2) + (ay - by).powi(2)).sqrt(),
-                        };
-                    }
-                }
-                Constraint::Angle { a, b, c: cc, deg, driven: true, .. } => {
-                    if let (Some(&(ax, ay)), Some(&(bx, by)), Some(&(cx, cy))) = (pos.get(a), pos.get(b), pos.get(cc)) {
-                        let (ux, uy) = (ax - bx, ay - by);
-                        let (vx, vy) = (cx - bx, cy - by);
-                        *deg = (ux * vy - uy * vx).atan2(ux * vx + uy * vy).abs().to_degrees();
-                    }
-                }
-                Constraint::DistancePL { p, a, b, d, driven: true, .. } => {
-                    if let (Some(&(px, py)), Some(&(ax, ay)), Some(&(bx, by))) = (pos.get(p), pos.get(a), pos.get(b)) {
-                        let (dx, dy) = (bx - ax, by - ay);
-                        let len = (dx * dx + dy * dy).sqrt().max(1e-9);
-                        *d = (dx * (py - ay) - dy * (px - ax)) / len; // Signed, so the side is preserved.
-                    }
-                }
-                Constraint::AngleLines { a, b, c, d, deg, driven: true, .. } => {
-                    if let (Some(&(ax, ay)), Some(&(bx, by)), Some(&(cx, cy)), Some(&(dx2, dy2))) = (pos.get(a), pos.get(b), pos.get(c), pos.get(d)) {
-                        let (ux, uy) = (bx - ax, by - ay);
-                        let (vx, vy) = (dx2 - cx, dy2 - cy);
-                        *deg = (ux * vy - uy * vx).atan2(ux * vx + uy * vy).abs().to_degrees();
-                    }
-                }
-                Constraint::Diameter { c, d, driven: true, diam, .. } => {
-                    if let Some(&r) = crad.get(c) {
-                        *d = if *diam { 2.0 * r } else { r };
-                    }
-                }
-                Constraint::ArcLength { c, a, b, ccw, len, driven: true, .. } => {
-                    if let (Some(&(cx, cy)), Some(&(ax, ay)), Some(&(bx, by))) = (pos.get(c), pos.get(a), pos.get(b)) {
-                        let rad = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
-                        let (a0, a1) = ((ay - cy).atan2(ax - cx), (by - cy).atan2(bx - cx));
-                        let theta = if *ccw { (a1 - a0).rem_euclid(std::f64::consts::TAU) } else { (a0 - a1).rem_euclid(std::f64::consts::TAU) };
-                        *len = rad * theta;
-                    }
-                }
-                _ => {}
-            }
+            measure_driven(c, &pos, &crad);
         }
     }
     /// Whether a sketch is typed: built from points the sketcher edits - its entities, or its splines, which are
@@ -3698,9 +3729,27 @@ impl Project {
     pub fn is_typed_sketch(&self, si: usize) -> bool {
         self.sketches.get(si).is_some_and(|s| !s.entities.is_empty() || !s.splines.is_empty())
     }
+    /// THE LOOPS OF A SKETCH MADE FROM ALL ITS CURVES, whatever changed since they were made: what a rebuild round a
+    /// change (`round`) is held to.
+    pub fn regen_sketch_whole(&mut self, si: usize) {
+        if let Some(s) = self.sketches.get_mut(si) {
+            s.laid = None;
+        }
+        self.regen_sketch(si);
+    }
+
     /// Rebuild the contours of a sketch from its entities, as a multi-loop tessellation. The contour ids are
     /// preserved where possible (see the matching below).
     pub fn regen_sketch(&mut self, si: usize) {
+        // within a batch the rebuild waits for its end, once for every change (`batch`)
+        if self.held_rebuilds.depth > 0 {
+            self.held_rebuilds.sketches.insert(si);
+            return;
+        }
+        // the loops are made anew: what a drag kept of them goes
+        if let Some(s) = self.sketches.get_mut(si) {
+            s.drag_session = None;
+        }
         // THE FRAME OF REFERENCE FIRST, before anything is derived from it. The origin and the axis
         // guides are not geometry: a contour, a dimension to an axis and every profile taken from this
         // sketch stand on them. See `pin_frame` for what moving them costs.
@@ -3712,6 +3761,19 @@ impl Project {
             s.pin_frame();
         }
         let Some(s) = self.sketches.get(si) else { return };
+        // only the loops round what changed since they were made (`round::Laid`), where few curves changed; splines and
+        // text are made whole
+        let plain = s.splines.is_empty() && s.texts.is_empty();
+        if let Some(changed) = self.changed_since_laid(si).filter(|_| plain) {
+            let drawn = s.entities.iter().filter(|e| !e.construction).count();
+            if changed.drawn.is_empty() && changed.gone.is_empty() {
+                return; // nothing drawn changed: every loop stands
+            }
+            if 4 * (changed.drawn.len() + changed.gone.len()) <= drawn {
+                return self.loops_round(si, &changed.drawn, &changed.gone);
+            }
+        }
+        let s = &self.sketches[si];
         // Every contour of a sketch comes from entities now; the ids are reused by position.
         let entity_cids: Vec<Id> = s.contour_ids.clone();
         // Construction geometry never reaches a profile or a contour; it is drawn separately, dashed. Only
@@ -3751,6 +3813,143 @@ impl Project {
                 }
             }
         }
+        let new_entity_cids = self.replace_contours(entity_cids, pairs, &[]);
+        self.sketches[si].contour_ids = new_entity_cids;
+        let laid = if plain { self.laid_now(si).map(Box::new) } else { None };
+        self.sketches[si].laid = laid;
+    }
+    /// A BATCH OF CHANGES TO SKETCHES: within `work` a rebuild of a sketch is held back, and at its end every sketch
+    /// asked for is rebuilt once. A tool that lays many elements, each rebuilding the sketch, rebuilt it as many times:
+    /// every corner of 2 000 rectangles filleted took 1 673 s in a test build. Batches nest; the outermost rebuilds.
+    pub fn batch<R>(&mut self, work: impl FnOnce(&mut Self) -> R) -> R {
+        self.held_rebuilds.depth += 1;
+        let out = work(self);
+        self.held_rebuilds.depth -= 1;
+        if self.held_rebuilds.depth == 0 {
+            // the solves held back first, each rebuilding its sketch; then the rebuilds of the rest
+            let solves = std::mem::take(&mut self.held_rebuilds.solves);
+            for &si in &solves {
+                self.solve_sketch(si);
+            }
+            for si in std::mem::take(&mut self.held_rebuilds.sketches) {
+                if !solves.contains(&si) {
+                    self.regen_sketch(si);
+                }
+            }
+        }
+        out
+    }
+
+    /// SOLVE A SKETCH, or within a batch at its end, once for every change (`batch`) - for a tool that solves after
+    /// laying an element and reads nothing of the solve. A chamfer at each of 20 corners solved the whole sketch 20
+    /// times.
+    pub fn solve_sketch_held(&mut self, si: usize) {
+        if self.held_rebuilds.depth > 0 {
+            self.held_rebuilds.solves.insert(si);
+            return;
+        }
+        self.solve_sketch(si);
+    }
+
+    /// THE LOOPS OF A SKETCH REBUILT WHERE IT MOVED, for a frame of a drag: `moved` - the points moved by the frame and
+    /// the centres of the circles whose radius changed. The loops are the faces of the arrangement of the curves and
+    /// the open chains, and neither runs between curves whose boxes, widened past every weld, do not meet: the curves
+    /// of a group whose boxes meet one another make their loops alone. So only the groups holding a curve that moved,
+    /// or a curve that shared a loop with one, are made again; the loops of the rest stand. Rebuilt whole, a frame
+    /// of a drag among 70 000 lines took 0.43 s, among 70 000 rectangles 1.6 s, in a release build. A sketch with
+    /// splines or text, or one whose frame of reference had to be put back, is rebuilt whole.
+    pub(super) fn regen_sketch_moved(&mut self, si: usize, moved: &std::collections::HashSet<Id>) {
+        let Some(s) = self.sketches.get_mut(si) else { return };
+        s.drag_session = None; // its loops are made anew: what a drag kept of them goes
+        let s = &self.sketches[si];
+        // a frame of reference to be made first (`ensure_frame` in `regen_sketch`), splines, text: rebuilt whole
+        if !s.splines.is_empty() || !s.texts.is_empty() || (s.origin != 0 || s.axis_pts.iter().any(|g| *g != 0)) && s.frame == 0 {
+            return self.regen_sketch(si);
+        }
+        if self.detach_geometry_from_origin(si) || self.sketches[si].pin_frame() {
+            return self.regen_sketch(si);
+        }
+        let s = &self.sketches[si];
+        let changed: std::collections::HashSet<Id> = s.entities.iter().filter(|e| !e.construction && entity_points(e).iter().any(|p| moved.contains(p))).map(|e| e.id).collect();
+        if changed.is_empty() {
+            return; // nothing drawn moved: every loop stands
+        }
+        self.loops_round(si, &changed, &std::collections::HashSet::new());
+    }
+
+    /// THE LOOPS ROUND A CHANGE MADE AGAIN (`round`): the curves `changed` (drawn now) and `gone` since the loops were
+    /// made, the regions and chains round them made again, the rest standing.
+    fn loops_round(&mut self, si: usize, changed: &std::collections::HashSet<Id>, gone: &std::collections::HashSet<Id>) {
+        let laid = self.laid_held(si);
+        let s = &self.sketches[si];
+        let at: std::collections::HashMap<Id, SketchPoint> = s.points.iter().map(|p| (p.id, *p)).collect();
+        let drawn: Vec<SketchEntity> = s.entities.iter().filter(|e| !e.construction).copied().collect();
+        let shifted: Vec<usize> = drawn.iter().enumerate().filter(|(_, e)| changed.contains(&e.id)).map(|(k, _)| k).collect();
+        let touched = |e: &Id| changed.contains(e) || gone.contains(e);
+        // each loop of the sketch: its place, closed or open, its box, and whether a curve changed is in it - looked at
+        // once, with no list made for a loop: made for each of the 40 000 cells of a grid, the lists were 14 ms of an edit
+        struct Before {
+            id: Id,
+            ci: usize,
+            closed: bool,
+            span: [f64; 4],
+            touched: bool,
+        }
+        let of = |id: Id, ci: usize| self.contours.ents_of(id).into_iter().flatten().chain(&self.contours[ci].edge_src);
+        let before: Vec<Before> = s
+            .contour_ids
+            .iter()
+            .filter_map(|&id| {
+                let ci = self.contour_index(id)?;
+                Some(Before { id, ci, closed: self.contours[ci].closed, span: round::contour_box(&self.contours[ci]), touched: of(id, ci).any(touched) })
+            })
+            .collect();
+        // where the moved curves stood is known by the loops they were in, and where they stand by their boxes now
+        let boxes: Vec<[f64; 4]> = drawn.iter().map(|e| entity_box(e, &|id| at.get(&id).map(|p| (p.x, p.y)))).collect();
+        let swept: Vec<[f64; 4]> = before.iter().filter(|b| b.touched).map(|b| b.span).chain(shifted.iter().map(|&k| boxes[k])).collect();
+        // the regions meeting a swept box, looked up on a grid of their boxes: each region against each of the 400 boxes
+        // a line of a grid of 200 by 200 sweeps was 16 million looks, 60 ms of an edit
+        let mut old: std::collections::HashSet<Id> = before.iter().filter(|b| b.touched).map(|b| b.id).collect();
+        let spans: Vec<[f64; 4]> = before.iter().map(|b| b.span).collect();
+        let regions = round::BoxGrid::new(&spans);
+        for w in &swept {
+            old.extend(regions.near(w, spans.len()).into_iter().filter(|&i| before[i].closed && round::meet(&spans[i], w)).map(|i| before[i].id));
+        }
+        let held = before.iter().filter(|b| b.closed && old.contains(&b.id)).map(|b| b.span).reduce(round::union);
+        // the chains are made from the changed curves, every curve of an open loop one of them was in, and every curve of
+        // any loop a curve gone was in: two sides of a rectangle deleted leave the other two an open chain, and with
+        // nothing changed left to reach it from it was lost. A curve still there reaches its chain along its ends; seeded
+        // from every loop it was in, a line of a grid of 200 by 200 took in the whole grid
+        let place: std::collections::HashMap<Id, usize> = drawn.iter().enumerate().map(|(k, e)| (e.id, k)).collect();
+        let from: Vec<usize> = shifted
+            .iter()
+            .copied()
+            .chain(before.iter().filter(|b| b.touched && (!b.closed || of(b.id, b.ci).any(|e| gone.contains(e)))).flat_map(|b| of(b.id, b.ci).filter_map(|e| place.get(e).copied())))
+            .collect();
+        let grid = round::BoxGrid::new(&boxes);
+        let curve = |k: usize| drawn[k];
+        let point = |id: Id| at.get(&id).copied();
+        let near = |b: &[f64; 4]| grid.near(b, boxes.len());
+        let change = round::Change { curve: &curve, boxes: &boxes, at: &point, near: &near, moved: &shifted, swept: &swept, held };
+        let mut pairs = round::regions_round(&change);
+        let chains = round::chains_round(&change, &from);
+        pairs.extend(chains.made);
+        old.extend(before.iter().filter(|b| !b.closed && of(b.id, b.ci).any(|e| chains.through.contains(e))).map(|b| b.id));
+        let (old, kept): (Vec<Id>, Vec<Id>) = s.contour_ids.iter().partition(|cid| old.contains(cid));
+        // the loops whose nesting may change: those whose box meets the box of the loops going and coming
+        let going: std::collections::HashSet<Id> = old.iter().copied().collect();
+        let over = before.iter().filter(|b| going.contains(&b.id)).map(|b| b.span).chain(pairs.iter().map(|(c, _)| round::contour_box(c))).reduce(round::union);
+        let near: Vec<Id> = before.iter().filter(|b| !going.contains(&b.id) && over.is_some_and(|o| round::meet(&b.span, &o))).map(|b| b.id).collect();
+        let made = self.replace_contours(old, pairs, &near);
+        self.sketches[si].contour_ids = kept.into_iter().chain(made).collect();
+        self.laid_follows(si, laid, changed, gone);
+    }
+    /// THE LOOPS OF A SKETCH REPLACED: the loops `old` (contour ids) give way to `pairs` (each a loop and the entities
+    /// it is made of), each new loop taking the id of the old one it is - by the entities of its boundary first, by
+    /// its place and size after - so a feature keeps its loop through an edit. Answers the ids of the new loops, in
+    /// their order. `kept` - the loops of the sketch that stay as they stood, nested with the new ones.
+    pub(super) fn replace_contours(&mut self, old: Vec<Id>, pairs: Vec<(Contour, Vec<Id>)>, kept: &[Id]) -> Vec<Id> {
+        let entity_cids = old;
         // Stable contour ids: the new loops are matched against the old ones by a geometric signature
         // (closedness, centroid, area) rather than by position in the list. Positional reuse breaks
         // associativity: adding or removing a loop shifts a contour id onto a different physical loop, and an
@@ -3826,9 +4025,29 @@ impl Project {
         }
         // Phase two: the rest are matched greedily by geometry (centroid and area), best matches first, or the
         // first loop would take an id belonging to another.
+        //
+        // A loop that stands as it stood matches at no distance, and such matches come first, each new loop taking the
+        // first old one free: they are made by the exact signature, without a pair of every new loop with every old.
+        // A drag frame among 10 000 lines is 10 000 open chains matched to 10 000 - 1e8 pairs on every frame.
+        {
+            let exact = |ctr: Point2, ar: f64, cl: bool| [(ctr.x + 0.0).to_bits(), (ctr.y + 0.0).to_bits(), (ar + 0.0).to_bits(), cl as u64];
+            let mut free_old: std::collections::HashMap<[u64; 4], std::collections::VecDeque<usize>> = std::collections::HashMap::new();
+            for (oi, o) in old.iter().enumerate().filter(|(oi, o)| !used_old[*oi] && o.1.x.is_finite() && o.1.y.is_finite() && o.2.is_finite()) {
+                free_old.entry(exact(o.1, o.2, o.3)).or_default().push_back(oi);
+            }
+            for (ni, (ctr, ar, cl)) in new_sig.iter().enumerate() {
+                if assign[ni].is_some() {
+                    continue;
+                }
+                if let Some(oi) = free_old.get_mut(&exact(*ctr, *ar, *cl)).and_then(|q| q.pop_front()) {
+                    assign[ni] = Some(old[oi].0);
+                    used_old[oi] = true;
+                }
+            }
+        }
         let mut cands: Vec<(usize, usize, f64)> = Vec::new();
-        for (ni, (ctr, ar, cl)) in new_sig.iter().enumerate() {
-            for (oi, o) in old.iter().enumerate() {
+        for (ni, (ctr, ar, cl)) in new_sig.iter().enumerate().filter(|(ni, _)| assign[*ni].is_none()) {
+            for (oi, o) in old.iter().enumerate().filter(|(oi, _)| !used_old[*oi]) {
                 if o.3 == *cl {
                     cands.push((ni, oi, ctr.dist(o.1) + (ar - o.2).abs().sqrt()));
                 }
@@ -3857,15 +4076,11 @@ impl Project {
                 None => new_entity_cids.push(self.add_contour(c)),
             }
         }
-        self.rebuild_contour_nesting(&new_entity_cids);
-        // Old contours not reused by any new loop are deleted.
-        for (k, o) in old.iter().enumerate() {
-            if !used_old[k] {
-                if let Some(ci) = self.contour_index(o.0) {
-                    self.contours.remove_at(ci); // The id, the provenance and the nesting go with it.
-                }
-            }
-        }
+        // the nesting among the new loops and `kept`, the loops of the sketch left as they stood
+        self.rebuild_contour_nesting(&new_entity_cids.iter().chain(kept).copied().collect::<Vec<Id>>());
+        // Old contours not reused by any new loop are deleted, the id, the provenance and the nesting with each.
+        let gone: std::collections::HashSet<Id> = old.iter().zip(&used_old).filter(|(_, used)| !**used).map(|(o, _)| o.0).collect();
+        self.contours.remove_ids(&gone);
         // Provenance is persisted: contour id to the entities of its boundary, for matching on the next
         // edit.
         for (ni, cid) in new_entity_cids.iter().enumerate() {
@@ -3875,7 +4090,7 @@ impl Project {
                 self.contours.set_ents(*cid, new_prov[ni].clone());
             }
         }
-        self.sketches[si].contour_ids = new_entity_cids;
+        new_entity_cids
     }
     /// The origin point (0,0, fixed) of a sketch, created lazily. Returns its id. It belongs to no entity and
     /// therefore never reaches a profile or a contour.
@@ -4059,7 +4274,10 @@ impl Project {
         // the origin is a CONSTRAINT, made by clicking it with the constraint tool - not by silently
         // sharing the id.
         let sys = self.sketches[si].system_ids();
-        if let Some(p) = self.sketches[si].points.iter().filter(|p| !sys.contains(&p.id)).find(|p| ((p.x - x).powi(2) + (p.y - y).powi(2)).sqrt() <= eps) {
+        // the distance told by its square first, the frame of reference only for a point that near: a root and a look
+        // at the frame for every point of the sketch was 2 s of filleting every corner of 2 000 rectangles
+        let near = eps * eps;
+        if let Some(p) = self.sketches[si].points.iter().find(|p| (p.x - x).powi(2) + (p.y - y).powi(2) <= near && !sys.contains(&p.id)) {
             return p.id;
         }
         let id = self.alloc_id();
@@ -4310,6 +4528,12 @@ impl Project {
             axis_pts: [0, 0],
             frame: 0,
             origin_uv: None,
+            left_unsolved: 0,
+            drag_session: None,
+            laid: None,
+            checked: Default::default(),
+            point_at: Default::default(),
+            entity_at: Default::default(),
         });
         id
     }
@@ -4329,7 +4553,7 @@ impl Project {
         self.sketches[si].plane = plane;
         // Endpoint deduplication cache: nearby endpoints of adjacent curves become one sketch point, which is
         // what makes the chain connected and closable.
-        let mut cache: Vec<(f64, f64, Id)> = Vec::new();
+        let mut cache = ImportPoints { welded: super::tess::Welded::new(IMPORT_WELD), ids: Vec::new() };
         for e in &curves {
             match *e {
                 ProfEdge::Line { a, b } => {
@@ -4363,15 +4587,17 @@ impl Project {
         si
     }
     /// Return the id of a sketch point at (x, y), reusing a nearby one (endpoint deduplication for imports) or
-    /// creating one.
-    pub(super) fn import_intern_pt(&mut self, si: usize, cache: &mut Vec<(f64, f64, Id)>, x: f64, y: f64) -> Id {
-        const TOL: f64 = 1e-4;
-        if let Some((_, _, id)) = cache.iter().find(|(cx, cy, _)| (cx - x).abs() < TOL && (cy - y).abs() < TOL) {
-            return *id;
+    /// creating one. Nearby: within `IMPORT_WELD` along x and along y; the first point made that is, as a look along
+    /// all of them in order finds it - through a grid as wide (`Welded`): the 140 000 ends of a drawing of 70 000
+    /// segments looked along every point before them took 5.3 s.
+    pub(super) fn import_intern_pt(&mut self, si: usize, cache: &mut ImportPoints, x: f64, y: f64) -> Id {
+        let node = cache.welded.weld((x, y), |(cx, cy), (x, y)| (cx - x).abs() < IMPORT_WELD && (cy - y).abs() < IMPORT_WELD);
+        if let Some(&id) = cache.ids.get(node) {
+            return id;
         }
         let id = self.alloc_id();
         self.sketches[si].points.push(SketchPoint { id, x, y });
-        cache.push((x, y, id));
+        cache.ids.push(id);
         id
     }
     pub fn sketch_index(&self, id: Id) -> Option<usize> {
@@ -4792,9 +5018,20 @@ impl Project {
         for &cid in cids {
             self.contours.clear_parent(cid);
         }
-        for (cid, pts, _) in &data {
-            let parent = data
+        // A contour holds another only if every point of the other is inside it, so only one whose box meets the box of
+        // the other is tried (`meeting_boxes`), in the order of the list: 10 000 rectangles were 1e8 tries of a polygon.
+        let boxes: Vec<[f64; 4]> =
+            data.iter().map(|(_, pts, _)| pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.x), b[1].min(p.y), b[2].max(p.x), b[3].max(p.y)])).collect();
+        let mut meets: Vec<Vec<usize>> = vec![Vec::new(); data.len()];
+        for super::tess::BoxPair { first, second } in super::tess::meeting_boxes(&boxes) {
+            meets[first].push(second);
+            meets[second].push(first);
+        }
+        for (k, (cid, pts, _)) in data.iter().enumerate() {
+            meets[k].sort_unstable();
+            let parent = meets[k]
                 .iter()
+                .map(|&o| &data[o])
                 .filter(|(oid, opts, _)| oid != cid && poly_contains(opts, pts) && !polys_touch(opts, pts))
                 .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|(oid, _, _)| *oid);
@@ -5019,7 +5256,7 @@ impl Project {
         // set directly, changing a feature height during an ordinary build.
         for si in 0..self.sketches.len() {
             let before: Vec<(Id, f64, f64)> = self.sketches[si].points.iter().map(|p| (p.id, p.x, p.y)).collect();
-            self.solve_sketch_inner(si, None, 120);
+            self.solve_sketch_inner(si, None, crate::solver::Budget::FULL, Rebuild::Whole);
             let moved = self.sketches[si].points.iter().zip(before.iter()).any(|(p, (id, x, y))| p.id != *id || (p.x - x).abs() > 1e-9 || (p.y - y).abs() > 1e-9);
             if moved {
                 self.regen_sketch(si); // The points moved, so the contours are rebuilt; otherwise the profile
@@ -5172,6 +5409,28 @@ fn fillet_label_angle(points: &[SketchPoint], cen: Id, t1: Id, t2: Id) -> f64 {
     let level = if ua.0.abs() >= ub.0.abs() { ua } else { ub };
     let (x, y) = unit((mid.0 + level.0, mid.1 + level.1)).unwrap_or(mid);
     (-y).atan2(x)
+}
+
+/// THE POINTS OF AN ARC and the way it runs from `a` to `b`.
+struct ArcEnds {
+    center: Id,
+    a: Id,
+    b: Id,
+    ccw: bool,
+}
+
+/// WHERE THE RADIUS OF AN ARC IS LED: from the centre out through the middle of the arc as it runs from its start to its
+/// end, so the leader meets the arc that is drawn. A leader to the right (zero) misses an arc lying below its centre.
+/// Reported behaviour: "the size on an arc is not put on the segment of the arc that is seen". The middle is taken
+/// along the way the arc runs, not as the bisector of its ends: an arc over half a turn has its middle on the far side
+/// of that bisector. An angle on the screen, where y runs down: the world angle t is -t there.
+fn arc_label_angle(points: &[SketchPoint], arc: ArcEnds) -> f64 {
+    let get = |id: Id| points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
+    let (Some(c), Some(a), Some(b)) = (get(arc.center), get(arc.a), get(arc.b)) else { return 0.0 };
+    let (ta, tb) = ((a.1 - c.1).atan2(a.0 - c.0), (b.1 - c.1).atan2(b.0 - c.0));
+    let tau = std::f64::consts::TAU;
+    let mid = if arc.ccw { ta + (tb - ta).rem_euclid(tau) / 2.0 } else { ta - (ta - tb).rem_euclid(tau) / 2.0 };
+    -mid
 }
 
 /// A CIRCLE OR AN ARC READ AS ONE THING: the centre, the radius, and for an arc the angular range.
@@ -5337,4 +5596,101 @@ fn hold_offset_loop(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64)
         }
     }
     held
+}
+
+/// Ends of imported curves closer than this along x and along y are one point, mm.
+const IMPORT_WELD: f64 = 1e-4;
+
+/// THE POINTS AN IMPORT HAS MADE: the places welded into nodes, and the point each node is.
+pub(super) struct ImportPoints {
+    welded: super::tess::Welded,
+    ids: Vec<Id>,
+}
+
+/// WHAT A SOLVE OF A SKETCH REBUILDS of its loops after it.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Rebuild {
+    /// every loop: an edit, the release of a drag
+    Whole,
+    /// the loops of what the solve moved: a frame of a drag (`Project::regen_sketch_moved`)
+    Moved,
+}
+
+/// THE VALUE OF A REFERENCE (DRIVEN) DIMENSION read off the geometry: `pos` - where the points stand, `crad` - the
+/// radius of each circle by its centre. A dimension that drives is left as it is.
+pub(super) fn measure_driven(c: &mut Constraint, pos: &std::collections::HashMap<Id, (f64, f64)>, crad: &std::collections::HashMap<Id, f64>) {
+    match c {
+        Constraint::Distance { a, b, d, driven: true, axis, .. } => {
+            if let (Some(&(ax, ay)), Some(&(bx, by))) = (pos.get(a), pos.get(b)) {
+                *d = match axis {
+                    1 => (ax - bx).abs(),
+                    2 => (ay - by).abs(),
+                    _ => ((ax - bx).powi(2) + (ay - by).powi(2)).sqrt(),
+                };
+            }
+        }
+        Constraint::Angle { a, b, c: cc, deg, driven: true, .. } => {
+            if let (Some(&(ax, ay)), Some(&(bx, by)), Some(&(cx, cy))) = (pos.get(a), pos.get(b), pos.get(cc)) {
+                let (ux, uy) = (ax - bx, ay - by);
+                let (vx, vy) = (cx - bx, cy - by);
+                *deg = (ux * vy - uy * vx).atan2(ux * vx + uy * vy).abs().to_degrees();
+            }
+        }
+        Constraint::DistancePL { p, a, b, d, driven: true, .. } => {
+            if let (Some(&(px, py)), Some(&(ax, ay)), Some(&(bx, by))) = (pos.get(p), pos.get(a), pos.get(b)) {
+                let (dx, dy) = (bx - ax, by - ay);
+                let len = (dx * dx + dy * dy).sqrt().max(1e-9);
+                *d = (dx * (py - ay) - dy * (px - ax)) / len; // Signed, so the side is preserved.
+            }
+        }
+        Constraint::AngleLines { a, b, c, d, deg, driven: true, .. } => {
+            if let (Some(&(ax, ay)), Some(&(bx, by)), Some(&(cx, cy)), Some(&(dx2, dy2))) = (pos.get(a), pos.get(b), pos.get(c), pos.get(d)) {
+                let (ux, uy) = (bx - ax, by - ay);
+                let (vx, vy) = (dx2 - cx, dy2 - cy);
+                *deg = (ux * vy - uy * vx).atan2(ux * vx + uy * vy).abs().to_degrees();
+            }
+        }
+        Constraint::Diameter { c, d, driven: true, diam, .. } => {
+            if let Some(&r) = crad.get(c) {
+                *d = if *diam { 2.0 * r } else { r };
+            }
+        }
+        Constraint::ArcLength { c, a, b, ccw, len, driven: true, .. } => {
+            if let (Some(&(cx, cy)), Some(&(ax, ay)), Some(&(bx, by))) = (pos.get(c), pos.get(a), pos.get(b)) {
+                let rad = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
+                let (a0, a1) = ((ay - cy).atan2(ax - cx), (by - cy).atan2(bx - cx));
+                let theta = if *ccw { (a1 - a0).rem_euclid(std::f64::consts::TAU) } else { (a0 - a1).rem_euclid(std::f64::consts::TAU) };
+                *len = rad * theta;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// THE BOX OF A CURVE `[x0, y0, x1, y1]` where its points stand (`at`), widened past the welds of the loops (1e-3 mm)
+/// and by a millionth of its size: curves whose boxes so widened do not meet share no loop.
+pub(super) fn entity_box(e: &SketchEntity, at: &dyn Fn(Id) -> Option<(f64, f64)>) -> [f64; 4] {
+    let p = |id: Id| at(id).unwrap_or((f64::NAN, f64::NAN));
+    let [x0, y0, x1, y1] = match e.kind {
+        EntityKind::Line { a, b } => {
+            let (pa, pb) = (p(a), p(b));
+            [pa.0.min(pb.0), pa.1.min(pb.1), pa.0.max(pb.0), pa.1.max(pb.1)]
+        }
+        EntityKind::Circle { center, r } => {
+            let c = p(center);
+            [c.0 - r, c.1 - r, c.0 + r, c.1 + r]
+        }
+        EntityKind::Arc { center, a, .. } => {
+            let (c, pa) = (p(center), p(a));
+            let r = (pa.0 - c.0).hypot(pa.1 - c.1);
+            [c.0 - r, c.1 - r, c.0 + r, c.1 + r]
+        }
+        EntityKind::Ellipse { c, ma, mi } => {
+            let (pc, pa, pi) = (p(c), p(ma), p(mi));
+            let r = (pa.0 - pc.0).hypot(pa.1 - pc.1).max((pi.0 - pc.0).hypot(pi.1 - pc.1));
+            [pc.0 - r, pc.1 - r, pc.0 + r, pc.1 + r]
+        }
+    };
+    let m = 1e-2 + 1e-6 * (x1 - x0).max(y1 - y0);
+    [x0 - m, y0 - m, x1 + m, y1 + m]
 }

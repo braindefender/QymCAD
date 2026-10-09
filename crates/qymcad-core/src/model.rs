@@ -353,6 +353,19 @@ pub struct Project {
     /// their bodies are neither built nor shown. `None` builds everything. Saved with the project.
     #[serde(default)]
     pub rollback: Option<usize>,
+    /// THE REBUILDS OF SKETCHES HELD BACK while a tool lays many elements (`Project::batch`). Not a fact of the
+    /// document.
+    #[serde(skip)]
+    pub held_rebuilds: HeldRebuilds,
+}
+
+/// The sketches whose rebuild is held back, and how deep the batches go.
+#[derive(Clone, Debug, Default)]
+pub struct HeldRebuilds {
+    depth: u32,
+    sketches: std::collections::BTreeSet<usize>,
+    /// the sketches whose solve is held back too (`Project::solve_sketch_held`)
+    solves: std::collections::BTreeSet<usize>,
 }
 
 /// Definition of a datum point. `at` is derived whenever the definition is not `Manual`.
@@ -600,9 +613,110 @@ pub struct Sketch {
     /// origin). Invariant to body placement: u*X + v*Y travels with the frame (see `sketch_frame`).
     #[serde(default)]
     pub origin_uv: Option<Point2>,
+    /// THE PARTS THE LAST SOLVE DID NOT REACH: its time ran out before them (`solver::Budget`), and they stand as
+    /// they stood until the next solve. Not a fact of the drawing - it is not written to a file.
+    #[serde(skip)]
+    pub left_unsolved: usize,
+    /// WHAT A DRAG UNDER WAY KEEPS from one frame to the next (`drag::DragSession`). Not a fact of the drawing.
+    #[serde(skip)]
+    pub(crate) drag_session: Option<Box<drag::DragSession>>,
+    /// WHAT ITS LOOPS WERE MADE FROM (`round::Laid`): a rebuild makes again only the loops round what changed since.
+    /// Not a fact of the drawing.
+    #[serde(skip)]
+    pub(crate) laid: Option<Box<round::Laid>>,
+    /// WHAT ITS CHECKS REMEMBER OF EACH PART (`solver::PartMemo`): a change counts again the parts it touched. Not a
+    /// fact of the drawing.
+    #[serde(skip)]
+    pub(crate) checked: CheckMemo,
+    /// THE PLACES OF THE POINTS AND OF THE ENTITIES BY ID (`Sketch::point`, `Sketch::entity`). Not a fact of the drawing.
+    #[serde(skip)]
+    pub(crate) point_at: IdPlaces,
+    #[serde(skip)]
+    pub(crate) entity_at: IdPlaces,
+}
+
+/// THE PLACE OF EACH ID IN A LIST, a table that checks itself: a place found is taken only where the list still holds
+/// that id there; an id not found puts in the tail the list has grown by, and failing that makes the table again. Asked through `Sketch::point` and
+/// `Sketch::entity`, it is right however the lists were changed; looked along the lists, a tool laying an element at
+/// every corner of 2 000 rectangles looked through them some ten times a corner - 7 s in a release build. Copied, a
+/// sketch makes its own anew.
+#[derive(Default)]
+pub(crate) struct IdPlaces(std::sync::Mutex<std::collections::HashMap<Id, usize>>);
+
+/// THE MEMORY OF THE CHECKS OF A SKETCH, asked through `&Project` (`sketch_checks`, `sketch_conflicts`). Copied, a
+/// sketch starts its own empty; printed, it shows nothing - as `IdPlaces`.
+#[derive(Default)]
+pub(crate) struct CheckMemo(std::sync::Mutex<crate::solver::PartMemo>);
+
+impl Clone for CheckMemo {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl std::fmt::Debug for CheckMemo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CheckMemo")
+    }
+}
+
+impl CheckMemo {
+    pub(crate) fn with<R>(&self, work: impl FnOnce(&mut crate::solver::PartMemo) -> R) -> R {
+        let mut memo = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        work(&mut memo)
+    }
+}
+
+/// Printed without its places: a table filled as ids are asked for is no fact of the sketch, and a sketch compared by
+/// its print before and after an operation that changed nothing read as changed where only the table had filled.
+impl std::fmt::Debug for IdPlaces {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("IdPlaces")
+    }
+}
+
+impl Clone for IdPlaces {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl IdPlaces {
+    fn find<T>(&self, list: &[T], id: Id, id_of: impl Fn(&T) -> Id) -> Option<usize> {
+        let mut places = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(&i) = places.get(&id) {
+            if list.get(i).is_some_and(|x| id_of(x) == id) {
+                return Some(i);
+            }
+        }
+        // most changes add to the end of a list: the new tail is put in first, the whole list only if that is not it
+        let known = places.len();
+        if known < list.len() {
+            for (i, x) in list.iter().enumerate().skip(known) {
+                places.insert(id_of(x), i);
+            }
+            if let Some(&i) = places.get(&id) {
+                if list.get(i).is_some_and(|x| id_of(x) == id) {
+                    return Some(i);
+                }
+            }
+        }
+        *places = list.iter().enumerate().map(|(i, x)| (id_of(x), i)).collect();
+        places.get(&id).copied()
+    }
 }
 
 impl Sketch {
+    /// The point of id `id` (`IdPlaces`).
+    pub fn point(&self, id: Id) -> Option<&SketchPoint> {
+        self.point_at.find(&self.points, id, |p| p.id).map(|i| &self.points[i])
+    }
+
+    /// The entity of id `id` (`IdPlaces`).
+    pub fn entity(&self, id: Id) -> Option<&SketchEntity> {
+        self.entity_at.find(&self.entities, id, |e| e.id).map(|i| &self.entities[i])
+    }
+
     /// System points of the sketch: the origin and the endpoints of the X and Y axes. They cannot be
     /// dragged, deleted or counted as free.
     ///
@@ -615,6 +729,11 @@ impl Sketch {
     /// rectangle's: shown, a chamfer of 3 carried two "=" and a point-on-line badge out in the air beside its cut, and a
     /// fillet a tangency badge on each line. A dimension a person measured to the sharp is not among them.
     pub fn corner_holders(&self) -> std::collections::HashSet<usize> {
+        // no constraint of a kind a corner holds itself by, no holder - before the points of every entity are gathered:
+        // 6 ms on 70 000 segments, and the list of constraints asks every frame
+        if !self.constraints.iter().any(|c| matches!(c, Constraint::PointOnLine { .. } | Constraint::Equal { .. } | Constraint::Tangent { .. })) {
+            return Default::default();
+        }
         let drawn: std::collections::HashSet<Id> = self
             .entities
             .iter()
@@ -1987,6 +2106,8 @@ pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleT
 mod tess;
 mod timeline;
 mod sketch;
+mod drag;
+mod round;
 pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, FilletBy, FilletSize, TextSpec};
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
@@ -2043,8 +2164,9 @@ impl Project {
     pub fn array_linear(&mut self, si: usize, eids: &[Id], dx: f64, dy: f64, count: u32) {
         for k in 1..count.max(1) {
             let (ox, oy) = (dx * k as f64, dy * k as f64);
-            self.dup_entities(si, eids, |x, y| (x + ox, y + oy), false);
+            self.dup_entities_unbuilt(si, eids, |x, y| (x + ox, y + oy), false);
         }
+        self.regen_sketch(si); // the loops once, for every copy
     }
 
     /// Circular array: `count` copies around (cx, cy) spanning `total_deg` in total.
@@ -2055,7 +2177,7 @@ impl Project {
         for k in 1..count {
             let ang = (step * k as f64).to_radians();
             let (s_, c_) = (ang.sin(), ang.cos());
-            self.dup_entities(
+            self.dup_entities_unbuilt(
                 si,
                 eids,
                 move |x, y| {
@@ -2065,6 +2187,7 @@ impl Project {
                 false,
             );
         }
+        self.regen_sketch(si); // the loops once, for every copy
     }
 
     /// Create the pattern instances without recording the pattern. Returns the ids of the new entities.
@@ -2079,7 +2202,7 @@ impl Project {
                             continue;
                         }
                         let (ox, oy) = (dx * i as f64 + dx2 * j as f64, dy * i as f64 + dy2 * j as f64);
-                        out.extend(self.dup_entities(si, source, |x, y| (x + ox, y + oy), false));
+                        out.extend(self.dup_entities_unbuilt(si, source, |x, y| (x + ox, y + oy), false));
                     }
                 }
             }
@@ -2089,7 +2212,7 @@ impl Project {
                 for k in 1..count {
                     let ang = (step * k as f64).to_radians();
                     let (s_, c_) = (ang.sin(), ang.cos());
-                    out.extend(self.dup_entities(
+                    out.extend(self.dup_entities_unbuilt(
                         si,
                         source,
                         move |x, y| {
@@ -2256,6 +2379,11 @@ impl Project {
     /// corners that took it and left whole on the one that did not, the set was a half-made drawing nobody asked for.
     /// Answers how many corners were cut.
     pub fn cut_corner_set(&mut self, si: usize, corners: &[CornerAt], cut: CornerCut, toward: Option<crate::geom::Point2>) -> usize {
+        // every corner laid, the sketch rebuilt once (`batch`)
+        self.batch(|p| p.cut_corner_set_unbuilt(si, corners, cut, toward))
+    }
+
+    fn cut_corner_set_unbuilt(&mut self, si: usize, corners: &[CornerAt], cut: CornerCut, toward: Option<crate::geom::Point2>) -> usize {
         let Some(before) = self.sketches.get(si).cloned() else { return 0 };
         for corner in corners {
             let done = match cut {
@@ -2671,7 +2799,14 @@ impl Project {
     /// follows the pointer and constrained geometry resists.
     pub fn solve_sketch_drag(&mut self, si: usize, drag: Option<(Id, f64, f64)>) -> f64 {
         self.eval_parameters(); // Parametric dimensions become values before the solve.
-        self.solve_sketch_inner(si, drag, 120)
+        self.solve_sketch_inner(si, drag, crate::solver::Budget::FULL, sketch::Rebuild::Whole)
+    }
+
+    /// Solve a sketch within `budget`: what is left when its time is out stands as it stood and is counted in
+    /// `Sketch::left_unsolved`.
+    pub fn solve_sketch_within(&mut self, si: usize, budget: crate::solver::Budget) -> f64 {
+        self.eval_parameters();
+        self.solve_sketch_inner(si, None, budget, sketch::Rebuild::Whole)
     }
 
     /// Fast path for a drag frame: no `eval_parameters` (parameters are static during a drag, and the
@@ -2682,7 +2817,17 @@ impl Project {
     /// iterations with a numeric Jacobian) and a regenerate over every sketch, which lagged visibly on any
     /// sizeable sketch.
     pub fn solve_sketch_drag_fast(&mut self, si: usize, drag: Option<(Id, f64, f64)>) -> f64 {
-        self.solve_sketch_inner(si, drag, 40)
+        // a point dragged: through what the drag keeps from frame to frame, where the sketch takes it
+        if let Some(r) = drag.and_then(|d| self.drag_frame(si, d)) {
+            return r;
+        }
+        self.solve_sketch_drag_frame_alone(si, drag)
+    }
+
+    /// A FRAME OF A DRAG made without what the drag keeps from frame to frame: the part solved and the loops rebuilt as
+    /// the frame finds them. The reference of the frames made through it (`solve_sketch_drag_fast`).
+    pub fn solve_sketch_drag_frame_alone(&mut self, si: usize, drag: Option<(Id, f64, f64)>) -> f64 {
+        self.solve_sketch_inner(si, drag, crate::solver::Budget::FRAME, sketch::Rebuild::Moved)
     }
 
     /// Add a regular polygon as a parametric group of entities: a construction circumscribed circle plus n

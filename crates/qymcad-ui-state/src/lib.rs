@@ -218,12 +218,17 @@ pub struct Caches {
     /// bodies for the section caps (a Common boolean is expensive, and the plane cuts a handful of bodies out of a
     /// thousand).
     pub mesh_bounds: std::cell::RefCell<Cached<std::collections::HashMap<usize, WorldBox>>>,
-    /// The sketch diagnostics cache. The key is a fingerprint of the geometry and the constraints. The rank
-    /// analysis builds a FULL Jacobian and runs Gaussian elimination (O(m * nv^2)) - without a cache that was
-    /// computed EVERY FRAME several times over (the panel, the list, the overlay, the glyphs, the tree), and on
-    /// large sketches the interface hung. It is recomputed only on an edit.
+    /// The sketch diagnostics cache. The rank analysis builds a FULL Jacobian and runs Gaussian elimination
+    /// (O(m * nv^2)) - without a cache that was computed EVERY FRAME several times over (the panel, the list, the
+    /// overlay, the glyphs, the tree), and on large sketches the interface hung. It is recomputed only on an edit, and
+    /// while points are dragged only on an edit of the sketch's shape (`sk_dragged`).
     /// A `RefCell`, because drawing goes through `&self` and needs that very cache.
-    pub sk_status: std::cell::RefCell<Option<(usize, u64, SketchDiag)>>,
+    pub sk_status: std::cell::RefCell<Option<SketchStatus>>,
+    /// THE SKETCH WHOSE POINTS ARE BEING DRAGGED, set by the sketch's drag handling after every frame of it. While it
+    /// is set, the diagnostics of that sketch are those of its shape (`SketchStatus::shape`) and are not recomputed for
+    /// the points moving: 3 000 lines took 3.7 s for their degrees of freedom on every frame. The release clears it,
+    /// and the diagnostics are recomputed once where the points came to rest - a degenerate place shows there.
+    pub sk_dragged: std::cell::Cell<Option<usize>>,
     /// THE BORDERS OF A BODY MADE OF A MESH THAT DID NOT CLOSE, by body index, each a loop of corners in the body's own
     /// coordinates; keyed by the meshes they were found on.
     pub open_borders: std::cell::RefCell<Cached<std::collections::HashMap<usize, Vec<OpenBorder>>>>,
@@ -244,6 +249,7 @@ impl Default for Caches {
             bbox_world: std::cell::RefCell::new(Cached { rev: u64::MAX, value: std::collections::HashMap::new() }),
             pick_edges: std::cell::RefCell::new(Cached { rev: u64::MAX, value: std::collections::HashMap::new() }),
             sk_status: std::cell::RefCell::new(None),
+            sk_dragged: std::cell::Cell::new(None),
             section_caps: std::cell::RefCell::new(Cached { rev: 0, value: std::rc::Rc::new(Vec::new()) }),
             mesh_bounds: std::cell::RefCell::new(Cached { rev: 0, value: std::collections::HashMap::new() }),
             open_borders: std::cell::RefCell::new(Cached { rev: u64::MAX, value: std::collections::HashMap::new() }),
@@ -1486,6 +1492,9 @@ pub struct Settings {
     pub snap: Snapping,
     /// the automatic constraints while drawing
     pub auto_constrain: bool,
+    /// THE NUMBERS OF THE POINTS of a sketch beside them: off by default - to a person drawing they mean nothing and
+    /// clutter the sheet; on for looking into a sketch (`draw_sketch_points`)
+    pub show_point_numbers: bool,
     /// WHAT THE LABEL OF A SKETCH DIMENSION SAYS beside its value: the name of a driver (`w = 110`) and the formula it
     /// is set by (`2*w+10 = 110`); both on reads `w = 2*w+10 = 110`
     pub dim_show_name: bool,
@@ -1646,6 +1655,7 @@ impl Default for Settings {
             show_interference: false,
             snap: Snapping::default(),
             auto_constrain: true,
+            show_point_numbers: false,
             dim_show_name: false,
             dim_show_formula: false,
             dim_font: DIM_FONT_DEFAULT,
@@ -1808,6 +1818,9 @@ pub struct SketchSelection {
     /// what. It used to have no second step at all - the axis was whichever line happened to be in the
     /// selection (and got mirrored too, being in the same set), or silently Y.
     pub mirror_of: Vec<Id>,
+    /// THE LINES OF `items` CLICKED AT THEIR MIDDLE, where the triangle of the midpoint showed. Picked as lines; a
+    /// constraint that takes points reads them as their midpoints (`qymcad_sketch::middles_for`).
+    pub at_middle: Vec<Id>,
 }
 
 impl SketchSelection {
@@ -1955,6 +1968,9 @@ pub struct DimTool {
     /// typing the value: buffer, focus, editing an existing dimension
     pub buf: String,
     pub focus: bool,
+    /// THE FIELD OF THE SIZE OF A CIRCLE OR AN ARC WAS TYPED IN since it opened: only a value typed is laid as a
+    /// dimension, as the width and the height of a rectangle are (`Placing::typed`)
+    pub typed: bool,
     pub edit: Option<(Id, String, String)>,
     /// THE FIELD OF A DIMENSION JUST MADE: (its constraint, the length of the undo list when it was made). Its value
     /// joins the step that made it - making a dimension and typing its value is one act, undone by one Ctrl+Z - as
@@ -2819,6 +2835,16 @@ pub struct Busy {
 
 /// The sketch's diagnostics in one piece: the degrees of freedom and the redundancy, the free points, THE ARGUING
 /// SET of constraints and the redundant ones. Computed in a single pass in `sketch_diag`.
+/// The diagnostics of one sketch and what they were computed for.
+pub struct SketchStatus {
+    pub si: usize,
+    /// `sketch_shape_key` at the time
+    pub shape: u64,
+    /// `sketch_place_key` at the time
+    pub place: u64,
+    pub diag: SketchDiag,
+}
+
 #[derive(Clone, Default)]
 pub struct SketchDiag {
     /// (the degrees of freedom, the redundancy)
@@ -5055,6 +5081,18 @@ pub fn radius_of(project: &Project, si: usize, c: Id) -> Option<f64> {
     })
 }
 
+/// TAKE DRAWING TOOL `kind` IN HAND: every other tool put down in one move (`exit_draw_tools`), whatever the one before
+/// had collected cleared (`SketchTool::select`), and the selection of the geometry dropped - a drawing tool works on
+/// nothing selected before it. Reported behaviour: a line selected, the circle taken and drawn, and the line stood
+/// selected the whole time and after. The arrow of selection (kind 0) keeps the selection.
+pub fn take_drawing_tool(t: &mut Tools, kind: u8) {
+    exit_draw_tools(t);
+    t.tool.select(t.armed, kind);
+    if t.armed.draw_kind() != 0 {
+        t.sel_sk.clear();
+    }
+}
+
 /// LEAVING ALL THE TOOLS — the single transition from a mode back to selection.
 ///
 /// The sketch modes are mutually exclusive: exactly one is active. This exit used to be written out
@@ -6082,7 +6120,8 @@ pub fn rename_selected(project: &qymcad_core::model::Project, rename: &mut Renam
 /// points a shape happens to be built from, and a circle carries one while a rectangle carries four.
 pub fn entities_centroid(project: &Project, si: usize, eids: &[Id]) -> Option<Point2> {
     let s = project.sketches.get(si)?;
-    let pt = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
     let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
     let mut seen = false;
     for e in s.entities.iter().filter(|e| eids.contains(&e.id)) {
@@ -9466,19 +9505,17 @@ pub fn joint_slot_geom(kind: qymcad_core::feature::JointKind) -> Vec<(u8, bool, 
 /// the dimension overlay, the glyphs and the model tree - five independent runs over the same sketch.
 /// Now there is one source.
 pub fn sketch_diag(cache: &Caches, project: &Project, si: usize) -> SketchDiag {
-    let fp = sketch_fingerprint(project, si);
-    if let Some((csi, cfp, d)) = &*cache.sk_status.borrow() {
-        if *csi == si && *cfp == fp {
-            return d.clone();
+    let (shape, place) = (sketch_shape_key(project, si), sketch_place_key(project, si));
+    if let Some(st) = &*cache.sk_status.borrow() {
+        let dragged = cache.sk_dragged.get() == Some(si);
+        if st.si == si && st.shape == shape && (dragged || st.place == place) {
+            return st.diag.clone();
         }
     }
-    let d = SketchDiag {
-        dof: project.sketch_dof(si),
-        free: project.sketch_free_points(si),
-        conflicts: project.sketch_conflicts(si).into_iter().collect(),
-        redundant: project.sketch_redundant_constraints(si).into_iter().collect(),
-    };
-    *cache.sk_status.borrow_mut() = Some((si, fp, d.clone()));
+    // the degrees of freedom, the free points and the redundant from one elimination a part (`sketch_checks`)
+    let checks = project.sketch_checks(si);
+    let d = SketchDiag { dof: checks.dof, free: checks.free, conflicts: project.sketch_conflicts(si).into_iter().collect(), redundant: checks.redundant.into_iter().collect() };
+    *cache.sk_status.borrow_mut() = Some(SketchStatus { si, shape, place, diag: d.clone() });
     d
 }
 
@@ -9510,7 +9547,9 @@ pub fn flagged_redundant(cache: &Caches, project: &qymcad_core::model::Project, 
     let diag = sketch_diag(cache, project, si);
     let Some(s) = project.sketches.get(si) else { return Default::default() };
     let tangency = |c: &Constraint| matches!(c, Constraint::Tangent { .. } | Constraint::CircleTangent { .. });
-    if s.constraints.iter().any(tangency) {
+    // nothing redundant, nothing to mark - before the points of every entity are gathered: 7 ms a call on 70 000
+    // segments, called by the list and by the canvas every frame
+    if diag.redundant.is_empty() || s.constraints.iter().any(tangency) {
         return Default::default();
     }
     let entity_pts: std::collections::HashSet<Id> = s
@@ -9544,25 +9583,79 @@ pub fn flagged_redundant(cache: &Caches, project: &qymcad_core::model::Project, 
         .collect()
 }
 
-/// The imprint of a sketch, for the status cache: the coordinates of the points plus the number of
-/// entities, constraints and splines. O(n) per frame is pennies against the Jacobian. Any edit or drag
-/// changes the imprint, which forces a recount.
-pub fn sketch_fingerprint(project: &qymcad_core::model::Project, si: usize) -> u64 {
+/// A QUICK HASH FOR THE KEYS OF THE STATUS CACHE: each word turned and multiplied in. The keys are taken several times
+/// a frame (the panel, the points, the glyphs, the pick, the dimensions), over every point, entity and constraint of
+/// the sketch; the hasher of a map, built to stand against an attacker, took most of a frame on 70 000 segments. A
+/// key of a cache needs no such standing.
+#[derive(Default)]
+struct Mix(u64);
+
+impl std::hash::Hasher for Mix {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write_u64(&mut self, x: u64) {
+        self.0 = (self.0.rotate_left(5) ^ x).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(word));
+        }
+    }
+}
+
+/// THE SHAPE OF A SKETCH, for the status cache: its points, entities, splines and constraints by what they are and
+/// what they tie, and the values of its dimensions - everything the diagnostics depend on but where the points stand.
+/// O(n) per frame is pennies against the Jacobian.
+pub fn sketch_shape_key(project: &qymcad_core::model::Project, si: usize) -> u64 {
+    use qymcad_core::model::EntityKind;
     use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let mut h = Mix::default();
     if let Some(s) = project.sketches.get(si) {
         for p in &s.points {
             p.id.hash(&mut h);
+        }
+        for e in &s.entities {
+            e.id.hash(&mut h);
+            e.construction.hash(&mut h);
+            match e.kind {
+                EntityKind::Line { a, b } => [0, a, b, 0].hash(&mut h),
+                EntityKind::Arc { center, a, b, ccw } => [1, center, a, b, ccw as u64].hash(&mut h),
+                EntityKind::Circle { center, .. } => [2, center].hash(&mut h),
+                EntityKind::Ellipse { c, ma, mi } => [3, c, ma, mi].hash(&mut h),
+            }
+        }
+        s.splines.len().hash(&mut h);
+        for c in &s.constraints {
+            std::mem::discriminant(c).hash(&mut h);
+            c.points().hash(&mut h);
+            c.is_driven().hash(&mut h);
+            // the values of the dimensions (a number edited without the points moving - before solving)
+            if let Some(d) = c.dim_value() {
+                d.to_bits().hash(&mut h);
+            }
+        }
+    }
+    h.finish()
+}
+
+/// WHERE THE POINTS OF A SKETCH STAND AND HOW BIG ITS CIRCLES ARE, for the status cache: any move of a point or a
+/// rim changes it.
+pub fn sketch_place_key(project: &qymcad_core::model::Project, si: usize) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = Mix::default();
+    if let Some(s) = project.sketches.get(si) {
+        for p in &s.points {
             p.x.to_bits().hash(&mut h);
             p.y.to_bits().hash(&mut h);
         }
-        s.entities.len().hash(&mut h);
-        s.constraints.len().hash(&mut h);
-        s.splines.len().hash(&mut h);
-        // the values of the dimensions (a number edited without the points moving - before solving)
-        for c in &s.constraints {
-            if let Some(d) = c.dim_value() {
-                d.to_bits().hash(&mut h);
+        for e in &s.entities {
+            if let qymcad_core::model::EntityKind::Circle { r, .. } = e.kind {
+                r.to_bits().hash(&mut h);
             }
         }
     }
@@ -11558,7 +11651,8 @@ pub fn sel_circle_cr(project: &Project, sel_sk: &SketchSelection, si: usize) -> 
 pub fn line_under_point(project: &Project, view: &View2d, si: usize, p: Point2, ea: Id, eb: Id) -> Option<(Id, Id)> {
     use qymcad_core::model::EntityKind;
     let s = project.sketches.get(si)?;
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     for e in &s.entities {
         if let EntityKind::Line { a, b } = e.kind {
             if (a == ea && b == eb) || (a == eb && b == ea) {
@@ -12854,7 +12948,8 @@ pub fn active_edges(dc: &DrawCtx, si: usize) -> ActiveEdges {
     let mut lines = Vec::new();
     let mut circs = Vec::new();
     if let Some(s) = dc.project.sketches.get(si) {
-        let pt = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+        let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+        let pt = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
         for e in &s.entities {
             match e.kind {
                 EntityKind::Line { a, b } => {
@@ -12883,7 +12978,8 @@ pub fn active_edges(dc: &DrawCtx, si: usize) -> ActiveEdges {
 /// a circle or an arc the distance to the rim.
 pub fn entity_near(pick: &PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<Id> {
     let s = pick.project.sketches.get(si)?;
-    let scr = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (Sheet { view: *pick.view, rect }).at(Point2::new(q.x, q.y)));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let scr = |id: Id| points_by_id.get(&id).copied().map(|q| (Sheet { view: *pick.view, rect }).at(Point2::new(q.x, q.y)));
     let seg_d = |p: Pos2, a: Pos2, b: Pos2| -> f32 {
         let (vx, vy) = (b.x - a.x, b.y - a.y);
         let l2 = vx * vx + vy * vy;

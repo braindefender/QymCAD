@@ -243,7 +243,8 @@ pub fn nearest_circle_entity(pick: &PickCtx, rect: Rect, pos: Pos2, si: usize) -
 pub fn nearest_tangent_circle(project: &Project, si: usize, p1: Point2, p2: Point2) -> Option<(Id, f64)> {
     use qymcad_core::model::EntityKind;
     let s = project.sketches.get(si)?;
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| (q.x, q.y));
     let (dx, dy) = (p2.x - p1.x, p2.y - p1.y);
     let len = (dx * dx + dy * dy).sqrt();
     if len < 1e-6 {
@@ -279,7 +280,8 @@ pub fn nearest_tangent_circle(project: &Project, si: usize, p1: Point2, p2: Poin
 pub fn nearest_equal_line(project: &Project, si: usize, p1: Point2, p2: Point2, ea: Id, eb: Id) -> Option<(Id, Id)> {
     use qymcad_core::model::EntityKind;
     let s = project.sketches.get(si)?;
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| (q.x, q.y));
     let ln = ((p2.x - p1.x).powi(2) + (p2.y - p1.y).powi(2)).sqrt();
     if ln < 1e-3 {
         return None;
@@ -319,7 +321,8 @@ pub fn nearest_equal_line(project: &Project, si: usize, p1: Point2, p2: Point2, 
 pub fn nearest_parallel_line(project: &Project, si: usize, p1: Point2, p2: Point2, ea: Id, eb: Id) -> Option<(Id, Id)> {
     use qymcad_core::model::EntityKind;
     let s = project.sketches.get(si)?;
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     let at_end = |q: &qymcad_core::model::SketchPoint| [p1, p2].iter().any(|p| (q.x - p.x).abs() < 1e-4 && (q.y - p.y).abs() < 1e-4);
     let mut shape: std::collections::HashSet<Id> = s.points.iter().filter(|q| q.id == ea || q.id == eb || at_end(q)).map(|q| q.id).collect();
     loop {
@@ -1534,7 +1537,8 @@ pub fn constraint_glyphs(pick: &PickCtx, rect: Rect, si: usize) -> Vec<(usize, P
     let sh = qymcad_ui_state::Sheet { view: *pick.view, rect };
     use qymcad_core::model::Constraint;
     let Some(s) = pick.project.sketches.get(si) else { return Vec::new() };
-    let pt = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
     let mid = |a: Id, b: Id| -> Option<Pos2> {
         let (pa, pb) = (pt(a)?, pt(b)?);
         Some(((sh.at(pa).to_vec2() + sh.at(pb).to_vec2()) / 2.0).to_pos2())

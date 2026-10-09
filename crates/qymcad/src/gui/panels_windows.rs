@@ -1385,6 +1385,9 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             if show("settings-auto-constrain") {
                 ui.checkbox(&mut wc.set.auto_constrain, crate::i18n::tr("settings-auto-constrain")).on_hover_text(crate::i18n::tr("settings-auto-constrain-hint"));
             }
+            if show("settings-point-numbers") {
+                ui.checkbox(&mut wc.set.show_point_numbers, crate::i18n::tr("settings-point-numbers")).on_hover_text(crate::i18n::tr("settings-point-numbers-hint"));
+            }
             if show("settings-dim-name") {
                 ui.checkbox(&mut wc.set.dim_show_name, crate::i18n::tr("settings-dim-name")).on_hover_text(crate::i18n::tr("settings-dim-name-hint"));
             }

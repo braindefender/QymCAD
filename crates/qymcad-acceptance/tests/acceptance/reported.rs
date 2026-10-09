@@ -150,8 +150,8 @@ probe! {
 }
 
 probe! {
-    /// EQUAL TIES TWO CIRCLES AS THE CIRCLE TOOL MAKES THEM: each comes with its dimension, and Equal still gives them
-    /// one radius without the sketch going over-defined.
+    /// EQUAL TIES TWO CIRCLES AS THE CIRCLE TOOL MAKES THEM: drawn with no value typed, each comes with no size of its
+    /// own, and Equal gives them one radius without the sketch going over-defined.
     ///
     /// The hole: the constraints were tried on shapes drawn with the automatic constraints turned off - never on the
     /// shapes a person draws, which bring their dimensions with them.
@@ -174,8 +174,8 @@ probe! {
         };
         assert!(sk.redundant == 0, "Equal on two circles as the tool made them left the sketch over-defined ({} redundant); the status line says {said:?}", sk.redundant);
         assert!(said == s.word("sk-constraint-added"), "Equal on two circles as the tool made them did not solve: the status line says {said:?}");
-        // the second circle follows the first (radius 10), its own dimension a reference now
-        let (a, b) = (radius(&mut s, 0.0, sk.max[1].min(10.0)), radius(&mut s, 30.0, 10.0));
+        // the two circles drawn with no size typed carry none: Equal brings them to one radius, the top of the sketch
+        let (a, b) = (radius(&mut s, 0.0, sk.max[1]), radius(&mut s, 30.0, sk.max[1]));
         assert!((a - b).abs() < 1e-6, "Equal was taken and the circles are of radius {a} and {b}");
     }
 }

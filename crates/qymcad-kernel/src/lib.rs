@@ -1762,6 +1762,7 @@ pub fn set_parallel(on: bool, threads: i32) {
         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).saturating_sub(1).max(1)
     };
     WORKERS.store(want, std::sync::atomic::Ordering::Relaxed);
+    qymcad_core::solver::set_threads(want); // the solve of a sketch takes the same number
     unsafe {
         qym_set_threads(threads);
         qym_set_parallel(if on { 1 } else { 0 });

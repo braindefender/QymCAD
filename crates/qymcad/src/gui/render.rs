@@ -197,7 +197,10 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     if forced_cids.is_some() || !contours_switched_off(pn.set, pn.workbench) {
         let selected: &[Id] = &[];
         let obj_sel = if let Sel::Contour(c) = pn.sel { Some(c) } else { None };
-        let sketch_sel = if let Sel::Sketch(s) = pn.sel { pn.project.sketches.get(s).map(|sk| sk.contour_ids.clone()) } else { None };
+        // the loops of the sketch selected and of the one under the cursor, as sets: looked along the list for each loop
+        // drawn, a sketch of 26 335 loops took 4.3 s a frame once it was selected
+        let sketch_sel: Option<std::collections::HashSet<Id>> = if let Sel::Sketch(s) = pn.sel { pn.project.sketches.get(s).map(|sk| sk.contour_ids.iter().copied().collect()) } else { None };
+        let sketch_lit: Option<std::collections::HashSet<Id>> = pn.hover.sketch_3d.and_then(|hi| pn.project.sketches.get(hi)).map(|sk| sk.contour_ids.iter().copied().collect());
         // hidden sketches (the checkbox is off) are not drawn - the same computation as in the sketcher - and neither
         // are the sketches of a part whose own tick is off, as its bodies are not
         let mut hidden_cids = hidden_contour_ids(pn.project, pn.sketch_hidden);
@@ -236,7 +239,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             let in_sketch = sketch_sel.as_ref().is_some_and(|ids| cid.is_some_and(|id| ids.contains(&id)));
             // THE SKETCH UNDER THE CURSOR while a tool waits for one - lit the way a face or an edge is lit
             // under the tools that ask for those, so that pointing at it looks like pointing at anything else.
-            let hovered = pn.hover.sketch_3d.and_then(|hi| pn.project.sketches.get(hi)).is_some_and(|sk| cid.is_some_and(|id| sk.contour_ids.contains(&id)));
+            let hovered = sketch_lit.as_ref().is_some_and(|ids| cid.is_some_and(|id| ids.contains(&id)));
             let (w, col) = if hovered {
                 (2.5, pn.scheme.pal.highlight())
             } else if obj_sel == Some(ci) || in_sketch {

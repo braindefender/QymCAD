@@ -1161,8 +1161,18 @@ fn valid_values(tool: &Tool) {
     // the unit as a Russian keyboard types it: "mm" in Cyrillic
     for text in [fmt(habit).replace('.', ","), format!("{}mm", fmt(habit)), format!("{} \u{43c}\u{43c}", fmt(habit))] {
         let mut s = value_ready(tool, f, &text);
+        // THE DOCUMENT AS THE FIELD STANDS OPEN is what the value is judged against: a field filled after the last click
+        // may stand on what that click made - a diameter laid on a circle that had none - and that is the click's work
+        if f.when == When::After {
+            finish(&mut s, tool);
+        }
         let before = shape_of(&s.document());
-        finish_with(&mut s, tool, f, &text);
+        if f.when == When::After {
+            type_into_field(&mut s, f, &text);
+            enter_key(&mut s);
+        } else {
+            finish(&mut s, tool);
+        }
         let doc = s.document();
         if shape_of(&doc) != before && matches(&mut s, &(f.outcome)(habit)).is_err() {
             problems.push(format!("{text:?} gave another number without a word: {:?}", the_body(&doc).map(|b| b.volume)));
@@ -1194,7 +1204,6 @@ fn invalid_values(tool: &Tool) {
     for f in tool.fields {
         for text in invalid_inputs(f) {
             let mut s = ready(tool);
-            let before = shape_of(&s.document());
             if f.when == When::After {
                 finish(&mut s, tool);
                 if field_if_there(&mut s, f).is_none() {
@@ -1202,6 +1211,8 @@ fn invalid_values(tool: &Tool) {
                     break;
                 }
             }
+            // as the field stands open: what Enter does with a refused value is judged, not what the last click made
+            let before = shape_of(&s.document());
             type_into_field(&mut s, f, &text);
             let caption = s.word(f.caption);
             let field = field_of(&mut s, f);

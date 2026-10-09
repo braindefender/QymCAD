@@ -48,6 +48,7 @@ mod tests {
             show_interference: !d.show_interference,
             snap: super::super::Snapping { on: !d.snap.on, grid: 7.5, rot_deg: 30.0 },
             auto_constrain: !d.auto_constrain,
+            show_point_numbers: !d.show_point_numbers,
             dim_show_name: !d.dim_show_name,
             dim_show_formula: !d.dim_show_formula,
             dim_font: 20.0,                                     // the factory value is 13
@@ -84,6 +85,7 @@ mod tests {
         assert_eq!(a.snap.grid, b.snap.grid, "the grid step");
         assert_eq!(a.snap.rot_deg, b.snap.rot_deg, "the rotation step");
         assert_eq!(a.auto_constrain, b.auto_constrain, "the automatic constraints");
+        assert_eq!(a.show_point_numbers, b.show_point_numbers, "the numbers of the points");
         assert_eq!(
             (a.dim_show_name, a.dim_show_formula, a.dim_font, a.dim_text),
             (b.dim_show_name, b.dim_show_formula, b.dim_font, b.dim_text),
