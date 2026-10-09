@@ -1672,7 +1672,7 @@ impl Session {
             (app.tools.picking.is_sketch_plane(), "the plane of a new sketch"),
             (app.side.m3.on, "the elements to measure"),
             (app.tools.picking.fillet_all(), "the shape whose corners are rounded"),
-            (app.side.clip.geom_pending.is_some() || app.side.clip.geom_place.is_some(), "the base point or the place of a copy"),
+            (app.side.clip.geom_pending.is_some() || app.side.clip.geom_place, "the base point or the place of a copy"),
             (app.params.boolean.pick.is_some(), "the second body of a boolean"),
             (app.params.boolean.edit.is_some(), "the kind of a boolean being edited"),
             (joint.pick_faces || joint.conn_pick, "an anchor of a joint"),

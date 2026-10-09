@@ -1534,6 +1534,30 @@ mod tests {
                 }
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
 
+                // EXTEND AS EVERY TOOL: a line short of another selected, Extend taken, the pointer past its end, Enter -
+                // the end goes to the line across
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).click2d(200.0, 0.0).click2d(210.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    hand.sk_tool(1).click2d(220.0, -5.0).click2d(220.0, 5.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    hand.sk_tool(0);
+                    let short = hand.app.project.sketches[si].entities.iter().rev().nth(1).map(|e| e.id);
+                    match short {
+                        Some(eid) if hand.select2d(&[(1, eid)]) => {
+                            if hand.press_hint(&crate::i18n::tr("tb-extend-hint")) {
+                                hand.hover2d(212.0, 1.0).key(egui::Key::Enter);
+                            }
+                            let reached = hand.app.project.sketches[si].points.iter().any(|q| (q.x - 220.0).abs() < 1e-6 && q.y.abs() < 1e-6);
+                            if !reached {
+                                problems.push("sketch: a line selected, Extend and Enter - it did not reach the line across at x 220".into());
+                            }
+                            hand.key(egui::Key::Escape).key(egui::Key::Escape);
+                        }
+                        _ => problems.push("sketch: the line short of another could not be picked for Extend".into()),
+                    }
+                    check_all(&mut app, "sketch: a line extended as every tool works", &mut problems);
+                }
+
                 // MOVING, COPYING AND ROTATING GO THROUGH THE TOOL'S OWN DOOR: three clicks - what is being
                 // moved, the base point, the target - and for a turn the angle typed into the popup, every click
                 // and every key in a whole frame of the window.
@@ -1886,6 +1910,26 @@ mod tests {
                     }
                     check_all(&mut app, "sketch: a point was dragged", &mut problems);
                 }
+            }
+
+            // A COPY GOES TO THE CLIPBOARD and is pasted into another sketch: everything picked with Ctrl+A, copied by
+            // its base point, the sketch left; a new sketch of the part takes it with Ctrl+V and a click
+            {
+                let mut hand = Hand::new(&mut app);
+                hand.sk_tool(0).ctrl(egui::Key::A);
+                hand.copy().click2d(0.0, 0.0);
+                let copied = hand.app.side.clip.geom.as_ref().map_or(0, |c| c.entities.len());
+                if copied == 0 || hand.app.side.clip.geom_place {
+                    problems.push(format!("sketch: Ctrl+C and the base point: {copied} curves in the clipboard, a ghost follows the pointer {}", hand.app.side.clip.geom_place));
+                }
+                hand.app.finish_sketch_edit();
+                let other = hand.app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+                hand.sk_tool(0).paste().click2d(0.0, 0.0);
+                let pasted = hand.app.project.sketches[other].entities.len();
+                if pasted != copied {
+                    problems.push(format!("sketch: {copied} curves copied, {pasted} pasted into another sketch"));
+                }
+                check_all(&mut app, "sketch: a copy pasted into another sketch", &mut problems);
             }
 
             app.finish_sketch_edit();

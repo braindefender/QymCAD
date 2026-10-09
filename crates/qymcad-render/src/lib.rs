@@ -1046,7 +1046,7 @@ pub fn draw_sketch_grid(scheme: &SchemeUi, set: &Settings, view: View2d, painter
 pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &SchemeUi, view: View2d, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view, rect };
     use qymcad_core::model::EntityKind;
-    if clip.geom_place.is_none() {
+    if !clip.geom_place {
         return;
     }
     let Some(clip) = clip.geom.as_ref() else { return };
@@ -2049,6 +2049,43 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// The hover preview for trim, extend and break: what will happen if the entity under the cursor is
 /// clicked. Trim lights the span that will be removed in red; break puts a marker at the point; extend
 /// lights in green the end that will be pulled.
+/// THE RING WHERE AN EXTENDED END LANDS, in px.
+pub const EXTEND_RING: f32 = 4.0;
+
+/// THE LINE EXTEND HOLDS and where the pointer stands on the canvas.
+#[derive(Clone, Copy)]
+struct ExtendHeld {
+    si: usize,
+    line: Id,
+    pos: Pos2,
+}
+
+/// THE PREVIEW OF EXTEND: the line it holds lit, and from each end that goes, a dashed line to where it goes - the
+/// curve under the pointer when it lies on that side of the axis, else the nearest there. A side meeting nothing draws
+/// nothing.
+fn draw_extend_preview(pn: &Painting, painter: &egui::Painter, rect: Rect, held: ExtendHeld) {
+    let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
+    let pick = PickCtx { project: pn.project, set: pn.set, view: &pn.view };
+    let Some(s) = pn.project.sketches.get(held.si) else { return };
+    let Some(qymcad_core::model::EntityKind::Line { a, b }) = s.entities.iter().find(|e| e.id == held.line).map(|e| e.kind) else { return };
+    let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let (Some(pa), Some(pb)) = (at(a), at(b)) else { return };
+    let green = pn.scheme.pal.add();
+    painter.line_segment([sh.at(pa), sh.at(pb)], Stroke::new(3.0, green));
+    let over = qymcad_pick::nearest_line_eid(&pick, rect, held.pos, held.si).filter(|e| *e != held.line).or_else(|| qymcad_pick::nearest_circle_entity(&pick, rect, held.pos, held.si));
+    let sides = if pn.tool_prefs.extend_both { qymcad_core::model::ExtendSides::Both } else { qymcad_core::model::ExtendSides::Nearer };
+    let Some(pointer) = pn.cursor else { return };
+    let ext = pn.project.line_extension(held.si, held.line, &qymcad_core::model::ExtendAsk { pointer, over, sides });
+    let along = |t: f64| Point2::new(pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t);
+    for (end, t) in [(pa, ext.a), (pb, ext.b)] {
+        if let Some(t) = t {
+            // the dashes, and a ring where the end lands: the last dash stops short of it by up to a gap
+            painter.add(egui::Shape::dashed_line(&[sh.at(end), sh.at(along(t))], Stroke::new(2.0, green), 6.0, 4.0));
+            painter.circle_stroke(sh.at(along(t)), EXTEND_RING, Stroke::new(2.0, green));
+        }
+    }
+}
+
 pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     use qymcad_core::model::EntityKind;
@@ -2058,6 +2095,10 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let Some(cur) = pn.cursor else { return };
     let Sel::Sketch(si) = pn.sel else { return };
     let pos = sh.at(cur);
+    if let (2, Some(held)) = (pn.armed.click_op(), pn.tool.extend) {
+        draw_extend_preview(pn, painter, rect, ExtendHeld { si, line: held, pos });
+        return;
+    }
     let Some(eid) = qymcad_pick::nearest_line_eid(&PickCtx { project: pn.project, set: pn.set, view: &pn.view }, rect, pos, si)
         .or_else(|| qymcad_pick::nearest_circle_entity(&PickCtx { project: pn.project, set: pn.set, view: &pn.view }, rect, pos, si))
     else {

@@ -275,8 +275,8 @@ impl App {
             self.tools.armed = qymcad_ui_state::Armed::None;
             self.tools.tool.move_base = None;
             self.status = crate::i18n::tr("in-move-cancelled");
-        } else if self.side.clip.geom_place.is_some() {
-            self.side.clip.geom_place = None;
+        } else if self.side.clip.geom_place {
+            self.side.clip.geom_place = false;
             self.status = crate::i18n::tr("in-insert-cancelled");
         } else if self.side.clip.geom_pending.is_some() {
             self.side.clip.geom_pending = None;

@@ -816,6 +816,8 @@ pub struct SketchToolPrefs {
     pub arc_mode: u8,
     pub rect_mode: u8,
     pub circ_mode: u8,
+    /// EXTEND TAKES BOTH ENDS of its line, each to the nearest geometry on its side ("Both sides" in its bar)
+    pub extend_both: bool,
     /// the corner fillet's radius - the first leg of a chamfer - and the offset's distance
     pub fillet: f64,
     pub offset: f64,
@@ -862,6 +864,9 @@ pub struct SketchTool {
     /// edge on outlines with complicated cut-outs.
     pub proj_face: bool,
     pub move_base: Option<Point2>,
+    /// THE LINE EXTEND HOLDS: taken with the tool from the selection made before it, or picked by the first click; its
+    /// extension is previewed up to what the pointer is over, and Enter or a click applies it
+    pub extend: Option<Id>,
     /// the tangent edge given for a circle (picked with THIS tool rather than globally)
     pub circ_tan: Option<EdgeRef>,
     /// THE STRING OF THE TEXT TOOL AS OUTLINES at the origin, for the preview at the pointer: baked once when the
@@ -1054,7 +1059,7 @@ pub fn armed_toolbar_hint(pn: &Painting) -> Option<&'static str> {
         return Some("tb-fillet-all-hint");
     }
     // Edit -> Copy, Cut, Insert in a sketch are the copy's article: the base point and the place
-    if pn.clip.geom_pending.is_some() || pn.clip.geom_place.is_some() {
+    if pn.clip.geom_pending.is_some() || pn.clip.geom_place {
         return Some("tb-copy-hint");
     }
     match pn.armed.move_op() {
@@ -2564,11 +2569,25 @@ impl GeomSelection {
 pub struct Clipboard {
     pub geom: Option<qymcad_core::model::GeomClip>,
     pub geom_pending: Option<(Vec<Id>, bool)>,
-    /// the place of a paste is awaited; `Some(true)` when it is the second half of a copy (base point, then place)
-    pub geom_place: Option<bool>,
+    /// THE PLACE OF A PASTE IS AWAITED: a ghost follows the pointer, a click places it. A copy or a cut waits for its
+    /// base point alone and fills the clipboard (`geom_pending`); nothing follows it until a paste.
+    pub geom_place: bool,
     pub tree: Option<TreeClip>,
     pub tree_multi: Option<(Vec<Id>, bool)>,
     pub os_ping: bool,
+}
+
+impl Clipboard {
+    /// A COPY (or with `cut`, a cut) OF THE GEOMETRY `eids` taken: its base point is awaited; a paste waiting before it
+    /// goes.
+    pub fn arm_copy(&mut self, eids: Vec<Id>, cut: bool) {
+        (self.geom_pending, self.geom_place) = (Some((eids, cut)), false);
+    }
+
+    /// An unfinished copy or paste of geometry put down.
+    pub fn drop_geom(&mut self) {
+        (self.geom_pending, self.geom_place) = (None, false);
+    }
 }
 
 /// The orbit camera for the software 3D view (the projection comes from `Settings::projection`).
@@ -5124,6 +5143,7 @@ pub fn exit_draw_tools(t: &mut Tools) {
     corner.clear();
     measure.clear(); // both the FLAG and the points collected: otherwise they outlived the exit
     tool.move_base = None;
+    tool.extend = None; // the line Extend held
     pat.edit = None;
     pat.center = None;
     cmd.close(armed); // the command is closed as a whole, not just a field zeroed out
@@ -13514,6 +13534,11 @@ pub fn leave_editing_tool(t: &mut Tools, status: &mut String) -> Option<()> {
         4 | 5 => true,
         _ => false,
     };
+    // EXTEND HOLDING A LINE lets it go first and stays in hand, as a drawing tool drops its points before itself
+    if t.armed.click_op() == 2 && t.tool.extend.take().is_some() {
+        *status = qymcad_i18n::tr("opt-extend-hint");
+        return Some(());
+    }
     *t.armed = Armed::None;
     if corner {
         t.corner.clear();
@@ -14102,11 +14127,13 @@ pub fn start_corner_tool(bc: &mut BarCtx, op: u8) {
 pub fn set_click_op(t: &mut Tools, mode_3d: &mut bool, op: u8) {
     let cur = t.armed.click_op();
     exit_draw_tools(&mut t.reborrow());
-    let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk, tool: _ } = t;
+    let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk, tool } = t;
     **armed = Armed::None;
     sel_sk.constraint = None;
     sel_sk.modify = None;
     **armed = if cur == op { Armed::None } else { Armed::ClickOp(op) };
+    // EXTEND TAKES THE CURVE SELECTED BEFORE IT, as every tool takes its selection; nothing selected, it waits for a pick
+    tool.extend = if armed.click_op() == 2 { sel_sk.items.iter().find(|(k, _)| *k == 1).map(|(_, id)| *id) } else { None };
     if armed.click_op() != 0 {
         *mode_3d = false;
     }

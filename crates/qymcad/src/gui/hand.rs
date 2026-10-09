@@ -709,6 +709,20 @@ impl<'a> Hand<'a> {
         })
     }
 
+    /// THE SEGMENTS OF `colour` THE LAST FRAME DREW, where they stand on screen: a dashed line is drawn as its dashes.
+    pub fn segments_in(&self, colour: egui::Color32) -> Vec<[egui::Pos2; 2]> {
+        fn walk(s: &egui::Shape, colour: egui::Color32, out: &mut Vec<[egui::Pos2; 2]>) {
+            match s {
+                egui::Shape::LineSegment { points, stroke } if stroke.color == colour => out.push(*points),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, colour, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, colour, &mut out));
+        out
+    }
+
     /// HOW MANY STROKES OF `colour` THE FRAME DRAWS NEAR THE POINTER, the hand resting over `place` of the sketch: a
     /// path or a segment with a point within 40 px of it. What follows the pointer is drawn there.
     pub fn strokes_near2d(&mut self, place: (f64, f64), colour: egui::Color32) -> usize {
@@ -1102,6 +1116,26 @@ impl<'a> Hand<'a> {
     /// reads.
     pub fn copy(&mut self) -> &mut Self {
         self.frame_holding(egui::Modifiers::COMMAND, vec![egui::Event::Copy]);
+        self.close_window()
+    }
+
+    /// Ctrl+X, as egui hands it over: an event of its own.
+    pub fn cut(&mut self) -> &mut Self {
+        self.frame_holding(egui::Modifiers::COMMAND, vec![egui::Event::Cut]);
+        self.close_window()
+    }
+
+    /// Ctrl+V, AS egui HANDS IT OVER IN A LIVE WINDOW: a paste event with the text of the system clipboard, and only when
+    /// that clipboard holds some - with it empty the keys bring nothing at all. The system clipboard of the hand is what
+    /// the program put there (`Window::copied`). Reported behaviour: "Ctrl+V does not paste (Edit -> Paste works)" - a
+    /// copy of sketch geometry left the system clipboard empty, and a paste event handed over regardless hid it.
+    ///
+    /// A FRAME GOES BY FIRST, as in a live window, which draws on between a click and the next key: what a click asked of
+    /// the system is handed over in the frame after it.
+    pub fn paste(&mut self) -> &mut Self {
+        self.frame(Vec::new());
+        let events = self.win.copied.last().filter(|t| !t.is_empty()).map(|t| vec![egui::Event::Paste(t.clone())]).unwrap_or_default();
+        self.frame_holding(egui::Modifiers::COMMAND, events);
         self.close_window()
     }
 

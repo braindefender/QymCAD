@@ -160,6 +160,43 @@ fn same_rect_constraint(own: &Constraint, c: &Constraint) -> bool {
     }
 }
 
+/// A PLACE A LINE CAN BE EXTENDED TO along its axis: `t` along it from its start (0) to its end (1), and the curve met
+/// there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExtendStop {
+    pub t: f64,
+    pub by: Id,
+}
+
+/// THE PLACES BEYOND EACH END OF A LINE, nearest first: before its start, past its end.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ExtendStops {
+    pub before_a: Vec<ExtendStop>,
+    pub past_b: Vec<ExtendStop>,
+}
+
+/// WHICH ENDS THE EXTEND TOOL TAKES: the nearer one, or both ("Both sides" in its bar).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ExtendSides {
+    Nearer,
+    Both,
+}
+
+/// WHAT THE EXTEND TOOL ASKS: where the pointer is, the curve it is over, and which ends.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExtendAsk {
+    pub pointer: crate::geom::Point2,
+    pub over: Option<Id>,
+    pub sides: ExtendSides,
+}
+
+/// WHERE EACH END OF A LINE GOES along its axis (`ExtendStop::t`), or `None` where it stays.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LineExtension {
+    pub a: Option<f64>,
+    pub b: Option<f64>,
+}
+
 /// WHETHER THE CENTRE OF A RECTANGLE IS HELD by the sketch - fixed, or set by dimensions - so that no motion the
 /// constraints allow moves it (`solver::free_points`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1750,72 +1787,109 @@ impl Project {
         self.solve_sketch(si); // the edit ends at the solver, not at a rebuild: `regen_sketch` recomputes the contours and checks no constraint
         true
     }
-    /// Extend: the segment endpoint nearer to the click is stretched to the nearest intersection with another
-    /// entity. Returns whether it was extended.
-    pub fn extend_line(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
-        let Some((a, b)) = self.line_ends(si, eid) else { return false };
-        let (Some((pax, pay)), Some((pbx, pby))) = (self.point_xy(si, a), self.point_xy(si, b)) else { return false };
-        let dlen2 = (pbx - pax).powi(2) + (pby - pay).powi(2);
-        if dlen2 < 1e-12 {
-            return false;
+    /// THE PLACES LINE `eid` CAN BE EXTENDED TO: where its axis meets another curve beyond each end, nearest first, each
+    /// with the curve met there. `None` when `eid` is no line of the sketch or has no length. Construction geometry is a
+    /// boundary as well.
+    pub fn extend_stops(&self, si: usize, eid: Id) -> Option<ExtendStops> {
+        let (a, b) = self.line_ends(si, eid)?;
+        let ((pax, pay), (pbx, pby)) = (self.point_xy(si, a)?, self.point_xy(si, b)?);
+        if (pbx - pax).powi(2) + (pby - pay).powi(2) < 1e-12 {
+            return None;
         }
-        let tc = ((clickx - pax) * (pbx - pax) + (clicky - pay) * (pby - pay)) / dlen2;
-        let extend_b = tc >= 0.5; // Stretch the endpoint further from the centre.
-        let ents = self.sketches[si].entities.clone();
-        let mut cand: Vec<f64> = Vec::new();
-        for e in &ents {
-            if e.id == eid {
-                continue; // Construction geometry is a valid extension boundary.
-            }
+        let mut cand: Vec<ExtendStop> = Vec::new();
+        for e in self.sketches.get(si)?.entities.iter().filter(|e| e.id != eid) {
+            let mut ts: Vec<f64> = Vec::new();
             match e.kind {
                 EntityKind::Line { a: c, b: d } => {
                     if let (Some((cx, cy)), Some((dx, dy))) = (self.point_xy(si, c), self.point_xy(si, d)) {
-                        if let Some(t) = line_seg_t([pax, pay], [pbx, pby], [cx, cy], [dx, dy]) {
-                            cand.push(t);
-                        }
+                        ts.extend(line_seg_t([pax, pay], [pbx, pby], [cx, cy], [dx, dy]));
                     }
                 }
                 EntityKind::Circle { center, r } => {
                     if let Some((cx, cy)) = self.point_xy(si, center) {
-                        cand.extend(line_circle_t(pax, pay, pbx, pby, cx, cy, r));
+                        ts.extend(line_circle_t(pax, pay, pbx, pby, cx, cy, r));
                     }
                 }
                 EntityKind::Ellipse { c, ma, mi } => {
                     if let (Some((ex, ey)), Some((mx, my)), Some((nx, ny))) = (self.point_xy(si, c), self.point_xy(si, ma), self.point_xy(si, mi)) {
                         let (ux, uy, major, minor) = ellipse_axes(ex, ey, mx, my, nx, ny);
-                        cand.extend(line_ellipse_roots([pax, pay], [pbx, pby], [ex, ey], [ux, uy], major, minor));
+                        ts.extend(line_ellipse_roots([pax, pay], [pbx, pby], [ex, ey], [ux, uy], major, minor));
                     }
                 }
                 EntityKind::Arc { center, a: aa, b: bb, ccw } => {
                     if let (Some((cx, cy)), Some((sx, sy)), Some((ex, ey))) = (self.point_xy(si, center), self.point_xy(si, aa), self.point_xy(si, bb)) {
                         let r = ((sx - cx).powi(2) + (sy - cy).powi(2)).sqrt();
-                        let a0 = (sy - cy).atan2(sx - cx);
-                        let a1 = (ey - cy).atan2(ex - cx);
+                        let (a0, a1) = ((sy - cy).atan2(sx - cx), (ey - cy).atan2(ex - cx));
                         for t in line_circle_t(pax, pay, pbx, pby, cx, cy, r) {
                             let (ix, iy) = (pax + (pbx - pax) * t, pay + (pby - pay) * t);
                             if angle_in_arc((iy - cy).atan2(ix - cx), a0, a1, ccw) {
-                                cand.push(t);
+                                ts.push(t);
                             }
                         }
                     }
                 }
             }
+            cand.extend(ts.into_iter().map(|t| ExtendStop { t, by: e.id }));
         }
-        // Pick the nearest intersection beyond the chosen endpoint (t > 1 for b, t < 0 for a).
-        let target = if extend_b {
-            cand.into_iter().filter(|&t| t > 1.0 + 1e-6).min_by(|x, y| x.total_cmp(y))
+        let mut stops = ExtendStops { before_a: cand.iter().copied().filter(|s| s.t < -1e-6).collect(), past_b: cand.into_iter().filter(|s| s.t > 1.0 + 1e-6).collect() };
+        stops.before_a.sort_by(|x, y| y.t.total_cmp(&x.t));
+        stops.past_b.sort_by(|x, y| x.t.total_cmp(&y.t));
+        Some(stops)
+    }
+
+    /// WHERE LINE `eid` GOES, ASKED AS THE EXTEND TOOL ASKS: each end taken to the curve the pointer is over when that
+    /// curve lies on its side of the axis, else to the nearest curve there; an end with nothing on its side stays. One
+    /// end - the one on the side of the curve under the pointer, else the one nearer the pointer - or both.
+    pub fn line_extension(&self, si: usize, eid: Id, ask: &ExtendAsk) -> LineExtension {
+        let Some(stops) = self.extend_stops(si, eid) else { return LineExtension::default() };
+        let to = |side: &[ExtendStop]| side.iter().find(|s| Some(s.by) == ask.over).or(side.first()).map(|s| s.t);
+        let (at_a, at_b) = (to(&stops.before_a), to(&stops.past_b));
+        if ask.sides == ExtendSides::Both {
+            return LineExtension { a: at_a, b: at_b };
+        }
+        let over_side = |side: &[ExtendStop]| ask.over.is_some_and(|o| side.iter().any(|s| s.by == o));
+        let past_b = if over_side(&stops.past_b) {
+            true
+        } else if over_side(&stops.before_a) {
+            false
         } else {
-            cand.into_iter().filter(|&t| t < -1e-6).max_by(|x, y| x.total_cmp(y))
+            let Some((a, b)) = self.line_ends(si, eid) else { return LineExtension::default() };
+            let (Some((pax, pay)), Some((pbx, pby))) = (self.point_xy(si, a), self.point_xy(si, b)) else { return LineExtension::default() };
+            let tc = ((ask.pointer.x - pax) * (pbx - pax) + (ask.pointer.y - pay) * (pby - pay)) / ((pbx - pax).powi(2) + (pby - pay).powi(2));
+            tc >= 0.5
         };
-        let Some(t) = target else { return false };
-        let (nx, ny) = (pax + (pbx - pax) * t, pay + (pby - pay) * t);
-        let pid = if extend_b { b } else { a };
-        if let Some(p) = self.sketches[si].points.iter_mut().find(|q| q.id == pid) {
-            p.x = nx;
-            p.y = ny;
+        if past_b {
+            LineExtension { a: None, b: at_b }
+        } else {
+            LineExtension { a: at_a, b: None }
         }
-        self.solve_sketch(si); // the edit ends at the solver, not at a rebuild: `regen_sketch` recomputes the contours and checks no constraint
-        true
+    }
+
+    /// EXTEND LINE `eid` AS `ext` SAYS: each end given a place along the axis goes there, and the sketch is solved.
+    /// Returns whether an end moved.
+    pub fn extend_line_by(&mut self, si: usize, eid: Id, ext: LineExtension) -> bool {
+        let Some((a, b)) = self.line_ends(si, eid) else { return false };
+        let (Some((pax, pay)), Some((pbx, pby))) = (self.point_xy(si, a), self.point_xy(si, b)) else { return false };
+        let mut moved = false;
+        for (pid, t) in [(a, ext.a), (b, ext.b)] {
+            let Some(t) = t else { continue };
+            if let Some(p) = self.sketches[si].points.iter_mut().find(|q| q.id == pid) {
+                (p.x, p.y) = (pax + (pbx - pax) * t, pay + (pby - pay) * t);
+                moved = true;
+            }
+        }
+        if moved {
+            self.solve_sketch(si); // the edit ends at the solver, not at a rebuild: `regen_sketch` recomputes the contours and checks no constraint
+        }
+        moved
+    }
+
+    /// Extend: the segment endpoint nearer to the click is stretched to the nearest intersection with another
+    /// entity. Returns whether it was extended.
+    pub fn extend_line(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
+        let ask = ExtendAsk { pointer: crate::geom::Point2::new(clickx, clicky), over: None, sides: ExtendSides::Nearer };
+        let ext = self.line_extension(si, eid, &ask);
+        self.extend_line_by(si, eid, ext)
     }
     /// Extend an arc: the endpoint nearer to the click is stretched along its own circle to the nearest
     /// intersection with another entity, within the gap outside the current span of the arc. Returns whether it

@@ -143,13 +143,14 @@ probe! {
 }
 
 probe! {
-    /// EXTEND: the end of a line is stretched to the line it stops short of.
+    /// EXTEND: the line taken by a click, and a click past its end stretches it to the line it stops short of.
     fn extend_stretches_a_line_to_what_it_stops_short_of() {
         let mut s = empty_sketch();
         line(&mut s, (0.0, 0.0), (20.0, 0.0));
         line(&mut s, (30.0, -10.0), (30.0, 10.0));
         take(&mut s, "tb-extend-hint");
         s.click_on_sketch(18.0, 0.0);
+        s.click_on_sketch(25.0, 3.0);
         assert!(stands_at(&mut s, (30.0, 0.0)), "the line was not stretched to the crossing at (30, 0): the ends stand at {:?}", s.document().sketches[0].places);
     }
 }

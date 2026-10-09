@@ -2304,6 +2304,64 @@ pub fn project_clicked_edge(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rect
     qymcad_ui_state::invalidate(sk.regen);
 }
 
+/// WHERE A CLICK OR AN ENTER OF EXTEND LANDS: the canvas, the pointer on it, the sketch, and the line under the pointer.
+#[derive(Clone, Copy)]
+struct ExtendAt {
+    rect: Rect,
+    pos: Pos2,
+    si: usize,
+    line: Option<Id>,
+}
+
+/// WHAT EXTEND ASKS OF ITS LINE with the pointer at `pos`: the pointer in the sketch, the curve under it, and the ends
+/// "Both sides" gives.
+fn extend_ask(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> qymcad_core::model::ExtendAsk {
+    let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
+    let held = sk.tool.extend;
+    let over = qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si).filter(|e| Some(*e) != held).or_else(|| qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si));
+    let sides = if sk.tool_prefs.extend_both { qymcad_core::model::ExtendSides::Both } else { qymcad_core::model::ExtendSides::Nearer };
+    qymcad_core::model::ExtendAsk { pointer: Point2::new(w.x, w.y), over, sides }
+}
+
+/// A CLICK OF EXTEND: with no line held, the line clicked is taken and its extension previewed; with one held, the
+/// extension the preview shows is made and the line let go. A line meeting nothing on the side asked says so.
+fn extend_click(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt) {
+    let Some(held) = sk.tool.extend else {
+        sk.tool.extend = at.line;
+        *sk.status = qymcad_i18n::tr("opt-extend-to-hint");
+        return;
+    };
+    extend_apply(sk, at, held);
+}
+
+/// THE EXTENSION OF LINE `held` MADE as the pointer at `at` asks, and the line let go.
+fn extend_apply(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt, held: Id) {
+    let ask = extend_ask(sk, at.rect, at.pos, at.si);
+    let ext = sk.project.line_extension(at.si, held, &ask);
+    if sk.project.extend_line_by(at.si, held, ext) {
+        sk.tool.extend = None;
+        sk.sel_sk.clear(); // the selection and whatever was waiting for it
+        qymcad_ui_state::invalidate(&mut *sk.regen);
+        *sk.status = qymcad_i18n::tr("sk-done");
+    } else {
+        *sk.status = qymcad_i18n::tr("sk-op-failed-no-intersection");
+    }
+}
+
+/// THE KEYS OF THE SKETCH TOOLS IN HAND, each frame: Enter makes the extension Extend previews, as a click does; and
+/// the field of the rotation angle at its centre (`sketch_rotate_popup`).
+pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
+    sketch_rotate_popup(sk, ctx, rect);
+    let (Some(held), qymcad_ui_state::Sel::Sketch(si)) = (sk.tool.extend, *sk.sel) else { return };
+    if sk.armed.click_op() != 2 || ctx.egui_wants_keyboard_input() || !ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        return;
+    }
+    let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-extend"));
+    extend_apply(sk, ExtendAt { rect, pos, si, line: None }, held);
+    qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
+}
+
 /// A click with the dimension tool. Returns true when the click was handled.
 /// A CIRCLE OR AN ARC DRAWN OPENS THE FIELD OF ITS SIZE, and lays no dimension of its own. The size is laid as a
 /// dimension when a value is typed and the field closed with Enter or the tick - a diameter for a circle, a radius for an
@@ -4327,6 +4385,12 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     };
                     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(tool));
                     let line_eid = qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si);
+                    // EXTEND HOLDS A LINE, or takes the line clicked: the click applies what the preview shows
+                    if sk.armed.click_op() == 2 && (sk.tool.extend.is_some() || line_eid.is_some()) {
+                        extend_click(sk, ExtendAt { rect, pos, si, line: line_eid });
+                        qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild()); // taking the line changes nothing
+                        return;
+                    }
                     let ok = if let Some(eid) = line_eid {
                         match sk.armed.click_op() {
                             1 => sk.project.trim_line(si, eid, w.x, w.y),
@@ -4378,21 +4442,23 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 sk.sel_sk.clear(); // the selection and whatever was waiting for it
                 let n = clip.entities.len();
                 sk.clip.geom = Some(clip);
+                // A MARKER INTO THE CLIPBOARD OF THE SYSTEM, as a copy of the tree puts one: a live window hands Ctrl+V
+                // over only while that clipboard holds some text. Reported behaviour: "Ctrl+V does not paste (Edit ->
+                // Paste works), and no preview comes under the cursor".
+                sk.clip.os_ping = true;
                 *sk.status = qymcad_i18n::tr2("sk-clipboard", "what", &if cut { qymcad_i18n::tr("sk-cut-done") } else { qymcad_i18n::tr("sk-copied") }, "n", &n.to_string());
+                // A COPY GOES TO THE CLIPBOARD AND NO FURTHER: the base point is the point the copy is held by when it is
+                // pasted - here or in another sketch, as many times as wanted. Reported behaviour: "a copy meant for the
+                // clipboard becomes a move-copy on the spot". Placing at once is the Copy tool of the panel.
                 if cut {
                     qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
-                } else {
-                    // A COPY GOES ON TO ITS PLACE: base point, then where the copy lands, as the copy of entities
-                    // in the professional systems. The buffer used to fill silently and the next click did nothing.
-                    sk.clip.geom_place = Some(true);
-                    *sk.status = qymcad_i18n::tr("g-insert-click");
                 }
-            } else if let (Some(copying), qymcad_ui_state::Sel::Sketch(_)) = (sk.clip.geom_place, *sk.sel) {
+            } else if let (true, qymcad_ui_state::Sel::Sketch(_)) = (sk.clip.geom_place, *sk.sel) {
                 // a placement click pastes the buffer so that the anchor lands on the clicked point
                 let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return }; // the selection may have changed between frames - do not crash
                 let w = snap_world(sk, rect, pos);
                 if let Some(clip) = sk.clip.geom.clone() {
-                    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(if copying { "tool-copy" } else { "win-insert" }));
+                    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("win-insert"));
                     let ids = sk.project.paste_sketch_geometry(si, &clip, w.x, w.y);
                     sk.project.solve_sketch(si);
                     sk.sel_sk.items = ids.into_iter().map(|id| (1u8, id)).collect();
@@ -4400,7 +4466,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     *sk.status = qymcad_i18n::tr("sk-pasted");
                     qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
                 }
-                sk.clip.geom_place = None;
+                sk.clip.geom_place = false;
             } else if sk.armed.pat_op() != 0 && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
                 // an array: pick the entities, then (for a circular one) click THE CENTRE of
                 // rotation, then Enter
@@ -4986,7 +5052,7 @@ pub fn arm_paste(sk: &mut qymcad_ui_state::SketchCtx) -> bool {
         return false;
     }
     qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(sk));
-    (sk.clip.geom_pending, sk.clip.geom_place) = (None, Some(false));
+    (sk.clip.geom_pending, sk.clip.geom_place) = (None, true);
     *sk.status = qymcad_i18n::tr("g-insert-click");
     true
 }

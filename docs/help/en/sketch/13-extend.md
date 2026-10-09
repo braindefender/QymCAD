@@ -4,15 +4,17 @@
 
 ## How to do it
 
-Press **Extend** and click the end of a line: it stretches to the nearest intersection with another line, arc or
-circle. The tool stays in hand — click the next ends. **Esc** puts it down.
+Select a line and press **Extend**, or press **Extend** and click the line. Point at what it should reach: the
+extension is drawn dashed up to that line, arc or circle, or up to the nearest one on that side. **Enter** or a click
+extends it; the tool stays in hand for the next line. **Both sides** in the top bar extends both ends at once, each to
+its own nearest geometry. **Esc** lets the line go; a second **Esc** puts the tool down.
 
 Trim and extend are one technique from two sides: draw roughly first, then remove what is extra and stretch what is
 short.
 
 ## If it did not work
 
-- There is nowhere to extend to — nothing lies ahead of the line: it is parallel to its neighbour or the neighbour is
-  too short. Extend the one you are reaching for first.
+- No dashed line appears — nothing lies ahead of the line on that side: it is parallel to its neighbour or the
+  neighbour is too short. Extend the one you are reaching for first, or point at the other end.
 - The joint came apart after editing dimensions — extend stretches once and does not hold the joint. To hold it, add
   the **Point on a line** or **Coincident** constraint.

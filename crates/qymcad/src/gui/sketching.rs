@@ -415,7 +415,7 @@ impl App {
         let asks = qymcad_ui_state::text_popups(qymcad_ui_state::editing_of!(self), &mut self.font_cache, &mut qymcad_ui_state::text_ctx_of!(self), ctx, rect); // the label editor and the list of fonts
         self.do_bar_asks(asks, ctx);
         place_input_popup(qymcad_ui_state::editing_of!(self), qymcad_ui_state::popup_tools!(self), qymcad_ui_state::popup_looks!(self), ctx, rect); // typing the sizes right after a shape is built
-        sketch_rotate_popup(&mut self.sketch_ctx(), ctx, rect); // the rotation angle at the centre
+        sketch_tool_keys(&mut self.sketch_ctx(), ctx, rect); // the angle of a turn, Enter of Extend
     }
 }
 

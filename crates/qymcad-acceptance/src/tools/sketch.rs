@@ -1008,11 +1008,12 @@ pub static BREAK: Tool = Tool {
     not_applicable: CUTS,
 };
 
-/// EXTEND: the line that stops at x = 20 stretched by a click near its end to the line standing across its way at
-/// x = 30. Nothing is added or taken away: the end moves, and the stretch is a line where there was none.
+/// EXTEND: the line that stops at x = 20 taken by a click on it, and a click past its end stretches it to the line
+/// standing across its way at x = 30, as the preview shows. Nothing is added or taken away: the end moves, and the
+/// stretch is a line where there was none.
 pub static EXTEND: Tool = Tool {
     id: "sketch.extend",
-    flow: Flow::Drawing(&[(18.0, 0.0)], Finish::LastClick),
+    flow: Flow::Drawing(&[(18.0, 0.0), (25.0, 3.0)], Finish::LastClick),
     title: "tool-extend",
     entries: &[Entry::Button("tb-extend-hint"), Entry::SearchByArticle],
     other: (Entry::Button("tb-line-hint"), "tool-line"),
@@ -2262,27 +2263,11 @@ const EDITS: &[(u8, &str)] = &[
     DRAWS[5],
 ];
 
-/// A rectangle 40 x 30 - its four corners and its centre - with one more side 30 below its bottom: a copy placed.
-const RECT_AND_SIDE_BELOW: Outcome = Outcome::Sketch {
-    points: 7,
-    lines: 5,
-    arcs: 0,
-    circles: 0,
-    ellipses: 0,
-    splines: 0,
-    texts: 0,
-    notes: 0,
-    constraints: None,
-    dof: None,
-    box_of: Some(([0.0, -30.0], [40.0, 30.0])),
-    size_of: None,
-    under: &[(20.0, -30.0, Under::Line), (20.0, 0.0, Under::Line)],
-};
-
-/// EDIT_COPY: Edit -> Copy on the picked bottom side: the base point on it, the target 30 below - a copy there.
+/// EDIT_COPY: Edit -> Copy on the picked bottom side: the base point on it, and the side is in the clipboard - the
+/// sketch as it was, nothing placed and no step of undo; a paste places it (`EDIT_INSERT`).
 pub static EDIT_COPY: Tool = Tool {
     id: "sketch.edit-copy",
-    flow: Flow::Drawing(&[(20.0, 0.0), (20.0, -30.0)], Finish::LastClick),
+    flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "tool-copy",
     entries: &[Entry::Menu(&["menu-edit", "menu-copy"])],
     // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
@@ -2295,10 +2280,10 @@ pub static EDIT_COPY: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: RECT_AND_SIDE_BELOW,
+    result: RECT_BY_CORNERS,
     node: "Sketch",
     undo: "tool-copy",
-    undo_steps: 1,
+    undo_steps: 0,
     stays: false,
     upstream: None,
     dependency: None,
