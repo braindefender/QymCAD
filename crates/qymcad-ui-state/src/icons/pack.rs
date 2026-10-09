@@ -5,7 +5,7 @@ use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 use super::id::{IconId, ALL_ICONS, DEFAULT_THEME_ID};
-use super::manifest::{locale_fallbacks, IconManifest, PackageType};
+use super::manifest::{locale_fallbacks, IconManifest};
 
 const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes/shapr-alike/icon.svg"));
 
@@ -14,7 +14,7 @@ const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST
 pub enum PackSource {
     /// Folder on disk containing `manifest.ron` and `icons/`.
     Directory(PathBuf),
-    /// Zip archive containing `manifest.ron` and `icons/` strictly at root level.
+    /// Packaged .qicons bundle containing `manifest.ron` and `icons/` strictly at root level.
     Archive(PathBuf),
     /// In-memory map (used for tests and virtual bundles).
     Memory(HashMap<String, Vec<u8>>),
@@ -27,10 +27,8 @@ pub enum PackSource {
 pub enum BundleFormat {
     /// Folder containing unpacked SVG files. Live editing and live watch supported.
     Directory,
-    /// Standard zip archive (.qicons).
-    Archive,
-    /// Verified package created or certified by QymCAD packager.
-    VerifiedArchive,
+    /// Packaged bundle file (.qicons).
+    Package,
     /// Embedded in the application executable binary.
     Embedded,
 }
@@ -39,8 +37,7 @@ impl BundleFormat {
     pub fn label(self) -> &'static str {
         match self {
             Self::Directory => "Folder",
-            Self::Archive => "Archive",
-            Self::VerifiedArchive => "Bundle",
+            Self::Package => "Package",
             Self::Embedded => "Built-in",
         }
     }
@@ -137,13 +134,7 @@ impl IconPack {
     pub fn format(&self) -> BundleFormat {
         match &self.source {
             PackSource::Directory(_) => BundleFormat::Directory,
-            PackSource::Archive(_) | PackSource::Memory(_) => {
-                if self.manifest.verified && !self.is_tampered {
-                    BundleFormat::VerifiedArchive
-                } else {
-                    BundleFormat::Archive
-                }
-            }
+            PackSource::Archive(_) | PackSource::Memory(_) => BundleFormat::Package,
             PackSource::Embedded(_) => BundleFormat::Embedded,
         }
     }
@@ -172,7 +163,7 @@ impl IconPack {
 
     /// Whether this pack is verified.
     pub fn is_verified(&self) -> bool {
-        self.manifest.verified || self.format() == BundleFormat::VerifiedArchive
+        self.manifest.verified && !self.is_tampered
     }
 
     /// Reload the pack manifest from its source on disk if available.
@@ -206,27 +197,24 @@ impl IconPack {
         Ok(Self { manifest, source: PackSource::Directory(dir.to_path_buf()), is_tampered: false })
     }
 
-    /// Load an icon pack from a `.qicons` (bundle) or `.zip` (archive) file.
-    /// - `.qicons`: Verified QymCAD bundle (checks cryptographic trailer; if tampered, downgraded to unverified archive).
-    /// - `.zip`: Unverified community archive (can omit manifest.ron, crash-guarded).
+    /// Load an icon pack from a `.qicons` package bundle file.
     pub fn from_archive(file_path: impl AsRef<Path>) -> Result<Self, String> {
         let file_path = file_path.as_ref();
+        if file_path.extension().is_none_or(|e| e != "qicons") {
+            return Err("icon package file must have .qicons extension".to_string());
+        }
         let metadata = std::fs::metadata(file_path).map_err(|e| e.to_string())?;
         if metadata.len() > MAX_ARCHIVE_FILE_SIZE {
             return Err(format!("archive file size exceeds limit: {} bytes (limit is {MAX_ARCHIVE_FILE_SIZE})", metadata.len()));
         }
 
-        let is_qicons = file_path.extension().is_some_and(|e| e == "qicons");
         let mut file = std::fs::File::open(file_path).map_err(|e| e.to_string())?;
         let trailer_check = super::sha256::verify_qicons_trailer_stream(&mut file, metadata.len()).map_err(|e| e.to_string())?;
 
         let (is_verified, is_tampered) = match trailer_check {
             super::sha256::TrailerCheck::Verified => (true, false),
             super::sha256::TrailerCheck::Tampered => (false, true),
-            super::sha256::TrailerCheck::Unsigned => {
-                // If it claims to be .qicons but has no valid trailer, it is an unverified/tampered archive
-                (false, is_qicons)
-            }
+            super::sha256::TrailerCheck::Unsigned => (false, true),
         };
 
         file.seek(std::io::SeekFrom::Start(0)).map_err(|e| e.to_string())?;
@@ -235,37 +223,14 @@ impl IconPack {
         // Guard against decompression bombs (Zip Bombs), excessive file counts, and zip-slip
         validate_archive_safety(&mut zip)?;
 
-        let mut manifest = if let Ok(manifest_file) = zip.by_name("manifest.ron") {
-            let mut content = String::new();
-            manifest_file.take(MAX_MANIFEST_SIZE + 1).read_to_string(&mut content).map_err(|e| e.to_string())?;
-            if content.len() as u64 > MAX_MANIFEST_SIZE {
-                return Err("manifest.ron exceeds maximum allowed size".to_string());
-            }
-            let parsed = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
-            parsed.validate().map_err(|e| format!("invalid manifest in {}: {e}", file_path.display()))?;
-            parsed
-        } else {
-            // Missing manifest: allowed for generic .zip community archives.
-            // Synthesize a safe fallback manifest from the file name.
-            let raw_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("community-icons");
-            let id: String = raw_stem.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' }).take(super::manifest::MAX_MANIFEST_ID_LEN).collect();
-            let trimmed_id = id.trim_matches(|c| c == '-' || c == '_');
-            let id = if trimmed_id.is_empty() { "community-pack".to_string() } else { trimmed_id.to_string() };
-            let name: String = raw_stem.chars().take(super::manifest::MAX_MANIFEST_NAME_LEN).collect();
-            let name = if name.trim().is_empty() { "Community Icons".to_string() } else { name };
-            IconManifest {
-                package_type: PackageType::IconTheme,
-                id,
-                name,
-                version: "1.0.0".to_string(),
-                author: "Community".to_string(),
-                license: "Unknown".to_string(),
-                description: "Imported ZIP archive (unverified)".to_string(),
-                translations: Default::default(),
-                verified: false,
-            }
-        };
-
+        let manifest_file = zip.by_name("manifest.ron").map_err(|_| "missing manifest.ron in icon package".to_string())?;
+        let mut content = String::new();
+        manifest_file.take(MAX_MANIFEST_SIZE + 1).read_to_string(&mut content).map_err(|e| e.to_string())?;
+        if content.len() as u64 > MAX_MANIFEST_SIZE {
+            return Err("manifest.ron exceeds maximum allowed size".to_string());
+        }
+        let mut manifest = IconManifest::parse_ron(&content).map_err(|e| format!("parse error: {e}"))?;
+        manifest.validate().map_err(|e| format!("invalid manifest in {}: {e}", file_path.display()))?;
         manifest.verified = is_verified;
 
         Ok(Self { manifest, source: PackSource::Archive(file_path.to_path_buf()), is_tampered })
@@ -356,11 +321,11 @@ impl IconPack {
             }
         };
 
-        if self.format() == BundleFormat::VerifiedArchive || self.format() == BundleFormat::Embedded {
+        if (self.format() == BundleFormat::Package && !self.is_tampered) || self.format() == BundleFormat::Embedded {
             // Fast path: Verified QymCAD bundle or built-in embedded pack
             Some(data)
         } else {
-            // Unverified pack (folder, community zip, or raw memory): must pass SVG validation to prevent corrupting UI or blocking fallback
+            // Unverified pack (folder, tampered package, or raw memory): must pass SVG validation to prevent corrupting UI or blocking fallback
             sanitize_svg_for_safety(data.clone())?;
             if super::bundle::validate_icon_svg(&data).is_err() {
                 return None;
@@ -426,7 +391,7 @@ impl IconPack {
             return Err("SVG file is empty".to_string());
         }
         super::bundle::validate_icon_svg(&data)?;
-        if matches!(self.source, PackSource::Archive(_) | PackSource::Memory(_)) && self.format() != BundleFormat::VerifiedArchive && sanitize_svg_for_safety(data.clone()).is_none() {
+        if matches!(self.source, PackSource::Archive(_) | PackSource::Memory(_)) && (self.format() != BundleFormat::Package || self.is_tampered) && sanitize_svg_for_safety(data.clone()).is_none() {
             return Err("SVG failed archive safety checks (external reference or NUL byte)".to_string());
         }
         Ok(Some(data))

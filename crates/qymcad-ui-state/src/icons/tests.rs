@@ -792,7 +792,7 @@ fn bundle_format_and_provenance_detection() {
     package_bundle(&folder_pack_dir, &manifest, &archive_path).expect("packaging must succeed");
 
     let loaded_archive = IconPack::from_archive(&archive_path).expect("packaged archive must load");
-    assert_eq!(loaded_archive.format(), BundleFormat::VerifiedArchive);
+    assert_eq!(loaded_archive.format(), BundleFormat::Package);
     assert!(loaded_archive.is_verified());
     assert!(loaded_archive.is_archive());
     assert!(!loaded_archive.is_directory());
@@ -982,9 +982,9 @@ fn qicons_valid_trailer_and_tampered_downgrade() {
     let report = package_bundle(&pack_dir, &manifest, &bundle_path).expect("bundle packaging succeeds");
     assert_eq!(report.included.len(), 1);
 
-    // 2. Load genuine bundle: should be VerifiedArchive with is_tampered == false
+    // 2. Load genuine bundle: should be Package with is_tampered == false
     let pack = IconPack::from_archive(&bundle_path).expect("genuine bundle loads cleanly");
-    assert_eq!(pack.format(), BundleFormat::VerifiedArchive);
+    assert_eq!(pack.format(), BundleFormat::Package);
     assert!(!pack.is_tampered);
     assert!(pack.manifest.verified);
     assert_eq!(pack.get_svg_for_id(IconId::SketchLine).unwrap(), valid_svg);
@@ -1007,35 +1007,50 @@ fn qicons_valid_trailer_and_tampered_downgrade() {
 }
 
 #[test]
-fn generic_zip_without_manifest_loads_as_archive_with_crash_guard() {
-    let temp_dir = std::env::temp_dir().join(format!("qymcad_zip_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+fn unverified_qicons_with_crash_guard_and_reject_missing_manifest() {
+    use std::io::Write;
+    let temp_dir = std::env::temp_dir().join(format!("qymcad_qicons_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
-    // Create a generic .zip archive with NO manifest.ron (community zip)
-    let zip_path = temp_dir.join("my-cool-pack.zip");
-    let zip_file = std::fs::File::create(&zip_path).unwrap();
-    let mut zip = zip::ZipWriter::new(zip_file);
-    let options = zip::write::SimpleFileOptions::default();
-
     let valid_svg = br#"<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="10"/></svg>"#;
-    zip.start_file("icons/sketch/circle.svg", options).unwrap();
-    std::io::Write::write_all(&mut zip, valid_svg).unwrap();
-
-    // Malicious XML entity bomb
     let entity_bomb = br#"<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ELEMENT lolz (#PCDATA)>]><svg viewBox="0 0 10 10">&lol;</svg>"#;
-    zip.start_file("icons/sketch/line.svg", options).unwrap();
-    std::io::Write::write_all(&mut zip, entity_bomb).unwrap();
 
+    // 1. Generic .zip extension must be rejected
+    let zip_path = temp_dir.join("my-cool-pack.zip");
+    std::fs::write(&zip_path, b"dummy zip").unwrap();
+    let zip_err = IconPack::from_archive(&zip_path).unwrap_err();
+    assert!(zip_err.contains("must have .qicons extension"), "got: {zip_err}");
+
+    // 2. .qicons without manifest.ron must be rejected
+    let no_manifest_path = temp_dir.join("no-manifest.qicons");
+    let file = std::fs::File::create(&no_manifest_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("icons/sketch/circle.svg", options).unwrap();
+    zip.write_all(valid_svg).unwrap();
+    zip.finish().unwrap();
+    let no_manifest_err = IconPack::from_archive(&no_manifest_path).unwrap_err();
+    assert!(no_manifest_err.contains("missing manifest.ron"), "got: {no_manifest_err}");
+
+    // 3. Unsigned/unverified .qicons with manifest.ron loads with crash-guard active
+    let qicons_path = temp_dir.join("unverified.qicons");
+    let file = std::fs::File::create(&qicons_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+    let manifest = r#"(id: "unverified-pack", name: "Unverified Pack")"#;
+    zip.start_file("manifest.ron", options).unwrap();
+    zip.write_all(manifest.as_bytes()).unwrap();
+    zip.start_file("icons/sketch/circle.svg", options).unwrap();
+    zip.write_all(valid_svg).unwrap();
+    zip.start_file("icons/sketch/line.svg", options).unwrap();
+    zip.write_all(entity_bomb).unwrap();
     zip.finish().unwrap();
 
-    // Load generic .zip
-    let pack = IconPack::from_archive(&zip_path).expect("generic zip must load");
-    // Format must be Archive (NOT VerifiedArchive)
-    assert_eq!(pack.format(), BundleFormat::Archive);
+    let pack = IconPack::from_archive(&qicons_path).expect("unverified qicons must load");
+    assert_eq!(pack.format(), BundleFormat::Package);
     assert!(!pack.manifest.verified);
-    assert!(!pack.is_tampered);
-    // Manifest synthesized from filename stem
-    assert_eq!(pack.manifest.name, "my-cool-pack");
+    assert!(pack.is_tampered);
+    assert_eq!(pack.manifest.name, "Unverified Pack");
 
     // Valid SVG should be retrieved
     let circle_data = pack.get_svg_for_id(IconId::SketchCircle);
@@ -1062,7 +1077,7 @@ fn zip_bomb_excessive_compression_ratio_is_rejected() {
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     // Create a zip bomb: 500 KB of zeroes compresses to ~500 bytes (ratio ~1000:1)
-    let bomb_path = temp_dir.join("bomb.zip");
+    let bomb_path = temp_dir.join("bomb.qicons");
     let file = std::fs::File::create(&bomb_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -1085,7 +1100,7 @@ fn zip_slip_path_traversal_is_rejected() {
     let temp_dir = std::env::temp_dir().join(format!("qymcad_slip_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
-    let slip_path = temp_dir.join("slip.zip");
+    let slip_path = temp_dir.join("slip.qicons");
     let file = std::fs::File::create(&slip_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::SimpleFileOptions::default();
@@ -1381,7 +1396,7 @@ fn manifest_validation_rejects_zalgo_in_all_fields() {
 fn archive_exceeding_max_file_size_is_rejected_without_reading() {
     let temp_dir = std::env::temp_dir().join(format!("qymcad_size_limit_test_{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    let file_path = temp_dir.join("oversized.zip");
+    let file_path = temp_dir.join("oversized.qicons");
     let file = std::fs::File::create(&file_path).unwrap();
     // Sparse file with 17 MB size (limit is 16 MB)
     file.set_len(17 * 1024 * 1024).unwrap();

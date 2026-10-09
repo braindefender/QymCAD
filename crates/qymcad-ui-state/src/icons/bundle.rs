@@ -114,7 +114,7 @@ pub fn discover_packs_detailed(dir: &Path) -> DiscoveryReport {
                     Err(err) => errors.push(DiscoveryError { path, reason: err }),
                 }
             }
-        } else if path.extension().is_some_and(|ext| ext == "qicons" || ext == "zip") {
+        } else if path.extension().is_some_and(|ext| ext == "qicons") {
             match IconPack::from_archive(&path) {
                 Ok(pack) => packs.push(pack),
                 Err(err) => errors.push(DiscoveryError { path, reason: err }),
@@ -126,7 +126,7 @@ pub fn discover_packs_detailed(dir: &Path) -> DiscoveryReport {
     DiscoveryReport { packs, errors }
 }
 
-/// Discover icon packs from a directory (subdirectories with `manifest.ron` and `.qicons`/`.zip` archives).
+/// Discover icon packs from a directory (subdirectories with `manifest.ron` and `.qicons` archives).
 pub fn discover_packs_in(dir: &Path) -> Vec<IconPack> {
     discover_packs_detailed(dir).packs
 }
@@ -759,8 +759,7 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
                     || localized_readme_tag(fname).is_some()
                     || localized_description_tag(fname).is_some()
                     || fname.starts_with("preview.")
-                    || fname.ends_with(".qicons")
-                    || fname.ends_with(".zip");
+                    || fname.ends_with(".qicons");
                 if !allowed {
                     extraneous.push(format!("extra root file: {fname}"));
                 } else if localized_readme_tag(fname).is_some() || localized_description_tag(fname).is_some() {

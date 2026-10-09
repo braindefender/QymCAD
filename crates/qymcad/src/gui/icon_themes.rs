@@ -246,8 +246,7 @@ pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat, 
     } else {
         match format {
             BundleFormat::Directory => (ph::FOLDER_OPEN, "bundle-format-folder", visuals.warn_fg_color.linear_multiply(0.18), visuals.warn_fg_color),
-            BundleFormat::Archive => (ph::PACKAGE, "bundle-format-archive", visuals.hyperlink_color.linear_multiply(0.18), visuals.hyperlink_color),
-            BundleFormat::VerifiedArchive => (ph::SHIELD_CHECK, "bundle-format-verified", visuals.selection.bg_fill.linear_multiply(0.22), visuals.selection.bg_fill),
+            BundleFormat::Package => (ph::SHIELD_CHECK, "bundle-format-verified", visuals.selection.bg_fill.linear_multiply(0.22), visuals.selection.bg_fill),
             BundleFormat::Embedded => (ph::GEAR, "bundle-format-embedded", visuals.faint_bg_color, visuals.weak_text_color()),
         }
     };
@@ -1306,29 +1305,23 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     });
                     ui.add(egui::ProgressBar::new(pct as f32 / 100.0).desired_width(ui.available_width()));
 
-                    // Verified bundle / Archive / Tampered status and hygiene checks
-                    if pack.format() == BundleFormat::VerifiedArchive {
+                    // Verified bundle / Tampered status and hygiene checks
+                    if pack.is_tampered {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-tampered-desc"))).color(ui.visuals().error_fg_color).small().strong());
+                        });
+                    } else if pack.format() == BundleFormat::Package {
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(format!("{} {}", ph::SHIELD_CHECK, crate::i18n::tr("icontheme-mgr-verified-bundle-desc"))).color(ui.visuals().selection.bg_fill).small().strong(),
                             );
                         });
-                    } else if pack.is_tampered {
-                        ui.add_space(2.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-tampered-desc"))).color(ui.visuals().error_fg_color).small().strong());
-                        });
-                    } else if pack.format() == BundleFormat::Archive {
-                        ui.add_space(2.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icontheme-mgr-archive-desc"))).color(ui.visuals().hyperlink_color).small());
-                        });
                     }
 
-                    // For unverified packs (Archive, Directory), scan for SVG hygiene / validation issues
-                    // Verified bundles intentionally skip runtime scans for maximum responsiveness
-                    if folder_source || (pack.format() != BundleFormat::VerifiedArchive && pack.format() != BundleFormat::Embedded) {
+                    // For packs requiring runtime validation (Directory or tampered bundle), scan for SVG hygiene issues
+                    if folder_source || pack.is_tampered {
                         let invalid_count = pack_preview.as_ref().map_or_else(|| ALL_ICONS.iter().filter(|id| pack.inspect_svg_for_id(**id).is_err()).count(), |preview| preview.invalid_icons);
 
                         ui.add_space(2.0);
@@ -2287,7 +2280,6 @@ mod tests {
             version: "1.0.0",
             author: "Tester",
             license: "MIT",
-            color_mode: Universal,
         )"#;
         std::fs::write(theme_dir.join("manifest.ron"), manifest_content).expect("write manifest");
 
@@ -2376,8 +2368,6 @@ mod tests {
             version: "1.0.0",
             author: "Tester",
             license: "MIT",
-            color_mode: Universal,
-            inherits: None,
         )"#;
         std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
         let preview1 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"/></svg>"#;
@@ -2440,7 +2430,6 @@ mod tests {
             version: "1.0.0",
             author: "Tester",
             license: "MIT",
-            inherits: None,
         )"#;
         std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24z"/></svg>"#;
@@ -2617,8 +2606,6 @@ mod tests {
             version: "1.0.0",
             author: "Tester",
             license: "MIT",
-            color_mode: Universal,
-            inherits: None,
         )"#;
         std::fs::write(temp_root.join("manifest.ron"), manifest).unwrap();
         let svg1 = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>"#;
@@ -2673,7 +2660,6 @@ mod tests {
             author: "Author",
             license: "MIT",
             description: "Test description",
-            color_mode: Universal,
         )"#;
         std::fs::write(pack_dir.join("manifest.ron"), manifest).unwrap();
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24z"/></svg>"#;

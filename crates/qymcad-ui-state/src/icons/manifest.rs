@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 /// Localized text displayed for an icon theme.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LocalizedThemeText {
     #[serde(default)]
     pub name: String,
@@ -126,6 +127,7 @@ pub fn has_zalgo(text: &str) -> bool {
 
 /// Metadata describing an icon pack bundle.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IconManifest {
     #[serde(default)]
     pub package_type: PackageType,
