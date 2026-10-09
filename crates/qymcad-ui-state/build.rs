@@ -1,11 +1,11 @@
 // Build script for qymcad-ui-state:
 // 1. Reads the clean `IconId` enum variants from `src/icons/id.rs`.
 // 2. Maps each variant to its canonical `icons/<category>/<name>.svg` path.
-// 3. Validates all default icons in `assets/icon-themes/default/` (SVG validity, viewBox, no raster images).
+// 3. Validates all base icons in `assets/icon-themes/shapr-alike/` (SVG validity, viewBox, no raster images).
 // 4. Discovers all icon theme folders in `assets/icon-themes/` containing `manifest.ron`.
 // 5. Packages all discovered themes into compressed `.qicons` bundles written to `OUT_DIR/<theme>.qicons`.
 // 6. Generates `OUT_DIR/icon_generated.rs` implementing `relative_path(&self)`, `from_id_str(s)`, `ALL_ICONS`,
-//    `DEFAULT_QICONS`, and `BUILTIN_ICON_THEMES`.
+//    `DEFAULT_THEME_ID`, `DEFAULT_QICONS`, and `BUILTIN_ICON_THEMES`.
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -157,18 +157,18 @@ fn main() {
         }
     }
 
-    // Sort themes: ensure "default" is first, others sorted alphabetically by directory name
+    // Sort themes: ensure "shapr-alike" is first, others sorted alphabetically by directory name
     theme_entries.sort_by(|a, b| {
-        if a.manifest_id == "default" {
+        if a.manifest_id == "shapr-alike" {
             std::cmp::Ordering::Less
-        } else if b.manifest_id == "default" {
+        } else if b.manifest_id == "shapr-alike" {
             std::cmp::Ordering::Greater
         } else {
             a.dir_name.cmp(&b.dir_name)
         }
     });
 
-    let default_theme = theme_entries.iter().find(|t| t.manifest_id == "default").expect("Default icon theme with id 'default' must exist");
+    let default_theme = theme_entries.iter().find(|t| t.manifest_id == "shapr-alike").or_else(|| theme_entries.first()).expect("At least one built-in icon theme must exist in assets/icon-themes");
 
     // 2. Extract variants from `src/icons/id.rs`
     let id_rs_path = manifest_dir.join("src/icons/id.rs");
@@ -274,8 +274,11 @@ fn main() {
     }
     gen.push_str("];\n\n");
 
+    gen.push_str("/// The default built-in icon theme ID.\n");
+    gen.push_str(&format!("pub const DEFAULT_THEME_ID: &str = \"{}\";\n\n", default_theme.manifest_id));
+
     gen.push_str("/// The default icon theme bundle embedded into the binary.\n");
-    gen.push_str("pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/default.qicons\"));\n\n");
+    gen.push_str(&format!("pub const DEFAULT_QICONS: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}.qicons\"));\n\n", default_theme.dir_name));
 
     gen.push_str("/// All built-in icon themes embedded into the binary.\n");
     gen.push_str("pub const BUILTIN_ICON_THEMES: &[BuiltinTheme] = &[\n");

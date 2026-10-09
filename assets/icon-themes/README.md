@@ -12,9 +12,9 @@ QymCAD features a modular, dynamic vector icon theme engine. It supports both bu
 >
 > When an icon is requested, QymCAD resolves it through a multi-tier **Fallback Cascade**:
 >
-> $$\text{Active Custom Pack} \longrightarrow \text{Next Active Pack} \longrightarrow \dots \longrightarrow \text{Built-in Default SVG Pack}$$
+> $$\text{Active Custom Pack} \longrightarrow \text{Next Active Pack} \longrightarrow \dots \longrightarrow \text{Built-in Base SVG Pack}$$
 >
-> If an icon is missing from a custom theme, QymCAD automatically and silently falls back to the next pack in the active stack, down to the built-in default vector pack (which provides 100% complete SVG coverage). No buttons will ever appear blank or broken.
+> If an icon is missing from a custom theme, QymCAD automatically and silently falls back to the next pack in the active stack, down to the built-in base vector pack (`shapr-alike`, which provides 100% complete SVG coverage). No buttons will ever appear blank or broken.
 
 ---
 
@@ -66,28 +66,36 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
     package_type: IconTheme,
 
     // Unique machine identifier (alphanumeric, hyphens allowed)
-    id: "freecad-classic",
+    id: "shapr-alike",
 
     // User-facing display name shown in settings
-    name: "FreeCAD Classic",
+    name: "Shapr-Alike",
 
     // Semantic version string
     version: "1.0.0",
 
     // Author or organization
-    author: "FreeCAD Community & Contributors",
+    author: "braindefender",
 
-    // License identifier (e.g. MIT, Apache-2.0, LGPL-2.1-or-later)
-    license: "LGPL-2.1-or-later",
+    // License identifier (e.g. MIT, Apache-2.0, AGPL-3.0-or-later)
+    license: "AGPL-3.0-or-later",
 
     // Short summary describing the theme
-    description: "Classic multi-color CAD tool icons from FreeCAD",
+    description: "QymCAD icons inspired by Shapr3D",
 
     // Optional translated display text, keyed by language tag
     translations: {
+        "uk": (
+            name: "Shapr-Alike",
+            description: "Іконки QymCAD, натхненні Shapr3D",
+        ),
         "ru": (
-            name: "FreeCAD: классические иконки",
-            description: "Классические цветные иконки инструментов CAD",
+            name: "Shapr-Alike",
+            description: "Иконки QymCAD, вдохновлённые Shapr3D",
+        ),
+        "kk": (
+            name: "Shapr-Alike",
+            description: "Shapr3D үлгісінде жасалған QymCAD таңбашалары",
         ),
     },
 )
@@ -98,7 +106,7 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
 | Field | Type | Required | Description |
 | :--- | :--- | :---: | :--- |
 | `package_type` | `PackageType` | No (default `IconTheme`) | Extension type identifier. Always `IconTheme`. |
-| `id` | `String` | **Yes** | Unique package ID (e.g., `default`, `shapr-alike`). |
+| `id` | `String` | **Yes** | Unique package ID (e.g., `shapr-alike`, `custom-theme`). |
 | `name` | `String` | **Yes** | Human-readable name displayed in Settings -> Icon Themes. |
 | `version` | `String` | No | Semantic version string (e.g., `"1.0.0"`). |
 | `author` | `String` | No | Author, maintainer, or contributing community. |
@@ -247,7 +255,6 @@ Below is the complete dictionary of all **95 icons** across the 5 categories:
 | `part/array_linear.svg` | **3D Linear Pattern:** Replicate 3D features or solid bodies along linear directions. |
 | `part/array_circular.svg` | **3D Circular Pattern:** Replicate 3D features or solid bodies rotationally around an axis. |
 | `part/mirror.svg` | **3D Mirror:** Mirror 3D features or bodies across a planar symmetry datum. |
-| `part/measure.svg` | **Measure 3D:** Interactive inspection ruler: measure distances, coordinates, and angles in 3D space. |
 | `part/section.svg` | **Section View:** Cut a live interactive clipping cross-section through the 3D model. |
 
 ---
@@ -291,7 +298,7 @@ A `.qicons` bundle can be prepared in two ways:
 
 1. **In-App Packager (Recommended — Verified Archive):**
    Use the built-in Packager UI inside QymCAD (**Settings -> Icon Themes -> Package Theme**).
-   The Packager validates SVG elements, enforces square viewBox ratios, builds a clean ZIP archive, and appends a SHA-256 integrity trailer (`QYMICON1`). Bundles packaged with this trailer load with **Verified Archive** status for maximum speed.
+   The Packager validates SVG elements, enforces square viewBox ratios, builds a clean ZIP archive, and appends a SHA-256 integrity trailer (`QCAD` magic trailer). Bundles packaged with this trailer load with **Verified Archive** status for maximum speed.
 
 2. **Standard ZIP Archive (Community Archive):**
    You can also create a plain ZIP archive using standard command-line tools:

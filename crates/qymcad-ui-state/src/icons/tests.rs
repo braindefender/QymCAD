@@ -271,7 +271,7 @@ fn cascade_fallback_chain() {
 
     // 3. Extrude is in neither Pack A nor Pack B, falls back to the embedded default SVG pack
     let res_extrude = mgr.resolve(IconId::PartExtrude);
-    assert_eq!(res_extrude.pack_id, "default");
+    assert_eq!(res_extrude.pack_id, DEFAULT_THEME_ID);
 }
 
 #[test]
@@ -475,13 +475,13 @@ fn inspect_and_package_excludes_problematic_files() {
 #[test]
 fn default_embedded_pack_is_valid_and_complete() {
     let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
-    assert_eq!(pack.manifest.id, "default");
+    assert_eq!(pack.manifest.id, DEFAULT_THEME_ID);
     assert!(pack.manifest.translations.contains_key("kk"));
     assert!(pack.manifest.translations.contains_key("ru"));
     assert!(pack.manifest.translations.contains_key("uk"));
-    assert_ne!(pack.manifest.name_for_locale("kk"), pack.manifest.name);
-    assert_ne!(pack.manifest.name_for_locale("ru"), pack.manifest.name);
-    assert_ne!(pack.manifest.name_for_locale("uk"), pack.manifest.name);
+    assert_ne!(pack.manifest.description_for_locale("kk"), pack.manifest.description);
+    assert_ne!(pack.manifest.description_for_locale("ru"), pack.manifest.description);
+    assert_ne!(pack.manifest.description_for_locale("uk"), pack.manifest.description);
     assert_ne!(pack.get_readme_for_locale("kk"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
@@ -501,20 +501,13 @@ fn default_embedded_pack_is_valid_and_complete() {
 
     // Verify pack README is loaded
     let readme = pack.get_readme();
-    assert!(readme.contains("Default Vector Icon Theme"), "embedded README should be available");
+    assert!(readme.contains("Shapr-Alike"), "embedded README should be available");
 }
 
 #[test]
 fn all_embedded_packs_are_valid_and_complete() {
     let packs = load_builtin_packs();
-    assert!(packs.len() >= 2, "must load at least default and shapr-alike; got {}", packs.len());
-
-    let default_pack = packs.iter().find(|p| p.manifest.id == "default").expect("default pack exists");
-    assert_eq!(default_pack.format(), BundleFormat::Embedded);
-    assert!(!default_pack.is_directory());
-    assert!(default_pack.is_verified());
-    let def_cov = default_pack.coverage();
-    assert_eq!(def_cov.present, def_cov.total, "embedded default pack must cover all icons");
+    assert!(!packs.is_empty(), "must load at least shapr-alike; got {}", packs.len());
 
     let shapr_pack = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike pack exists");
     assert_eq!(shapr_pack.format(), BundleFormat::Embedded);
@@ -653,7 +646,7 @@ fn global_icon_manager_cascade() {
 
     // Initial resolution with default pack resolves to default embedded SVG
     let initial = resolve_global_icon(IconId::SketchLine);
-    assert_eq!(initial.pack_id, "default");
+    assert_eq!(initial.pack_id, DEFAULT_THEME_ID);
 
     // Now push custom pack on top
     let mut map = HashMap::new();
@@ -854,7 +847,7 @@ fn live_watch_folder_auto_reload_on_svg_change() {
     std::thread::sleep(std::time::Duration::from_millis(260));
     assert!(mgr.check_watched_directories(), "removing an icon must invalidate the cascade");
     let missing = mgr.resolve(IconId::SketchLine);
-    assert_eq!(missing.pack_id, "default", "an absent icon must use the built-in fallback");
+    assert_eq!(missing.pack_id, DEFAULT_THEME_ID, "an absent icon must use the built-in fallback");
     assert!(missing.revision > res2.revision);
 
     std::fs::write(&svg_path, initial_svg).expect("restore watched icon");
@@ -1466,7 +1459,7 @@ fn invalid_icon_in_custom_pack_continues_fallback_to_default() {
     let resolved = mgr.resolve(IconId::SketchLine);
     let _ = std::fs::remove_dir_all(&temp_dir);
 
-    assert_eq!(resolved.pack_id, "default");
+    assert_eq!(resolved.pack_id, DEFAULT_THEME_ID);
     assert!(resolved.data.starts_with(b"<svg"));
 }
 
@@ -1545,7 +1538,7 @@ fn resolve_global_icon_lazily_initializes_manager() {
     assert!(with_global_icon_manager(|_| ()).is_none());
 
     let resolved = resolve_global_icon(IconId::SketchLine);
-    assert_eq!(resolved.pack_id, "default");
+    assert_eq!(resolved.pack_id, DEFAULT_THEME_ID);
     assert!(with_global_icon_manager(|_| ()).is_some(), "global manager must be initialized after resolve");
 }
 
@@ -1622,7 +1615,7 @@ fn transient_read_failure_in_higher_theme_does_not_poison_cache() {
     manager.push_top_pack(custom_pack);
 
     let res1 = manager.resolve(IconId::SketchLine);
-    assert_eq!(res1.pack_id, "default");
+    assert_eq!(res1.pack_id, DEFAULT_THEME_ID);
 
     let valid_svg = br#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24z"/></svg>"#;
     std::fs::write(&line_path, valid_svg).expect("write valid svg");

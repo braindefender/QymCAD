@@ -54,7 +54,7 @@ impl Default for IconManager {
     }
 }
 
-pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_QICONS};
+pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_QICONS, DEFAULT_THEME_ID};
 
 /// Load all built-in icon themes embedded into the binary.
 pub fn load_builtin_packs() -> Vec<IconPack> {
@@ -68,7 +68,7 @@ pub fn load_builtin_pack(id: &str) -> Option<IconPack> {
 
 /// Load the built-in default icon pack embedded into the binary.
 pub fn load_default_pack() -> Option<IconPack> {
-    load_builtin_pack("default").or_else(|| IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok())
+    load_builtin_pack(DEFAULT_THEME_ID).or_else(|| IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok())
 }
 
 impl IconManager {
@@ -102,7 +102,7 @@ impl IconManager {
     /// Replace the active stack of packs. The built-in default pack is automatically appended
     /// to ensure 100% icon coverage across the entire system.
     pub fn set_active_stack(&mut self, mut packs: Vec<IconPack>) {
-        if !packs.iter().any(|p| p.manifest.id == "default") {
+        if !packs.iter().any(|p| p.manifest.id == DEFAULT_THEME_ID) {
             if let Some(def) = load_default_pack() {
                 packs.push(def);
             }
@@ -305,7 +305,7 @@ pub fn resolve_global_icon(id: IconId) -> ResolvedIcon {
         if let Some(data) = def.get_svg_for_id(id) {
             let pal = qymcad_scheme::dark();
             let data = Arc::from(resolve_icon_tokens(&data, &pal));
-            return ResolvedIcon { data, pack_id: "default".to_string(), revision: 0, palette_fingerprint: pal.fingerprint() };
+            return ResolvedIcon { data, pack_id: DEFAULT_THEME_ID.to_string(), revision: 0, palette_fingerprint: pal.fingerprint() };
         }
     }
     let pal = qymcad_scheme::dark();

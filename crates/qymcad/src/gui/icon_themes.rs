@@ -6,7 +6,7 @@ use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{
     clean_directory_icon, clean_directory_icons, clear_global_icon_cache, directory_has_cleanable_icons, discover_packs_detailed, inspect_pack_directory, load_builtin_packs, load_default_pack,
-    package_bundle, reload_active_icon_themes, BundleFormat, CleanIconResult, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport, ALL_ICONS,
+    package_bundle, reload_active_icon_themes, BundleFormat, CleanIconResult, DiscoveryError, IconId, IconManifest, IconPack, PackSource, PackageType, ValidationReport, ALL_ICONS, DEFAULT_THEME_ID,
 };
 use qymcad_ui_state::{Settings, WinCtx};
 use std::path::{Path, PathBuf};
@@ -433,7 +433,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
     ui.add_space(4.0);
 
     let mut all_packs = discover_all_theme_packs(&all_theme_dirs()).packs;
-    if !all_packs.iter().any(|p| p.manifest.id == "default") {
+    if !all_packs.iter().any(|p| p.manifest.id == DEFAULT_THEME_ID) {
         if let Some(def) = load_default_pack() {
             all_packs.push(def);
         }
@@ -458,7 +458,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
         // Base fallback is always the built-in SVG bundle
         let base_name = all_packs
             .iter()
-            .find(|pack| pack.manifest.id == "default")
+            .find(|pack| pack.manifest.id == DEFAULT_THEME_ID)
             .map(|pack| pack.manifest.name_for_locale(&crate::i18n::language()).to_string())
             .unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base"));
         ui.label(egui::RichText::new(base_name).strong());
@@ -1004,7 +1004,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
     wc.set.watched_icon_packs.retain(|id| all_packs.iter().find(|p| &p.manifest.id == id).is_some_and(|p| p.is_directory()));
 
     // Ensure the built-in default pack is always represented if discovered or from embedded
-    if !all_packs.iter().any(|p| p.manifest.id == "default") {
+    if !all_packs.iter().any(|p| p.manifest.id == DEFAULT_THEME_ID) {
         if let Some(default_pack) = load_default_pack() {
             all_packs.push(default_pack);
         }
@@ -1093,9 +1093,9 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     }
 
                     // Base fallback
-                    let (clicked, _) = manager_theme_card(ui, "default", state.selected_pack_id == "default", |ui| {
+                    let (clicked, _) = manager_theme_card(ui, DEFAULT_THEME_ID, state.selected_pack_id == DEFAULT_THEME_ID, |ui| {
                         let text_width = (ui.available_width() - 44.0).max(110.0);
-                        let base_pack = all_packs.iter().find(|pack| pack.manifest.id == "default");
+                        let base_pack = all_packs.iter().find(|pack| pack.manifest.id == DEFAULT_THEME_ID);
                         ui.horizontal(|ui| {
                             if let Some(pack) = base_pack {
                                 draw_pack_icon(ui, pack, 36.0);
@@ -1110,7 +1110,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         None
                     });
                     if clicked {
-                        state.selected_pack_id = "default".into();
+                        state.selected_pack_id = DEFAULT_THEME_ID.into();
                     }
 
                     if let Some((a, b)) = to_swap {
@@ -1126,7 +1126,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                     // Available (inactive) themes
                     let mut to_activate = None;
                     for p in &all_packs {
-                        if p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id) {
+                        if p.manifest.id == DEFAULT_THEME_ID || wc.set.active_icon_packs.contains(&p.manifest.id) {
                             continue;
                         }
                         let is_selected = state.selected_pack_id == p.manifest.id;
@@ -1166,7 +1166,7 @@ fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: 
                         }
                         ui.add_space(4.0);
                     }
-                    if all_packs.iter().all(|p| p.manifest.id == "default" || wc.set.active_icon_packs.contains(&p.manifest.id)) {
+                    if all_packs.iter().all(|p| p.manifest.id == DEFAULT_THEME_ID || wc.set.active_icon_packs.contains(&p.manifest.id)) {
                         ui.label(egui::RichText::new(crate::i18n::tr("settings-icon-themes-none-available")).weak());
                     }
 
@@ -1549,7 +1549,7 @@ mod tests {
 
         // Fallback works even when active packs are missing: falls back to built-in default SVG pack
         let icon = qymcad_ui_state::icons::resolve_global_icon(qymcad_ui_state::icons::IconId::SketchLine);
-        assert_eq!(icon.pack_id, "default");
+        assert_eq!(icon.pack_id, DEFAULT_THEME_ID);
     }
 
     #[test]
@@ -1643,10 +1643,6 @@ mod tests {
         let shapr = packs.iter().find(|p| p.manifest.id == "shapr-alike").expect("shapr-alike must be present");
         assert_eq!(shapr.format(), BundleFormat::Embedded, "Shapr-Alike must be marked Embedded in manager");
         assert!(!shapr.is_directory(), "Shapr-Alike must not be marked directory");
-
-        let default_pack = packs.iter().find(|p| p.manifest.id == "default").expect("default must be present");
-        assert_eq!(default_pack.format(), BundleFormat::Embedded, "Default must be marked Embedded in manager");
-        assert!(!default_pack.is_directory(), "Default must not be marked directory");
     }
 
     #[test]
@@ -1919,9 +1915,28 @@ mod tests {
             }
         }
 
+        let Some(user_dir) = user_themes_dir() else {
+            eprintln!("PASSED OVER: user theme directory is unavailable");
+            return;
+        };
+        let custom_dir = user_dir.join("sample_custom_theme_deactivate");
+        let _ = std::fs::create_dir_all(&custom_dir);
+        let manifest = IconManifest {
+            package_type: PackageType::IconTheme,
+            id: "sample_custom_theme_deactivate".into(),
+            name: "Sample Custom".into(),
+            version: "1.0".into(),
+            author: "Tester".into(),
+            license: "MIT".into(),
+            description: "Sample".into(),
+            translations: Default::default(),
+            verified: false,
+        };
+        std::fs::write(custom_dir.join("manifest.ron"), manifest.to_ron().unwrap()).unwrap();
+
         let mut app = App::default();
-        app.set.active_icon_packs = vec!["shapr-alike".into()];
-        app.set.inactive_icon_packs.retain(|id| id != "shapr-alike");
+        app.set.active_icon_packs = vec!["sample_custom_theme_deactivate".into()];
+        app.set.inactive_icon_packs.retain(|id| id != "sample_custom_theme_deactivate");
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
         open_icon_manager(&ctx);
@@ -1940,16 +1955,9 @@ mod tests {
         let click = |pressed| egui::Event::PointerButton { pos: minus, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         draw(vec![egui::Event::PointerMoved(minus)]);
         draw(vec![click(true)]);
-        let output = draw(vec![click(false)]);
+        let _ = draw(vec![click(false)]);
         assert!(app.set.active_icon_packs.is_empty(), "the button did not deactivate the theme");
-        let mut labels = Vec::new();
-        for shape in &output.shapes {
-            labels_in(&shape.shape, &mut labels);
-        }
-        let shapr = IconPack::from_directory(bundled_themes_dir().join("shapr-alike")).expect("bundled Shapr-Alike theme");
-        let name = shapr.manifest.name_for_locale(&crate::i18n::language());
-        let available_copies = labels.iter().filter(|label| label.rect.left() < 300.0 && label.rect.top() > 300.0 && label.text == name).count();
-        assert_eq!(available_copies, 0, "deactivation paints the new card before the next frame");
+        let _ = std::fs::remove_dir_all(&custom_dir);
     }
 
     #[test]

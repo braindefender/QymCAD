@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
-use super::id::{IconId, ALL_ICONS};
+use super::id::{IconId, ALL_ICONS, DEFAULT_THEME_ID};
 use super::manifest::{locale_fallbacks, IconManifest, PackageType};
 
-const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes/default/icon.svg"));
+const DEFAULT_PACK_ICON_SVG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes/shapr-alike/icon.svg"));
 
 /// Source storage for an icon pack.
 #[derive(Debug, Clone)]
@@ -304,7 +304,7 @@ impl IconPack {
             parsed.validate().map_err(|e| format!("invalid manifest: {e}"))?;
             parsed
         };
-        if is_verified || manifest.id == "default" {
+        if is_verified || manifest.id == DEFAULT_THEME_ID {
             manifest.verified = true;
         }
 
