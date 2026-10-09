@@ -12,6 +12,12 @@ fn localized_readme_tag(name: &str) -> Option<&str> {
     Some(tag)
 }
 
+fn localized_description_tag(name: &str) -> Option<&str> {
+    let tag = name.strip_prefix("description.")?.strip_suffix(".md")?;
+    tag.parse::<unic_langid::LanguageIdentifier>().ok()?;
+    Some(tag)
+}
+
 /// A rejected icon file or manifest within an icon pack.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RejectedArchive {
@@ -159,17 +165,22 @@ pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
     }
 
     // Inline event handlers (onload=, onclick=, onerror=, etc.)
-    if let Some(idx) = lower.find(" on") {
-        let rest = &lower[idx..];
-        for word in rest.split_whitespace() {
-            if word.starts_with("on") && word.contains('=') {
-                let attr = word.split('=').next().unwrap_or(word);
-                if attr.chars().skip(2).all(|c| c.is_alphabetic()) {
-                    issues.push(format!("prohibited event handler attribute ({attr})"));
+    let mut search_from = 0;
+    while let Some(idx) = lower[search_from..].find(" on") {
+        let abs_idx = search_from + idx + 3;
+        search_from = abs_idx;
+        let rest = &lower[abs_idx..];
+        if let Some(word) = rest.split_whitespace().next() {
+            if let Some((attr, _)) = word.split_once('=') {
+                if !attr.is_empty() && attr.chars().all(|c| c.is_ascii_alphabetic()) {
+                    issues.push(format!("prohibited event handler attribute (on{attr})"));
                     break;
                 }
             }
         }
+    }
+    if lower.contains("javascript:") {
+        issues.push("prohibited javascript: URL".to_string());
     }
 
     // Editor metadata & proprietary elements or namespaces
@@ -207,6 +218,39 @@ pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
     issues
 }
 
+fn validate_svg_element_security(element: &quick_xml::events::BytesStart<'_>) -> Result<Option<String>, String> {
+    let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
+
+    if name == "image" {
+        return Err("embedded raster images (<image>) are prohibited".to_string());
+    }
+    if matches!(name.as_str(), "script" | "foreignobject" | "applet" | "object" | "embed" | "iframe" | "audio" | "video") {
+        return Err(format!("prohibited <{name}> tag"));
+    }
+
+    let mut viewbox = None;
+    for attr in element.attributes() {
+        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
+        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
+
+        if key == "viewbox" {
+            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
+            viewbox = Some(val.into_owned());
+        }
+        if key.starts_with("on") && key.len() > 2 && key.chars().skip(2).all(|c| c.is_ascii_alphabetic()) {
+            return Err(format!("prohibited event handler attribute '{key}'"));
+        }
+        if key == "href" || key.ends_with(":href") {
+            let val = attr.unescape_value().map_err(|err| format!("invalid attribute value: {err}"))?.to_ascii_lowercase();
+            if val.trim().starts_with("javascript:") {
+                return Err("prohibited javascript: URL in href".to_string());
+            }
+        }
+    }
+
+    Ok(viewbox)
+}
+
 /// Validate SVG data according to the theme specification:
 /// - Must be well-formed XML with properly nested tags.
 /// - Must contain a single valid root `<svg>` element.
@@ -214,6 +258,13 @@ pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
 /// - Must NOT contain embedded raster images (`<image>` or `data:image/`).
 /// - Must NOT contain junk tags, editor metadata, or executable elements.
 pub fn validate_svg(data: &[u8]) -> Result<(), String> {
+    validate_svg_structural(data, true)
+}
+
+/// Validate SVG structure, optionally enforcing 1:1 square aspect ratio.
+/// Non-square SVGs are allowed for theme banners (`preview.svg`), but must still pass
+/// all security, XML well-formedness, and raster image checks.
+pub fn validate_svg_structural(data: &[u8], require_square: bool) -> Result<(), String> {
     let text = std::str::from_utf8(data).map_err(|_| "SVG data is not valid UTF-8".to_string())?;
 
     let mut reader = quick_xml::Reader::from_str(text);
@@ -237,17 +288,9 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
                         return Err(format!("expected root element <svg>, found <{name}>"));
                     }
                     root_svg_found = true;
-                    for attr in element.attributes() {
-                        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
-                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
-                        if key == "viewbox" {
-                            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
-                            viewbox_attr = Some(val.into_owned());
-                        }
-                    }
-                }
-                if name == "image" {
-                    return Err("embedded raster images (<image>) are prohibited".to_string());
+                    viewbox_attr = validate_svg_element_security(&element)?;
+                } else {
+                    let _ = validate_svg_element_security(&element)?;
                 }
                 depth += 1;
             }
@@ -262,17 +305,9 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
                         return Err(format!("expected root element <svg>, found <{name}>"));
                     }
                     root_svg_found = true;
-                    for attr in element.attributes() {
-                        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
-                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
-                        if key == "viewbox" {
-                            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
-                            viewbox_attr = Some(val.into_owned());
-                        }
-                    }
-                }
-                if name == "image" {
-                    return Err("embedded raster images (<image>) are prohibited".to_string());
+                    viewbox_attr = validate_svg_element_security(&element)?;
+                } else {
+                    let _ = validate_svg_element_security(&element)?;
                 }
             }
             Ok(Event::End(_)) => {
@@ -303,9 +338,11 @@ pub fn validate_svg(data: &[u8]) -> Result<(), String> {
     if w <= 0.0 || h <= 0.0 {
         return Err(format!("non-positive viewBox dimensions: {w}x{h}"));
     }
-    let ratio = w / h;
-    if !(0.95..=1.05).contains(&ratio) {
-        return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
+    if require_square {
+        let ratio = w / h;
+        if !(0.95..=1.05).contains(&ratio) {
+            return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
+        }
     }
 
     if text.contains("data:image/") {
@@ -675,8 +712,7 @@ pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String>
     Ok(report)
 }
 
-/// Inspect and validate an icon pack directory, returning a detailed `ValidationReport`.
-/// Checks all SVG viewports, identifies extraneous/unknown files, and lists included vs missing icons.
+/// Estimate the DEFLATE compression ratio for a slice of data to guard against zip bombs.
 fn estimate_deflate_ratio(data: &[u8]) -> Option<u64> {
     if data.len() <= 64 * 1024 {
         return Some(1);
@@ -718,17 +754,26 @@ pub fn inspect_pack_directory(source_dir: impl AsRef<Path>) -> Result<Validation
                     || fname.starts_with("LICENSE")
                     || fname == "README.md"
                     || fname == "README.txt"
+                    || fname == "description.md"
+                    || fname == "description.txt"
                     || localized_readme_tag(fname).is_some()
+                    || localized_description_tag(fname).is_some()
                     || fname.starts_with("preview.")
                     || fname.ends_with(".qicons")
                     || fname.ends_with(".zip");
                 if !allowed {
                     extraneous.push(format!("extra root file: {fname}"));
-                } else if localized_readme_tag(fname).is_some() {
+                } else if localized_readme_tag(fname).is_some() || localized_description_tag(fname).is_some() {
                     if std::fs::metadata(&p).ok().is_some_and(|metadata| metadata.len() > super::pack::MAX_TEXT_FILE_SIZE) {
-                        rejected.push(RejectedArchive { path: fname.to_string(), reason: "localized README exceeds maximum text size".to_string() });
+                        rejected.push(RejectedArchive { path: fname.to_string(), reason: "localized documentation exceeds maximum text size".to_string() });
                     } else if let Err(err) = std::fs::read_to_string(&p) {
-                        rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("localized README is not readable UTF-8: {err}") });
+                        rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("localized documentation is not readable UTF-8: {err}") });
+                    }
+                } else if fname == "preview.svg" {
+                    if let Ok(content) = std::fs::read(&p) {
+                        if let Err(err) = validate_svg_structural(&content, false) {
+                            rejected.push(RejectedArchive { path: fname.to_string(), reason: format!("preview.svg validation error: {err}") });
+                        }
                     }
                 } else if fname == "manifest.ron" {
                     if std::fs::metadata(&p).ok().is_some_and(|m| m.len() > super::pack::MAX_MANIFEST_SIZE) {
@@ -852,7 +897,7 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
     std::io::Write::write_all(&mut zip, ron_text.as_bytes()).map_err(|e| e.to_string())?;
 
     // 2. Write optional metadata and preview files from root if present
-    for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "preview.svg", "preview.png", "preview.webp", "icon.svg"] {
+    for doc in &["LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README.txt", "description.md", "description.txt", "preview.svg", "preview.png", "preview.webp", "icon.svg"] {
         let doc_path = source_dir.join(doc);
         if doc_path.is_file() {
             let limit = if *doc == "icon.svg" {
@@ -872,22 +917,25 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
                 if *doc == "icon.svg" && validate_svg(&content).is_err() {
                     continue;
                 }
+                if *doc == "preview.svg" && validate_svg_structural(&content, false).is_err() {
+                    continue;
+                }
                 let _ = zip.start_file(*doc, options);
                 let _ = std::io::Write::write_all(&mut zip, &content);
             }
         }
     }
 
-    let mut localized_readmes = std::fs::read_dir(source_dir)
-        .map_err(|err| format!("cannot list localized READMEs: {err}"))?
+    let mut localized_docs = std::fs::read_dir(source_dir)
+        .map_err(|err| format!("cannot list localized documentation: {err}"))?
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            (entry.path().is_file() && localized_readme_tag(&name).is_some()).then_some(name)
+            (entry.path().is_file() && (localized_readme_tag(&name).is_some() || localized_description_tag(&name).is_some())).then_some(name)
         })
         .collect::<Vec<_>>();
-    localized_readmes.sort();
-    for name in localized_readmes {
+    localized_docs.sort();
+    for name in localized_docs {
         let path = source_dir.join(&name);
         let metadata = std::fs::metadata(&path).map_err(|err| format!("cannot inspect {name}: {err}"))?;
         if metadata.len() > super::pack::MAX_TEXT_FILE_SIZE {

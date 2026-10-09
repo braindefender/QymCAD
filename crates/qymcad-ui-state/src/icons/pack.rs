@@ -506,13 +506,15 @@ impl IconPack {
         };
 
         for tag in locale_fallbacks(locale) {
-            let candidate = format!("README.{tag}.md");
-            if let Some(text) = try_file(&candidate).filter(|text| !text.trim().is_empty()) {
-                return text;
+            for prefix in &["README", "description"] {
+                let candidate = format!("{prefix}.{tag}.md");
+                if let Some(text) = try_file(&candidate).filter(|text| !text.trim().is_empty()) {
+                    return text;
+                }
             }
         }
 
-        for candidate in &["README.md", "readme.md", "README.txt", "description.md"] {
+        for candidate in &["README.md", "readme.md", "README.txt", "description.md", "description.txt"] {
             if let Some(text) = try_file(candidate) {
                 if !text.trim().is_empty() {
                     return text;

@@ -335,8 +335,10 @@ pub fn reload_active_icon_themes(active_ids: &[String], search_dirs: &[std::path
 
     let mut stack = Vec::new();
     for id in active_ids {
-        if let Some(p) = all_packs.iter().find(|p| &p.manifest.id == id) {
-            stack.push(p.clone());
+        if id != DEFAULT_THEME_ID {
+            if let Some(p) = all_packs.iter().find(|p| &p.manifest.id == id) {
+                stack.push(p.clone());
+            }
         }
     }
 
@@ -441,7 +443,7 @@ pub fn get_global_icon_revision() -> u64 {
 /// and `currentColor` using the active palette.
 pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette) -> Vec<u8> {
     let has_var = data.windows(4).any(|w| w == b"var(");
-    let has_current_color = data.windows(12).any(|w| w == b"currentColor");
+    let has_current_color = data.windows(12).any(|w| w.eq_ignore_ascii_case(b"currentcolor"));
 
     if !has_var && !has_current_color {
         return data.to_vec();
@@ -492,8 +494,18 @@ pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette) -> Vec
     }
     result.push_str(rest);
 
-    if result.contains("currentColor") {
-        result = result.replace("currentColor", &stroke_hex);
+    if result.to_ascii_lowercase().contains("currentcolor") {
+        let mut replaced = String::with_capacity(result.len());
+        let mut search_from = 0;
+        let lower = result.to_ascii_lowercase();
+        while let Some(pos) = lower[search_from..].find("currentcolor") {
+            let abs_pos = search_from + pos;
+            replaced.push_str(&result[search_from..abs_pos]);
+            replaced.push_str(&stroke_hex);
+            search_from = abs_pos + 12;
+        }
+        replaced.push_str(&result[search_from..]);
+        result = replaced;
     }
 
     result.into_bytes()

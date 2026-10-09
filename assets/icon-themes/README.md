@@ -6,7 +6,7 @@ QymCAD features a modular, dynamic vector icon theme engine. It supports both bu
 
 ## 1. Important: Partial Packs & Fallback Cascade
 
-> **A theme does NOT need to provide all 95 icons!**
+> **A theme does not need to provide every icon.**
 >
 > Theme packs can be **partial** and contain only a subset of icons (for example, only sketch tools, only custom constraint badges, or only specific 3D solid operations).
 >
@@ -153,12 +153,12 @@ All SVG files are validated at compile-time and load-time by `validate_svg`. An 
 
 ---
 
-## 6. Directory Naming & Icon Catalogue (All 95 Icons)
+## 6. Directory Naming & Icon Catalogue
 
 Icon paths are resolved by combining category subdirectories with the icon name:
 `icons/<category>/<name>.svg`
 
-Below is the complete dictionary of all **95 icons** across the 5 categories:
+Below is the complete dictionary of icons recognized across the 5 categories:
 
 ### 6.1. Category `sketch/` — 2D Sketch Creation, Modification & Dimensions (32 icons)
 

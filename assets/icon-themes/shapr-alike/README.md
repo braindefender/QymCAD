@@ -10,7 +10,7 @@ QymCAD icons inspired by Shapr3D.
 - **Color Mode**: `Universal` (multi-color icons rendered in their native colors across all UI schemes)
 - **Author**: braindefender
 - **License**: AGPL-3.0-or-later
-- **Coverage**: 100% (95/95 CAD icons)
+- **Coverage**: 100% (complete coverage of CAD icons)
 
 ## Icon Categories
 - **Sketch** (32): lines, arcs, circles, rectangles, polygons, slots, ellipses, splines, fillets, chamfers, trims, extends, offsets, dimensions, and transform tools.

@@ -291,9 +291,20 @@ fn svg_validation_rules() {
     let with_foreign = br#"<svg viewBox="0 0 64 64"><foreignObject><div>test</div></foreignObject></svg>"#;
     assert!(validate_svg(with_foreign).is_err());
 
-    // Inline event handlers
+    // Inline event handlers on root and nested elements
     let with_handler = br#"<svg viewBox="0 0 64 64" onload="run()"><circle cx="32" cy="32" r="10"/></svg>"#;
     assert!(validate_svg(with_handler).is_err());
+    let with_nested_handler = br#"<svg viewBox="0 0 64 64"><rect onclick="run()"/></svg>"#;
+    assert!(validate_svg(with_nested_handler).is_err());
+
+    // Prohibited javascript: in href or xlink:href
+    let with_js_href = br#"<svg viewBox="0 0 64 64"><a href="javascript:alert(1)"><circle cx="32" cy="32" r="10"/></a></svg>"#;
+    assert!(validate_svg(with_js_href).is_err());
+
+    // Non-square preview banner allows structural SVG but rejects square-enforced icon SVG
+    let banner_preview = br#"<svg viewBox="0 0 120 60"><rect width="120" height="60"/></svg>"#;
+    assert!(validate_svg_structural(banner_preview, false).is_ok());
+    assert!(validate_svg(banner_preview).is_err());
 
     // Editor metadata and namespaces
     let with_sodipodi = br#"<svg viewBox="0 0 64 64"><sodipodi:namedview id="base"/></svg>"#;
@@ -735,16 +746,15 @@ fn discover_packs_in_directory() {
 }
 
 #[test]
-fn user_shapr_alike_pack_if_present_loads_and_has_icons() {
-    let user_path = std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share/qymcad/icon_themes/shapr-alike.qicons"));
-    if let Some(user_path) = user_path {
-        if user_path.is_file() {
-            let pack = IconPack::from_archive(&user_path).expect("shapr-alike.qicons must load cleanly");
-            assert_eq!(pack.manifest.id, "shapr-alike");
-            assert_eq!(pack.manifest.name, "Shapr-Alike");
-            let cov = pack.coverage();
-            assert!(cov.present >= 90, "shapr-alike should cover almost all icons, got {}", cov.present);
-        }
+fn repo_shapr_alike_theme_if_present_loads_and_has_icons() {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let shapr_dir = manifest_dir.join("../../assets/icon-themes/shapr-alike");
+    if shapr_dir.is_dir() {
+        let pack = IconPack::from_directory(&shapr_dir).expect("shapr-alike directory must load cleanly");
+        assert_eq!(pack.manifest.id, "shapr-alike");
+        assert_eq!(pack.manifest.name, "Shapr-Alike");
+        let cov = pack.coverage();
+        assert_eq!(cov.present, cov.total, "shapr-alike theme in repo should cover all icons, got {}/{}", cov.present, cov.total);
     }
 }
 
