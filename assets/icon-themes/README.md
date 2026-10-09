@@ -12,9 +12,9 @@ QymCAD features a modular, dynamic vector icon theme engine. It supports both bu
 >
 > When an icon is requested, QymCAD resolves it through a multi-tier **Fallback Cascade**:
 >
-> $$\text{Active Custom Pack} \longrightarrow \text{Next Active Pack} \longrightarrow \dots \longrightarrow \text{Built-in Base SVG Pack}$$
+> $$\text{Active Custom Pack} \longrightarrow \text{Next Active Pack} \longrightarrow \dots \longrightarrow \text{Built-in Default Pack (shapr-alike)}$$
 >
-> If an icon is missing from a custom theme, QymCAD automatically and silently falls back to the next pack in the active stack, down to the built-in base vector pack (`shapr-alike`, which provides 100% complete SVG coverage). No buttons will ever appear blank or broken.
+> If an icon is missing from a custom theme, QymCAD automatically and silently falls back to the next pack in the active stack, down to the built-in default theme (`shapr-alike`, which provides 100% complete SVG coverage). No buttons will ever appear blank or broken.
 
 ---
 

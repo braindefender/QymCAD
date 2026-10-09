@@ -54,7 +54,7 @@ impl Default for IconManager {
     }
 }
 
-pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_QICONS, DEFAULT_THEME_ID};
+pub use super::id::{BUILTIN_ICON_THEMES, DEFAULT_THEME_ID};
 
 /// Load all built-in icon themes embedded into the binary.
 pub fn load_builtin_packs() -> Vec<IconPack> {
@@ -63,12 +63,12 @@ pub fn load_builtin_packs() -> Vec<IconPack> {
 
 /// Load a specific built-in icon pack by its manifest ID.
 pub fn load_builtin_pack(id: &str) -> Option<IconPack> {
-    load_builtin_packs().into_iter().find(|p| p.manifest.id == id)
+    BUILTIN_ICON_THEMES.iter().find(|theme| theme.id == id).and_then(|theme| IconPack::from_embedded_zip_bytes(theme.archive).ok())
 }
 
 /// Load the built-in default icon pack embedded into the binary.
 pub fn load_default_pack() -> Option<IconPack> {
-    load_builtin_pack(DEFAULT_THEME_ID).or_else(|| IconPack::from_embedded_zip_bytes(DEFAULT_QICONS).ok())
+    load_builtin_pack(DEFAULT_THEME_ID)
 }
 
 impl IconManager {

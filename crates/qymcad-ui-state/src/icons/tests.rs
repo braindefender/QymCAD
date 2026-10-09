@@ -474,7 +474,7 @@ fn inspect_and_package_excludes_problematic_files() {
 
 #[test]
 fn default_embedded_pack_is_valid_and_complete() {
-    let pack = load_default_pack().expect("embedded default.qicons must load cleanly");
+    let pack = load_default_pack().expect("embedded default theme must load cleanly");
     assert_eq!(pack.manifest.id, DEFAULT_THEME_ID);
     assert!(pack.manifest.translations.contains_key("kk"));
     assert!(pack.manifest.translations.contains_key("ru"));
@@ -485,13 +485,14 @@ fn default_embedded_pack_is_valid_and_complete() {
     assert_ne!(pack.get_readme_for_locale("kk"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("ru"), pack.get_readme());
     assert_ne!(pack.get_readme_for_locale("uk"), pack.get_readme());
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DEFAULT_QICONS)).expect("embedded bundle reads");
+    let default_theme_entry = BUILTIN_ICON_THEMES.iter().find(|t| t.id == DEFAULT_THEME_ID).expect("default builtin theme must exist in BUILTIN_ICON_THEMES");
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(default_theme_entry.archive)).expect("embedded bundle reads");
     assert!(archive.by_name("icon.svg").is_ok(), "default icon must be stored beside manifest.ron");
     validate_svg(&pack.get_pack_icon_svg()).expect("default pack icon is a valid SVG");
 
     // Check coverage of all known IconIds
     let cov = pack.coverage();
-    assert_eq!(cov.present, cov.total, "embedded default.qicons must cover 100% of icons (got {}/{})", cov.present, cov.total);
+    assert_eq!(cov.present, cov.total, "embedded default theme must cover 100% of icons (got {}/{})", cov.present, cov.total);
 
     // Verify SVG data is valid for every single icon
     for id in ALL_ICONS {
